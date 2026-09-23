@@ -23,6 +23,7 @@ import {
   LayoutTemplate,
   Layers,
   Clock,
+  ShieldAlert,
 } from 'lucide-react';
 
 export default function OrderConfigPage() {
@@ -34,6 +35,8 @@ export default function OrderConfigPage() {
     setShowAllOrdersTab,
     isCustomOrderFormEnabled,
     setIsCustomOrderFormEnabled,
+    strictSOStockCheck,
+    setStrictSOStockCheck,
   } = useApp();
 
   // Local state for the form builder schema
@@ -763,6 +766,51 @@ export default function OrderConfigPage() {
 
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Item 4: Blokir Proses Pesanan saat stok kurang */}
+        <div className="transition-colors">
+          <div className="p-4 sm:p-5 flex items-center justify-between gap-8">
+            <div className="flex items-start gap-3.5 min-w-0">
+              <div
+                className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                  strictSOStockCheck
+                    ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
+                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                }`}
+              >
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-sm text-slate-900 dark:text-white">
+                    Blokir Proses Pesanan saat stok kurang
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Jika aktif, Sales Order tidak dapat diproses apabila stok bahan baku atau barang setengah jadi tidak mencukupi di gudang.
+                </p>
+              </div>
+            </div>
+
+            {/* Switch Toggle */}
+            <div className="flex items-center gap-3 shrink-0">
+              <Toggle
+                checked={strictSOStockCheck}
+                onChange={(nextVal) => {
+                  setStrictSOStockCheck(nextVal);
+                  toast.success(
+                    'Konfigurasi Diperbarui',
+                    nextVal
+                      ? 'Proses pesanan akan diblokir jika stok kurang.'
+                      : 'Pesanan dapat diproses secara dinamis.'
+                  );
+                }}
+                showStatusBadge
+                color="indigo"
+              />
             </div>
           </div>
         </div>

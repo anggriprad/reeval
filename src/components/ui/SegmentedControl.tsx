@@ -75,10 +75,23 @@ export function SegmentedControl<T extends string = string>({
   const hasFilters = allFilters.length > 0;
   const hasControlsRow = hasSearch || hasFilters;
 
+  const itemRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  React.useEffect(() => {
+    const activeEl = itemRefs.current.get(value);
+    if (activeEl) {
+      activeEl.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    }
+  }, [value]);
+
   return (
     <div className={`space-y-5 ${className}`}>
       {/* Tab Segment Pills */}
-      <div className="flex flex-wrap gap-1.5 rounded-lg bg-slate-100 p-1 dark:bg-slate-800 w-fit">
+      <div className="flex items-center gap-1.5 rounded-lg bg-slate-100 p-1 dark:bg-slate-800 w-fit max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {options.map((option) => {
           const isActive = value === option.key;
           const Icon = option.icon;
@@ -87,8 +100,15 @@ export function SegmentedControl<T extends string = string>({
             <button
               key={option.key}
               type="button"
+              ref={(el) => {
+                if (el) {
+                  itemRefs.current.set(option.key, el);
+                } else {
+                  itemRefs.current.delete(option.key);
+                }
+              }}
               onClick={() => onChange(option.key)}
-              className={`flex items-center justify-center gap-2 rounded-md px-3.5 py-1.5 text-sm font-semibold transition-all cursor-pointer min-w-[80px] sm:min-w-[95px] ${isActive
+              className={`flex items-center justify-center gap-2 rounded-md px-3.5 py-1.5 text-sm font-semibold transition-all cursor-pointer shrink-0 min-w-[80px] sm:min-w-[95px] ${isActive
                 ? 'bg-white text-indigo-600 shadow-xs dark:bg-slate-700 dark:text-white'
                 : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700/50 dark:hover:text-slate-200'
                 }`}

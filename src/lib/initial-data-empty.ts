@@ -21,6 +21,8 @@ import type {
   BOMTemplate,
   BOMTemplateItem,
   VariantBOM,
+  Armada,
+  Driver,
 } from './types';
 import { DEFAULT_CHART_OF_ACCOUNTS } from './accounting';
 
@@ -42,6 +44,8 @@ export const initialSalesOrders: SalesOrder[] = [];
 export const initialWorkOrders: WorkOrder[] = [];
 export const initialPurchaseOrders: PurchaseOrder[] = [];
 export const initialStockMovements: StockMovement[] = [];
+export const initialArmadas: Armada[] = [];
+export const initialDrivers: Driver[] = [];
 export const initialDeliveryOrders: DeliveryOrder[] = [];
 export const initialInvoices: Invoice[] = [];
 export const initialAssets: CompanyAsset[] = [];
@@ -51,4 +55,6 @@ export const initialBankAccounts: BankAccount[] = [];
 export const initialExpenses: Expense[] = [];
 export const initialChartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS;
 export const initialJournalEntries: JournalEntry[] = [];
+export const initialCategories: string[] = [];
+export const initialAssetCategories: string[] = [];
 

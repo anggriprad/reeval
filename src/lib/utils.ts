@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { BOMItem, RawMaterial } from '@/lib/types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -94,9 +95,17 @@ export function getStockLevel(stock: number, minStock: number): 'Aman' | 'Menipi
 
 export function getStockLevelColor(level: 'Aman' | 'Menipis' | 'Kritis'): string {
   switch (level) {
-    case 'Aman': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
-    case 'Menipis': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
-    case 'Kritis': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
+    case 'Aman': return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60';
+    case 'Menipis': return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60';
+    case 'Kritis': return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800/60';
+  }
+}
+
+export function getStockLevelTextColor(level: 'Aman' | 'Menipis' | 'Kritis'): string {
+  switch (level) {
+    case 'Aman': return 'text-emerald-600 dark:text-emerald-400';
+    case 'Menipis': return 'text-amber-600 dark:text-amber-400';
+    case 'Kritis': return 'text-red-600 dark:text-red-400';
   }
 }
 
@@ -108,6 +117,17 @@ export function getOrderStatusColor(status: string): string {
     case 'SENT': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
     case 'CANCELED': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
     default: return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+  }
+}
+
+export function getOrderStatusVariant(status: string): 'warning' | 'info' | 'purple' | 'success' | 'danger' | 'default' {
+  switch (status) {
+    case 'PENDING': return 'warning';
+    case 'PROCESSING': return 'info';
+    case 'READY': return 'purple';
+    case 'SENT': return 'success';
+    case 'CANCELED': return 'danger';
+    default: return 'default';
   }
 }
 
@@ -209,4 +229,63 @@ export function formatVariantLabel(label?: string | null): string {
     })
     .filter(Boolean)
     .join(' • ');
+}
+
+/**
+ * Calculates Sub-Assembly unit cost = (Sum of Child Materials Cost) + (Planned Labor Cost of Routing).
+ * Recursively supports nested Sub-Assemblies.
+ */
+export function calculateSubAssemblyCost(
+  childBom: { materialId: string; qty: number }[] | undefined | null,
+  allMaterials: { id: string; unitCost: number; isSubAssembly?: boolean; childBom?: { materialId: string; qty: number }[]; routingId?: string }[],
+  routingId?: string,
+  allRoutings?: { id: string; steps: { operationId: string }[] }[],
+  allOperations?: { id: string; costingMethod?: 'fixed' | 'hourly'; fixedLaborCost?: number; laborCostPerHour?: number; durationMinutes?: number }[]
+): number {
+  if (!childBom) childBom = [];
+  const materialCost = calculateRollupBOMCost(childBom, allMaterials, allRoutings, allOperations);
+
+  let laborCost = 0;
+  if (routingId && allRoutings && allOperations) {
+    const routing = allRoutings.find(r => r.id === routingId);
+    if (routing) {
+      laborCost = routing.steps.reduce((acc, step) => {
+        const op = allOperations.find(o => o.id === step.operationId);
+        if (!op) return acc;
+        if (op.costingMethod === 'fixed') {
+          return acc + (op.fixedLaborCost || 0);
+        }
+        const hours = (op.durationMinutes || 30) / 60;
+        return acc + (hours * (op.laborCostPerHour || 0));
+      }, 0);
+    }
+  }
+
+  return materialCost + laborCost;
+}
+
+/**
+ * Recursively explodes a BOM item list down to raw materials and calculates total material cost.
+ * If a BOM item is a Sub-Assembly with its own childBom, it recursively calculates the sub-assembly cost (including its labor).
+ */
+export function calculateRollupBOMCost(
+  bom: { materialId: string; qty: number }[] | undefined | null,
+  allMaterials: { id: string; unitCost: number; isSubAssembly?: boolean; childBom?: { materialId: string; qty: number }[]; routingId?: string }[],
+  allRoutings?: { id: string; steps: { operationId: string }[] }[],
+  allOperations?: { id: string; costingMethod?: 'fixed' | 'hourly'; fixedLaborCost?: number; laborCostPerHour?: number; durationMinutes?: number }[]
+): number {
+  if (!bom || bom.length === 0) return 0;
+
+  return bom.reduce((total, item) => {
+    const mat = allMaterials.find(m => m.id === item.materialId);
+    if (!mat) return total;
+
+    if (mat.isSubAssembly) {
+      // Rollup child BOM cost + labor cost recursively
+      const subUnitCost = calculateSubAssemblyCost(mat.childBom, allMaterials, mat.routingId, allRoutings, allOperations);
+      return total + (subUnitCost * item.qty);
+    }
+
+    return total + (mat.unitCost * item.qty);
+  }, 0);
 }

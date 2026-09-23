@@ -6,6 +6,7 @@ import type {
   Invoice,
   PurchaseOrder,
   Expense,
+  OtherIncome,
   BankAccount,
   RawMaterial,
   CompanyAsset,
@@ -48,7 +49,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     type: 'ASSET',
     normalBalance: 'DEBIT',
     parentId: 'coa-11000',
-    isHeader: true,
+    isHeader: false,
     level: 3,
     description: 'Saldo kas fisik dan rekening bank operasional',
     isSystem: true,
@@ -99,7 +100,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 3,
     description: 'Nilai perolehan mesin potong, jahit, rakit, dan peralatan kerja',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-12200',
@@ -111,7 +112,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 3,
     description: 'Mobil box dan armada logistik pengiriman',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-12900',
@@ -123,7 +124,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 3,
     description: 'Akumulasi depresiasi mesin dan peralatan (kontra aset)',
-    isSystem: true,
+    isSystem: false,
   },
 
   // ── 2-0000: LIABILITAS ──
@@ -153,7 +154,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
   {
     id: 'coa-21100',
     code: '2-1100',
-    name: 'Hutang Dagang (Supplier)',
+    name: 'Hutang Dagang (AP)',
     type: 'LIABILITY',
     normalBalance: 'CREDIT',
     parentId: 'coa-21000',
@@ -172,7 +173,19 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 3,
     description: 'Beban yang sudah terjadi namun belum dibayarkan',
-    isSystem: true,
+    isSystem: false,
+  },
+  {
+    id: 'coa-21300',
+    code: '2-1300',
+    name: 'Hutang Pinjaman',
+    type: 'LIABILITY',
+    normalBalance: 'CREDIT',
+    parentId: 'coa-21000',
+    isHeader: false,
+    level: 3,
+    description: 'Pinjaman dari pihak ketiga (individu, lembaga keuangan)',
+    isSystem: false,
   },
 
   // ── 3-0000: EKUITAS ──
@@ -202,7 +215,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
   {
     id: 'coa-32000',
     code: '3-2000',
-    name: 'Laba Ditahan (Retained Earnings)',
+    name: 'Laba Ditahan',
     type: 'EQUITY',
     normalBalance: 'CREDIT',
     parentId: 'coa-30000',
@@ -235,6 +248,18 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     level: 2,
     description: 'Hasil omzet penjualan pesanan barang jadi (Sales Order)',
     isSystem: true,
+  },
+  {
+    id: 'coa-42000',
+    code: '4-2000',
+    name: 'Pendapatan Lain-lain',
+    type: 'REVENUE',
+    normalBalance: 'CREDIT',
+    parentId: 'coa-40000',
+    isHeader: false,
+    level: 2,
+    description: 'Pendapatan di luar penjualan produk (limbah, bunga bank, dll.)',
+    isSystem: false,
   },
 
   // ── 5-0000: HARGA POKOK PENJUALAN (HPP / COGS) ──
@@ -308,7 +333,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 2,
     description: 'Gaji staf kantor, sales, admin, dan manajemen non-pabrik',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-62000',
@@ -320,7 +345,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 2,
     description: 'Tagihan PLN, PDAM, internet, dan utilitas kantor',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-63000',
@@ -332,7 +357,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 2,
     description: 'Biaya sewa ruang kantor, workshop, atau gudang',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-64000',
@@ -344,7 +369,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 2,
     description: 'BBM armada pengiriman, tol, parkir, dan ekspedisi luar',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-65000',
@@ -356,7 +381,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 2,
     description: 'Kertas, printer ink, stationary, dan perkakas kecil kantor',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-66000',
@@ -368,7 +393,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 2,
     description: 'Biaya servis berkala dan reparasi mesin/kendaraan',
-    isSystem: true,
+    isSystem: false,
   },
   {
     id: 'coa-69000',
@@ -380,7 +405,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: AccountCode[] = [
     isHeader: false,
     level: 2,
     description: 'Pengeluaran insidental operasional yang tidak terkategori khusus',
-    isSystem: true,
+    isSystem: false,
   },
 ];
 
@@ -466,14 +491,14 @@ export function createOpeningBalanceJournal(
     id: `je-${generateId()}`,
     entryNumber: generateEntryNumber(existingEntriesCount),
     date,
-    description: `Saldo Awal Rekening: ${bankAccount.name}${bankAccount.accountNumber ? ` (${bankAccount.accountNumber})` : ''}`,
+    description: `Saldo Awal ${bankAccount.name}`,
     sourceType: 'OPENING_BALANCE',
     sourceId: bankAccount.id,
     lines: [
       {
         accountId: kasBank.id,
         accountCode: kasBank.code,
-        accountName: `${kasBank.name} (${bankAccount.name})`,
+        accountName: kasBank.name,
         debit: bankAccount.balance,
         credit: 0,
       },
@@ -507,7 +532,7 @@ export function createInvoiceIssuedJournal(
     id: `je-${generateId()}`,
     entryNumber: generateEntryNumber(existingEntriesCount),
     date,
-    description: `Pengakuan Piutang & Pendapatan — Invoice #${invoice.invoiceNumber} (${invoice.customerName})`,
+    description: `Penjualan ${invoice.customerName} #${invoice.invoiceNumber}`,
     sourceType: 'INVOICE_ISSUED',
     sourceId: invoice.id,
     lines: [
@@ -551,14 +576,14 @@ export function createInvoicePaymentJournal(
     id: `je-${generateId()}`,
     entryNumber: generateEntryNumber(existingEntriesCount),
     date,
-    description: `Penerimaan Kas Piutang — Invoice #${invoice.invoiceNumber} (${invoice.customerName})${note ? ` - ${note}` : ''}`,
+    description: `Pembayaran Penjualan ${invoice.customerName} #${invoice.invoiceNumber}${note ? ` (${note})` : ''}`,
     sourceType: 'INVOICE_PAYMENT',
     sourceId: invoice.id,
     lines: [
       {
         accountId: kasBank.id,
         accountCode: kasBank.code,
-        accountName: `${kasBank.name} (${bankAccountName})`,
+        accountName: kasBank.name,
         debit: amount,
         credit: 0,
       },
@@ -592,7 +617,7 @@ export function createPOReceivedJournal(
     id: `je-${generateId()}`,
     entryNumber: generateEntryNumber(existingEntriesCount),
     date,
-    description: `Penerimaan Bahan Baku Masuk Gudang — PO #${po.poNumber} (${po.supplier})`,
+    description: `Pembelanjaan ${po.supplier} #${po.poNumber}`,
     sourceType: 'PO_RECEIVED',
     sourceId: po.id,
     lines: [
@@ -606,7 +631,91 @@ export function createPOReceivedJournal(
       {
         accountId: hutang.id,
         accountCode: hutang.code,
-        accountName: `${hutang.name} (${po.supplier})`,
+        accountName: hutang.name,
+        debit: 0,
+        credit: po.totalAmount,
+      },
+    ],
+    createdAt: date,
+  };
+}
+
+/**
+ * Reversal PO Received Journal (Pembatalan Penerimaan PO)
+ * Debit: Hutang Dagang Supplier (2-1100) -> Menghapus Hutang
+ * Credit: Persediaan Bahan Baku (1-1300) -> Menghapus Persediaan
+ */
+export function createReversalPOReceivedJournal(
+  po: PurchaseOrder,
+  existingEntriesCount: number,
+  reason?: string,
+  date: string = new Date().toISOString(),
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const persediaan = resolveAccount(chartOfAccounts, 'coa-11300', '1-1300', 'ASSET');
+  const hutang = resolveAccount(chartOfAccounts, 'coa-21100', '2-1100', 'LIABILITY');
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description: `Pembatalan/Retur PO #${po.poNumber}${reason ? `: ${reason}` : ''}`,
+    sourceType: 'REVERSAL_PO_RECEIVED',
+    sourceId: po.id,
+    lines: [
+      {
+        accountId: hutang.id,
+        accountCode: hutang.code,
+        accountName: hutang.name,
+        debit: po.totalAmount,
+        credit: 0,
+      },
+      {
+        accountId: persediaan.id,
+        accountCode: persediaan.code,
+        accountName: persediaan.name,
+        debit: 0,
+        credit: po.totalAmount,
+      },
+    ],
+    createdAt: date,
+  };
+}
+
+/**
+ * Reversal Direct Purchase Journal (Pembatalan Pembelian Langsung Cash)
+ * Debit: Kas & Bank (1-1100) -> Pengembalian Kas
+ * Credit: Persediaan Bahan Baku (1-1300) -> Menghapus Persediaan
+ */
+export function createReversalDirectPurchaseJournal(
+  po: PurchaseOrder,
+  existingEntriesCount: number,
+  reason?: string,
+  date: string = new Date().toISOString(),
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const persediaan = resolveAccount(chartOfAccounts, 'coa-11300', '1-1300', 'ASSET');
+  const kasBank = resolveAccount(chartOfAccounts, 'coa-11100', '1-1100', 'ASSET');
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description: `Pembatalan Pembelian Langsung #${po.poNumber}${reason ? `: ${reason}` : ''}`,
+    sourceType: 'REVERSAL_DIRECT_PURCHASE',
+    sourceId: po.id,
+    lines: [
+      {
+        accountId: kasBank.id,
+        accountCode: kasBank.code,
+        accountName: kasBank.name,
+        debit: po.totalAmount,
+        credit: 0,
+      },
+      {
+        accountId: persediaan.id,
+        accountCode: persediaan.code,
+        accountName: persediaan.name,
         debit: 0,
         credit: po.totalAmount,
       },
@@ -634,25 +743,84 @@ export function createPOPaymentJournal(
     id: `je-${generateId()}`,
     entryNumber: generateEntryNumber(existingEntriesCount),
     date,
-    description: `Pelunasan Hutang Supplier — PO #${po.poNumber} (${po.supplier})`,
+    description: `Pelunasan Pembelanjaan ${po.supplier} #${po.poNumber}`,
     sourceType: 'PO_PAYMENT',
     sourceId: po.id,
     lines: [
       {
         accountId: hutang.id,
         accountCode: hutang.code,
-        accountName: `${hutang.name} (${po.supplier})`,
+        accountName: hutang.name,
         debit: po.totalAmount,
         credit: 0,
       },
       {
         accountId: kasBank.id,
         accountCode: kasBank.code,
-        accountName: `${kasBank.name} (${bankAccountName})`,
+        accountName: kasBank.name,
         debit: 0,
         credit: po.totalAmount,
       },
     ],
+    createdAt: date,
+  };
+}
+
+/**
+ * Direct Purchase Journal (Pembelian Langsung - Tanpa PO & Tanpa AP)
+ * Debit: Persediaan Bahan Baku (1-1300) -> Nilai Item
+ * Debit (jika ada): Biaya Operasional / Kirim (6-1900 atau 6-1000) -> Biaya Tambahan
+ * Credit: Kas & Bank (1-1100) -> Total Pembayaran
+ */
+export function createDirectPurchaseJournal(
+  po: PurchaseOrder,
+  bankAccountName: string,
+  existingEntriesCount: number,
+  date: string = new Date().toISOString(),
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const persediaan = resolveAccount(chartOfAccounts, 'coa-11300', '1-1300', 'ASSET');
+  const kasBank = resolveAccount(chartOfAccounts, 'coa-11100', '1-1100', 'ASSET');
+  const itemsTotal = po.items.reduce((sum, i) => sum + i.qty * i.unitCost, 0);
+  const additional = po.additionalCost || 0;
+
+  const lines: JournalEntryLine[] = [
+    {
+      accountId: persediaan.id,
+      accountCode: persediaan.code,
+      accountName: persediaan.name,
+      debit: itemsTotal,
+      credit: 0,
+    },
+  ];
+
+  if (additional > 0) {
+    const biayaLain = resolveAccount(chartOfAccounts, 'coa-61900', '6-1900', 'EXPENSE');
+    lines.push({
+      accountId: biayaLain.id,
+      accountCode: biayaLain.code,
+      accountName: biayaLain.name,
+      debit: additional,
+      credit: 0,
+    });
+  }
+
+  lines.push({
+    accountId: kasBank.id,
+    accountCode: kasBank.code,
+    accountName: kasBank.name,
+    debit: 0,
+    credit: po.totalAmount,
+  });
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description: `Pembelian Langsung ${po.supplier} #${po.poNumber} (${bankAccountName})`,
+    sourceType: 'PO_PAYMENT',
+    sourceId: po.id,
+    lines,
     createdAt: date,
   };
 }
@@ -678,7 +846,7 @@ export function createExpenseJournal(
     id: `je-${generateId()}`,
     entryNumber: generateEntryNumber(existingEntriesCount),
     date,
-    description: `Beban ${bebanAccount.name}${expense.note ? ` — ${expense.note}` : ''}`,
+    description: expense.note?.trim() ? expense.note.trim() : bebanAccount.name,
     sourceType: 'EXPENSE',
     sourceId: expense.id,
     lines: [
@@ -692,7 +860,7 @@ export function createExpenseJournal(
       {
         accountId: kasBank.id,
         accountCode: kasBank.code,
-        accountName: `${kasBank.name} (${bankAccountName})`,
+        accountName: kasBank.name,
         debit: 0,
         credit: expense.amount,
       },
@@ -729,14 +897,208 @@ export function createBankTransferJournal(
       {
         accountId: kasBankTo.id,
         accountCode: kasBankTo.code,
-        accountName: `${kasBankTo.name} (${toBank.name})`,
+        accountName: kasBankTo.name,
         debit: amount,
         credit: 0,
       },
       {
         accountId: kasBankFrom.id,
         accountCode: kasBankFrom.code,
-        accountName: `${kasBankFrom.name} (${fromBank.name})`,
+        accountName: kasBankFrom.name,
+        debit: 0,
+        credit: amount,
+      },
+    ],
+    createdAt: date,
+  };
+}
+
+/**
+ * 8. Cash Inflow Journal (Other Income / Loan Received)
+ * Debit: Kas & Bank (1-1100)
+ * Credit: Selected account from CoA (e.g. 4-2000 Pendapatan Lain-lain, 2-1300 Hutang Pinjaman)
+ */
+export function createCashInflowJournal(
+  income: OtherIncome,
+  bankAccountName: string,
+  existingEntriesCount: number,
+  date: string = income.date || new Date().toISOString(),
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const kasBank = resolveAccount(chartOfAccounts, 'coa-11100', '1-1100', 'ASSET');
+  const targetAccount = resolveAccount(
+    chartOfAccounts,
+    `coa-${income.accountCode.replace('-', '')}`,
+    income.accountCode
+  );
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description: `Penerimaan Kas — ${targetAccount.name}${income.note ? ` (${income.note})` : ''}`,
+    sourceType: 'CASH_INFLOW',
+    sourceId: income.id,
+    lines: [
+      {
+        accountId: kasBank.id,
+        accountCode: kasBank.code,
+        accountName: kasBank.name,
+        debit: income.amount,
+        credit: 0,
+      },
+      {
+        accountId: targetAccount.id,
+        accountCode: targetAccount.code,
+        accountName: targetAccount.name,
+        debit: 0,
+        credit: income.amount,
+      },
+    ],
+    createdAt: date,
+  };
+}
+
+/**
+ * 9. Manual Journal Entry (Adjusting Entries, etc.)
+ */
+export function createManualJournal(
+  description: string,
+  lines: Omit<JournalEntryLine, 'accountName'>[],
+  existingEntriesCount: number,
+  date: string = new Date().toISOString(),
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const fullLines: JournalEntryLine[] = lines.map(line => {
+    const acc = resolveAccount(chartOfAccounts, line.accountId, line.accountCode);
+    return {
+      ...line,
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+    };
+  });
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description,
+    sourceType: 'MANUAL_JOURNAL',
+    lines: fullLines,
+    createdAt: date,
+  };
+}
+
+/**
+ * 10. Closing Entry (Tutup Buku)
+ * Transfers net profit/loss to Retained Earnings (3-2000)
+ */
+export function createClosingJournal(
+  totalRevenue: number,
+  totalCOGS: number,
+  totalExpense: number,
+  existingEntriesCount: number,
+  date: string = new Date().toISOString(),
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const retainedEarnings = resolveAccount(chartOfAccounts, 'coa-32000', '3-2000', 'EQUITY');
+  const revenueAccount = resolveAccount(chartOfAccounts, 'coa-41000', '4-1000', 'REVENUE');
+  const cogsAccount = resolveAccount(chartOfAccounts, 'coa-50000', '5-0000', 'COGS');
+  const expenseAccount = resolveAccount(chartOfAccounts, 'coa-60000', '6-0000', 'EXPENSE');
+
+  const netProfit = totalRevenue - (totalCOGS + totalExpense);
+  const isLoss = netProfit < 0;
+
+  const lines: JournalEntryLine[] = [
+    {
+      accountId: revenueAccount.id,
+      accountCode: revenueAccount.code,
+      accountName: revenueAccount.name,
+      debit: totalRevenue, // Close revenue (normal credit) by debiting
+      credit: 0,
+    },
+    {
+      accountId: cogsAccount.id,
+      accountCode: cogsAccount.code,
+      accountName: cogsAccount.name,
+      debit: 0,
+      credit: totalCOGS, // Close COGS (normal debit) by crediting
+    },
+    {
+      accountId: expenseAccount.id,
+      accountCode: expenseAccount.code,
+      accountName: expenseAccount.name,
+      debit: 0,
+      credit: totalExpense, // Close Expense (normal debit) by crediting
+    },
+  ];
+
+  if (isLoss) {
+    // Loss: debit retained earnings
+    lines.push({
+      accountId: retainedEarnings.id,
+      accountCode: retainedEarnings.code,
+      accountName: retainedEarnings.name,
+      debit: Math.abs(netProfit),
+      credit: 0,
+    });
+  } else {
+    // Profit: credit retained earnings
+    lines.push({
+      accountId: retainedEarnings.id,
+      accountCode: retainedEarnings.code,
+      accountName: retainedEarnings.name,
+      debit: 0,
+      credit: netProfit,
+    });
+  }
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description: `Tutup Buku Periode ${new Date(date).toLocaleString('id-ID', { month: 'long', year: 'numeric' })}`,
+    sourceType: 'CLOSING_ENTRY',
+    lines,
+    createdAt: date,
+  };
+}
+
+/**
+ * 11. Dividend Distribution Journal
+ * Debit: Laba Ditahan (3-2000)
+ * Credit: Kas & Bank (1-1100)
+ */
+export function createDividendJournal(
+  amount: number,
+  bankAccountId: string,
+  existingEntriesCount: number,
+  date: string = new Date().toISOString(),
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const retainedEarnings = resolveAccount(chartOfAccounts, 'coa-32000', '3-2000', 'EQUITY');
+  const kasBank = resolveAccount(chartOfAccounts, 'coa-11100', '1-1100', 'ASSET');
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description: 'Pembagian Dividen',
+    sourceType: 'DIVIDEND',
+    sourceId: bankAccountId,
+    lines: [
+      {
+        accountId: retainedEarnings.id,
+        accountCode: retainedEarnings.code,
+        accountName: retainedEarnings.name,
+        debit: amount,
+        credit: 0,
+      },
+      {
+        accountId: kasBank.id,
+        accountCode: kasBank.code,
+        accountName: kasBank.name,
         debit: 0,
         credit: amount,
       },
@@ -782,28 +1144,47 @@ export function computeTrialBalance(
   let grandDebit = 0;
   let grandCredit = 0;
 
-  const rows: TrialBalanceRow[] = chartOfAccounts
-    .filter(a => !a.isHeader)
-    .map(acc => {
-      const totals = accountTotals[acc.code] || { totalDebit: 0, totalCredit: 0 };
-      grandDebit += totals.totalDebit;
-      grandCredit += totals.totalCredit;
+  // Build target list of accounts to display (all non-header accounts + any account that has journal activity)
+  const activeAccounts = chartOfAccounts.filter(a => !a.isHeader);
+  const includedCodes = new Set(activeAccounts.map(a => a.code));
 
-      const netBalance =
-        acc.normalBalance === 'DEBIT'
-          ? totals.totalDebit - totals.totalCredit
-          : totals.totalCredit - totals.totalDebit;
+  Object.keys(accountTotals).forEach(code => {
+    if (!includedCodes.has(code)) {
+      const match = chartOfAccounts.find(a => a.code === code);
+      activeAccounts.push({
+        id: match?.id || `coa-${code}`,
+        code,
+        name: match?.name || `Akun ${code}`,
+        type: match?.type || 'ASSET',
+        normalBalance: match?.normalBalance || 'DEBIT',
+        isHeader: false,
+        level: match?.level || 3,
+        description: match?.description || '',
+      });
+      includedCodes.add(code);
+    }
+  });
 
-      return {
-        code: acc.code,
-        name: acc.name,
-        type: acc.type,
-        normalBalance: acc.normalBalance,
-        totalDebit: totals.totalDebit,
-        totalCredit: totals.totalCredit,
-        netBalance,
-      };
-    });
+  const rows: TrialBalanceRow[] = activeAccounts.map(acc => {
+    const totals = accountTotals[acc.code] || { totalDebit: 0, totalCredit: 0 };
+    grandDebit += totals.totalDebit;
+    grandCredit += totals.totalCredit;
+
+    const netBalance =
+      acc.normalBalance === 'DEBIT'
+        ? totals.totalDebit - totals.totalCredit
+        : totals.totalCredit - totals.totalDebit;
+
+    return {
+      code: acc.code,
+      name: acc.name,
+      type: acc.type,
+      normalBalance: acc.normalBalance,
+      totalDebit: totals.totalDebit,
+      totalCredit: totals.totalCredit,
+      netBalance,
+    };
+  });
 
   return {
     rows,

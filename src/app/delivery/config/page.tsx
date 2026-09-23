@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Toggle } from '@/components/ui/Toggle';
+import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
 import {
@@ -542,50 +543,35 @@ export default function DeliveryConfigPage() {
                 <div className="rounded-xl border border-indigo-200 bg-indigo-50/20 dark:border-indigo-900/50 dark:bg-slate-800/40 p-4 space-y-4 shadow-xs">
                   {/* Region Dropdowns: Provinsi & Kota/Kabupaten */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                        Pilih Provinsi
-                      </label>
-                      <select
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        value={formProvinceId}
-                        onChange={e => {
-                          setFormProvinceId(e.target.value);
-                          setFormRegencyId('');
-                        }}
-                      >
-                        <option value="">-- Pilih Provinsi --</option>
-                        {regionsData.provinces.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <Select
+                      label="Pilih Provinsi"
+                      placeholder="-- Pilih Provinsi --"
+                      value={formProvinceId}
+                      onChange={e => {
+                        setFormProvinceId(e.target.value);
+                        setFormRegencyId('');
+                      }}
+                      options={regionsData.provinces.map(p => ({
+                        value: p.id,
+                        label: p.name,
+                      }))}
+                    />
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                        Pilih Kota / Kabupaten
-                      </label>
-                      <select
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-50"
-                        value={formRegencyId}
-                        onChange={e => setFormRegencyId(e.target.value)}
-                        disabled={!formProvinceId}
-                      >
-                        <option value="">-- Pilih Kota/Kab. --</option>
-                        {formRegenciesList.map(r => {
-                          const isAlreadyConfigured = configuredRegencyIds.includes(r.id) && r.id !== editingRegencyId;
-                          return (
-                            <option
-                              key={r.id}
-                              value={r.id}
-                              disabled={isAlreadyConfigured}
-                            >
-                              {r.name} {isAlreadyConfigured ? '(Sudah terdaftar)' : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
+                    <Select
+                      label="Pilih Kota / Kabupaten"
+                      placeholder="-- Pilih Kota/Kab. --"
+                      value={formRegencyId}
+                      onChange={e => setFormRegencyId(e.target.value)}
+                      disabled={!formProvinceId}
+                      options={formRegenciesList.map(r => {
+                        const isAlreadyConfigured = configuredRegencyIds.includes(r.id) && r.id !== editingRegencyId;
+                        return {
+                          value: r.id,
+                          label: `${r.name} ${isAlreadyConfigured ? '(Sudah terdaftar)' : ''}`,
+                          disabled: isAlreadyConfigured,
+                        };
+                      })}
+                    />
                   </div>
 
                   {/* Area Settings Panel (When Regency is chosen) */}

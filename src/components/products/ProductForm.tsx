@@ -10,7 +10,8 @@ import { Select } from '@/components/ui/Select';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { formatCurrency, generateId, getEffectiveVariantBOM } from '@/lib/utils';
+import { Badge } from '@/components/ui/Badge';
+import { formatCurrency, generateId, getEffectiveVariantBOM, calculateRollupBOMCost } from '@/lib/utils';
 import type {
   Product,
   ProductVariantSKU,
@@ -42,6 +43,8 @@ import {
   Clock,
   Wrench,
   Tag,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ElementType> = { BedDouble, Layers, Box };
@@ -60,6 +63,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     bomTemplates,
     bomTemplateItems,
     routings,
+    operations = [],
     masterModifierGroups,
     addProduct,
     updateProduct,
@@ -74,6 +78,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const [hasVariants, setHasVariants] = useState<boolean>(() => {
     return Boolean(initialProduct?.variantTypes && initialProduct.variantTypes.length > 0);
   });
+
+
 
   // ── 1. Basic Product Info ──────────────────────────────────────────────────
   const [name, setName] = useState(initialProduct?.name || '');
@@ -242,6 +248,13 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+
+  // Sub-Assembly expandable rows state
+  const [expandedSubAssemblies, setExpandedSubAssemblies] = useState<Record<string, boolean>>({});
+
+  const toggleSubAssemblyExpand = (key: string) => {
+    setExpandedSubAssemblies(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // Variant Modal BOM
   const [editingBOMVariantId, setEditingBOMVariantId] = useState<string | null>(null);
@@ -520,12 +533,9 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     setModalNewMaterialQty(1);
   };
 
-  // ── Helper: Calculate BOM Cost ─────────────────────────────────────────────
+  // ── Helper: Calculate BOM Cost (with recursive Sub-Assembly rollup including labor) ──────
   const calculateBOMCost = (bom: BOMItem[]): number => {
-    return bom.reduce((sum, item) => {
-      const mat = materials.find(m => m.id === item.materialId);
-      return sum + (mat ? mat.unitCost * item.qty : 0);
-    }, 0);
+    return calculateRollupBOMCost(bom, materials, routings, operations);
   };
 
   // ── Save Handler ───────────────────────────────────────────────────────────
@@ -812,26 +822,6 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                   placeholder="0"
                   inputSize="sm"
                 />
-                <p className="text-[11px] text-slate-500">Harga dasar sebelum PPN atau diskon pemesanan.</p>
-              </div>
-
-              {/* Kode SKU */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Kode SKU Produk <span className="text-[10px] font-normal text-slate-400">(Otomatis atau input manual)</span>
-                </label>
-                <Input
-                  type="text"
-                  value={singleSku}
-                  onChange={e => {
-                    setSingleSku(e.target.value);
-                    setSkuManuallyEdited(true);
-                  }}
-                  placeholder="Contoh: DPN-MIN-001"
-                  inputSize="sm"
-                  className="font-mono font-semibold uppercase"
-                />
-                <p className="text-[11px] text-slate-500">Kode unik pencatatan inventaris dan SPK.</p>
               </div>
             </div>
 
@@ -872,223 +862,292 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
           {/* CARD: Blueprint BOM Produk Tunggal */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Layers3 className="h-4 w-4 text-indigo-600" />
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                  3. Blueprint Bill of Materials (BOM)
-                </h2>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Layers3 className="h-4 w-4 text-indigo-600" />
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    3. Blueprint Bill of Materials (BOM)
+                  </h2>
+                </div>
+                <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Estimasi HPP Material: <strong className="text-emerald-600 dark:text-emerald-400 text-sm font-bold ml-1">{formatCurrency(calculateBOMCost(effectiveSingleBom))}</strong>
+                </div>
               </div>
-              <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Estimasi HPP Material: <strong className="text-emerald-600 dark:text-emerald-400 text-sm font-bold ml-1">{formatCurrency(calculateBOMCost(effectiveSingleBom))}</strong>
-              </div>
-            </div>
 
-            {/* Control Panel: Master Preset & Custom BOM Toggle */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/40 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-700/80 pb-3">
-                <div className="space-y-0.5">
-                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                    Pilih Master Preset BOM:
-                  </label>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                    Resep material standar bawaan dari Katalog Preset
+              {/* Control Panel: Master Preset & Custom BOM Toggle */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/40 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-700/80 pb-3">
+                  <div className="space-y-0.5">
+                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Pilih Master Preset BOM:
+                    </label>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Resep material standar bawaan dari Katalog Preset
+                    </p>
+                  </div>
+                  <select
+                    value={singlePresetId}
+                    onChange={e => setSinglePresetId(e.target.value)}
+                    className="sm:w-64 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="">-- Pilih Master Preset BOM --</option>
+                    {bomTemplates.map(tpl => (
+                      <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Mode Custom BOM Toggle */}
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Mode BOM Produk:</span>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                      isSingleCustomBOM
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                        : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
+                    }`}>
+                      {isSingleCustomBOM ? (
+                        <><Unlock className="h-3 w-3" /> Custom BoM (Khusus Produk Ini)</>
+                      ) : (
+                        <><Lock className="h-3 w-3" /> Sesuai Preset (Terhubung Live Master)</>
+                      )}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={toggleSingleCustomBOM}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      isSingleCustomBOM ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
+                    }`}
+                    title={isSingleCustomBOM ? 'Beralih ke Mode Sesuai Preset' : 'Beralih ke Mode Custom BoM'}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      isSingleCustomBOM ? 'translate-x-5' : 'translate-x-0'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* Information Banner */}
+                {!isSingleCustomBOM ? (
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-100 text-indigo-900 dark:bg-indigo-950/30 dark:border-indigo-900/50 dark:text-indigo-300 text-[11px]">
+                    <Info className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />
+                    <div>
+                      <strong className="font-semibold">Mode Sesuai Preset Aktif (Read-Only)</strong> — BOM produk ini terhubung live ke Master Preset. Perubahan pada Master Preset BOM di Katalog akan <strong>otomatis memperbarui</strong> produk ini. Untuk mengubah material khusus produk ini, aktifkan toggle <strong>Mode Custom BoM</strong>.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-900 dark:bg-amber-950/30 dark:border-amber-900/50 dark:text-amber-300 text-[11px]">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                    <div>
+                      <strong className="font-semibold">Mode Custom BoM Aktif</strong> — Anda bebas menambah, menghapus, dan mengubah kuantitas bahan baku. Perubahan pada Master Preset BOM di Katalog <strong>tidak akan mempengaruhi</strong> produk ini.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tabel Material Tunggal */}
+              {effectiveSingleBom.length === 0 ? (
+                <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/40 text-slate-400">
+                  <Layers className="h-7 w-7 mx-auto mb-1.5 opacity-50 text-slate-400" />
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Belum ada bahan baku pada produk ini.</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Pilih preset di atas atau aktifkan Mode Custom BoM untuk membuat resep manual.
                   </p>
                 </div>
-                <select
-                  value={singlePresetId}
-                  onChange={e => setSinglePresetId(e.target.value)}
-                  className="sm:w-64 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  <option value="">-- Pilih Master Preset BOM --</option>
-                  {bomTemplates.map(tpl => (
-                    <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Mode Custom BOM Toggle */}
-              <div className="flex items-center justify-between pt-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Mode BOM Produk:</span>
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                    isSingleCustomBOM
-                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                      : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
-                  }`}>
-                    {isSingleCustomBOM ? (
-                      <><Unlock className="h-3 w-3" /> Custom BoM (Khusus Produk Ini)</>
-                    ) : (
-                      <><Lock className="h-3 w-3" /> Sesuai Preset (Terhubung Live Master)</>
-                    )}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={toggleSingleCustomBOM}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    isSingleCustomBOM ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
-                  }`}
-                  title={isSingleCustomBOM ? 'Beralih ke Mode Sesuai Preset' : 'Beralih ke Mode Custom BoM'}
-                >
-                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    isSingleCustomBOM ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </button>
-              </div>
-
-              {/* Information Banner */}
-              {!isSingleCustomBOM ? (
-                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-100 text-indigo-900 dark:bg-indigo-950/30 dark:border-indigo-900/50 dark:text-indigo-300 text-[11px]">
-                  <Info className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />
-                  <div>
-                    <strong className="font-semibold">Mode Sesuai Preset Aktif (Read-Only)</strong> — BOM produk ini terhubung live ke Master Preset. Perubahan pada Master Preset BOM di Katalog akan <strong>otomatis memperbarui</strong> produk ini. Untuk mengubah material khusus produk ini, aktifkan toggle <strong>Mode Custom BoM</strong>.
-                  </div>
-                </div>
               ) : (
-                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-900 dark:bg-amber-950/30 dark:border-amber-900/50 dark:text-amber-300 text-[11px]">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-                  <div>
-                    <strong className="font-semibold">Mode Custom BoM Aktif</strong> — Anda bebas menambah, menghapus, dan mengubah kuantitas bahan baku. Perubahan pada Master Preset BOM di Katalog <strong>tidak akan mempengaruhi</strong> produk ini.
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="px-3 py-2">Bahan Baku</th>
+                        <th className="px-3 py-2 text-right">Biaya Satuan</th>
+                        <th className="px-3 py-2 text-center w-28">Kuantitas</th>
+                        <th className="px-3 py-2 text-center w-20">Satuan</th>
+                        <th className="px-3 py-2 text-right">Subtotal</th>
+                        {isSingleCustomBOM && <th className="px-2 py-2 text-center w-10"></th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {effectiveSingleBom.map((item, idx) => {
+                        const mat = materials.find(m => m.id === item.materialId);
+                        const unitCost = mat?.unitCost || 0;
+                        const subtotal = unitCost * item.qty;
+                        const isExpanded = Boolean(expandedSubAssemblies[`single-${item.materialId}`]);
+
+                        return (
+                          <React.Fragment key={idx}>
+                            <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-slate-900 dark:text-white">{mat?.name || item.materialId}</span>
+                                  {mat?.isSubAssembly && (
+                                    <>
+                                      <Badge variant="purple">Sub-Assembly</Badge>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleSubAssemblyExpand(`single-${item.materialId}`)}
+                                        className="p-0.5 rounded text-purple-600 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-950/60 transition-colors"
+                                        title={isExpanded ? 'Sembunyikan Child BOM' : 'Lihat Child BOM'}
+                                      >
+                                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-400">{mat?.code} • {mat?.category}</div>
+                              </td>
+                              <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300 font-medium">
+                                {formatCurrency(unitCost)}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {isSingleCustomBOM ? (
+                                  <input
+                                    type="number"
+                                    min={0.01}
+                                    step={0.01}
+                                    value={item.qty}
+                                    onChange={e => handleUpdateSingleBomQty(item.materialId, parseFloat(e.target.value) || 0)}
+                                    className="w-20 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-right dark:border-slate-700 dark:bg-slate-800 dark:text-white mx-auto"
+                                  />
+                                ) : (
+                                  <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">{item.qty}</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  {mat?.unit || 'unit'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
+                                {formatCurrency(subtotal)}
+                              </td>
+                              {isSingleCustomBOM && (
+                                <td className="px-2 py-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveSingleBomItem(item.materialId)}
+                                    className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-950/40"
+                                    title="Hapus Material"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+
+                            {mat?.isSubAssembly && isExpanded && (
+                              <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                                <td colSpan={isSingleCustomBOM ? 6 : 5} className="px-4 py-3 border-t border-b border-slate-100 dark:border-slate-800">
+                                  <div className="space-y-2 text-xs">
+                                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 font-semibold">
+                                      <span className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-bold">
+                                        <Layers className="h-3.5 w-3.5" /> Material Penyusun Sub-Assembly ({mat.name}):
+                                      </span>
+                                      <span className="text-[10px] italic text-slate-400">
+                                        (Bahan penyusun terkunci dari Master BOM Sub-Assembly di Inventory)
+                                      </span>
+                                    </div>
+                                    <div className="rounded-lg border border-purple-100 dark:border-purple-900/40 overflow-hidden bg-white dark:bg-slate-900">
+                                      <table className="w-full text-left text-xs">
+                                        <thead className="bg-purple-50/50 dark:bg-purple-950/20 text-purple-900 dark:text-purple-200 text-[10px] font-bold">
+                                          <tr>
+                                            <th className="px-3 py-1.5">Material Child</th>
+                                            <th className="px-3 py-1.5 text-center">Qty / Sub-Assembly</th>
+                                            <th className="px-3 py-1.5 text-center">Total Qty Kebutuhan</th>
+                                            <th className="px-3 py-1.5 text-right">Biaya Satuan</th>
+                                            <th className="px-3 py-1.5 text-right">Subtotal</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                          {(mat.childBom || []).map((child, cIdx) => {
+                                            const cMat = materials.find(m => m.id === child.materialId);
+                                            const cUnitCost = cMat?.unitCost || 0;
+                                            const totalQty = child.qty * item.qty;
+                                            const cSubtotal = cUnitCost * totalQty;
+
+                                            return (
+                                              <tr key={cIdx}>
+                                                <td className="px-3 py-1.5 font-medium">
+                                                  {cMat?.name || child.materialId}
+                                                  <span className="text-[10px] text-slate-400 ml-1 font-normal">({cMat?.code})</span>
+                                                </td>
+                                                <td className="px-3 py-1.5 text-center font-mono">{child.qty} {cMat?.unit}</td>
+                                                <td className="px-3 py-1.5 text-center font-mono font-bold">{totalQty} {cMat?.unit}</td>
+                                                <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(cUnitCost)}</td>
+                                                <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-900 dark:text-white">{formatCurrency(cSubtotal)}</td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-50/80 dark:bg-slate-800/60 font-bold border-t border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 text-slate-700 dark:text-slate-300">
+                          Total Estimasi HPP Material Produk
+                        </td>
+                        <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400 text-sm">
+                          {formatCurrency(calculateBOMCost(effectiveSingleBom))}
+                        </td>
+                        {isSingleCustomBOM && <td></td>}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {/* Tambah Material Manual (Hanya pada Mode Custom BoM) */}
+              {isSingleCustomBOM && (
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <select
+                    value={singleNewMatId}
+                    onChange={e => setSingleNewMatId(e.target.value)}
+                    className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+                  >
+                    <option value="">
+                      {availableMaterialsForSingle.length > 0
+                        ? '+ Tambah Material / Sub-Assembly ke BOM...'
+                        : '-- Semua material telah ditambahkan ke BOM --'}
+                    </option>
+                    {availableMaterialsForSingle.map(m => (
+                      <option key={m.id} value={m.id}>
+                        [{m.category}] {m.name} {m.isSubAssembly ? '(Sub-Assembly) ' : ''}— {formatCurrency(m.unitCost)} / {m.unit}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0.01}
+                      step={0.01}
+                      value={singleNewMatQty}
+                      onChange={e => setSingleNewMatQty(parseFloat(e.target.value) || 1)}
+                      placeholder="Qty"
+                      disabled={!singleNewMatId}
+                      className="w-20 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-right dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm disabled:opacity-50"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddManualMaterialToSingle}
+                      disabled={!singleNewMatId}
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> Tambah
+                    </Button>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* Tabel Material Tunggal */}
-            {effectiveSingleBom.length === 0 ? (
-              <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/40 text-slate-400">
-                <Layers className="h-7 w-7 mx-auto mb-1.5 opacity-50 text-slate-400" />
-                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Belum ada bahan baku pada produk ini.</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Pilih preset di atas atau aktifkan Mode Custom BoM untuk membuat resep manual.
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
-                    <tr>
-                      <th className="px-3 py-2">Bahan Baku</th>
-                      <th className="px-3 py-2 text-right">Biaya Satuan</th>
-                      <th className="px-3 py-2 text-center w-28">Kuantitas</th>
-                      <th className="px-3 py-2 text-center w-20">Satuan</th>
-                      <th className="px-3 py-2 text-right">Subtotal</th>
-                      {isSingleCustomBOM && <th className="px-2 py-2 text-center w-10"></th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {effectiveSingleBom.map((item, idx) => {
-                      const mat = materials.find(m => m.id === item.materialId);
-                      const unitCost = mat?.unitCost || 0;
-                      const subtotal = unitCost * item.qty;
-
-                      return (
-                        <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
-                          <td className="px-3 py-2">
-                            <div className="font-semibold text-slate-900 dark:text-white">{mat?.name || item.materialId}</div>
-                            <div className="text-[10px] text-slate-400">{mat?.code} • {mat?.category}</div>
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300 font-medium">
-                            {formatCurrency(unitCost)}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            {isSingleCustomBOM ? (
-                              <input
-                                type="number"
-                                min={0.01}
-                                step={0.01}
-                                value={item.qty}
-                                onChange={e => handleUpdateSingleBomQty(item.materialId, parseFloat(e.target.value) || 0)}
-                                className="w-20 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-right dark:border-slate-700 dark:bg-slate-800 dark:text-white mx-auto"
-                              />
-                            ) : (
-                              <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">{item.qty}</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                              {mat?.unit || 'unit'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
-                            {formatCurrency(subtotal)}
-                          </td>
-                          {isSingleCustomBOM && (
-                            <td className="px-2 py-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveSingleBomItem(item.materialId)}
-                                className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-950/40"
-                                title="Hapus Material"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-slate-50/80 dark:bg-slate-800/60 font-bold border-t border-slate-200 dark:border-slate-700">
-                    <tr>
-                      <td colSpan={4} className="px-3 py-2 text-slate-700 dark:text-slate-300">
-                        Total Estimasi HPP Material Produk
-                      </td>
-                      <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400 text-sm">
-                        {formatCurrency(calculateBOMCost(effectiveSingleBom))}
-                      </td>
-                      {isSingleCustomBOM && <td></td>}
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-
-            {/* Tambah Material Manual (Hanya pada Mode Custom BoM) */}
-            {isSingleCustomBOM && (
-              <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                <select
-                  value={singleNewMatId}
-                  onChange={e => setSingleNewMatId(e.target.value)}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
-                >
-                  <option value="">
-                    {availableMaterialsForSingle.length > 0
-                      ? '+ Tambah Material Baru ke BOM...'
-                      : '-- Semua material telah ditambahkan ke BOM --'}
-                  </option>
-                  {availableMaterialsForSingle.map(m => (
-                    <option key={m.id} value={m.id}>
-                      [{m.category}] {m.name} — {formatCurrency(m.unitCost)} / {m.unit}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0.01}
-                    step={0.01}
-                    value={singleNewMatQty}
-                    onChange={e => setSingleNewMatQty(parseFloat(e.target.value) || 1)}
-                    placeholder="Qty"
-                    disabled={!singleNewMatId}
-                    className="w-20 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-right dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm disabled:opacity-50"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleAddManualMaterialToSingle}
-                    disabled={!singleNewMatId}
-                  >
-                    <Plus className="h-4 w-4 mr-1" /> Tambah
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
         </>
       )}
 
@@ -1766,6 +1825,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           isOpen={true}
           onClose={() => setShowCategoryModal(false)}
           title="Kelola Kategori Produk"
+          actions={<Button type="button" onClick={() => setShowCategoryModal(false)}>Selesai</Button>}
         >
           <div className="space-y-4 text-xs">
             <div className="flex gap-2">
@@ -1802,9 +1862,6 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                   </button>
                 </div>
               ))}
-            </div>
-            <div className="flex justify-end pt-2">
-              <Button type="button" onClick={() => setShowCategoryModal(false)}>Selesai</Button>
             </div>
           </div>
         </Modal>
@@ -1848,6 +1905,16 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
             onClose={() => setEditingBOMVariantId(null)}
             title="Kelola Blueprint BOM Varian"
             size="xl"
+            actions={
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setEditingBOMVariantId(null)}
+                className="px-5 shadow-sm"
+              >
+                Selesai & Simpan Blueprint
+              </Button>
+            }
           >
             <div className="space-y-4 text-xs">
               {/* Top Variant Banner & Summary KPIs */}
@@ -2024,63 +2091,130 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                           const mat = materials.find(m => m.id === item.materialId);
                           const unitCost = mat?.unitCost || 0;
                           const subtotal = unitCost * item.qty;
+                          const isExpanded = Boolean(expandedSubAssemblies[`var-${activeEditingVariant.id}-${item.materialId}`]);
 
                           return (
-                            <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-3.5 py-2.5">
-                                <div className="font-semibold text-slate-900 dark:text-white">
-                                  {mat?.name || 'Material tidak ditemukan'}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-[10px] font-mono text-slate-400">{mat?.code || '-'}</span>
-                                  <span className="inline-block w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
-                                  <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded border border-indigo-100 dark:border-indigo-900/40">
-                                    {mat?.category || 'Umum'}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-mono text-slate-600 dark:text-slate-300">
-                                {formatCurrency(unitCost)}
-                              </td>
-                              <td className="px-3 py-2.5 text-center">
-                                {isModalCustomBOM ? (
-                                  <Input
-                                    type="number"
-                                    min={0.01}
-                                    step={0.01}
-                                    value={item.qty}
-                                    onChange={e => handleUpdateActiveVariantBOMQty(item.materialId, parseFloat(e.target.value) || 0)}
-                                    inputSize="sm"
-                                    containerClassName="w-20 mx-auto"
-                                    className="font-mono font-bold text-right"
-                                  />
-                                ) : (
-                                  <span className="font-bold font-mono text-slate-900 dark:text-white">
-                                    {item.qty}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2.5 text-center">
-                                <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  {mat?.unit || 'unit'}
-                                </span>
-                              </td>
-                              <td className="px-3.5 py-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                                {formatCurrency(subtotal)}
-                              </td>
-                              {isModalCustomBOM && (
-                                <td className="px-2 py-2.5 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveActiveVariantBOMItem(item.materialId)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                                    title="Hapus Material"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                            <React.Fragment key={idx}>
+                              <tr className="hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition-colors">
+                                <td className="px-3.5 py-2.5">
+                                  <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
+                                    <span>{mat?.name || 'Material tidak ditemukan'}</span>
+                                    {mat?.isSubAssembly && (
+                                      <>
+                                        <Badge variant="purple">Sub-Assembly</Badge>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleSubAssemblyExpand(`var-${activeEditingVariant.id}-${item.materialId}`)}
+                                          className="p-0.5 rounded text-purple-600 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-950/60 transition-colors"
+                                          title={isExpanded ? 'Sembunyikan Child BOM' : 'Lihat Child BOM'}
+                                        >
+                                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[10px] font-mono text-slate-400">{mat?.code || '-'}</span>
+                                    <span className="inline-block w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                                    <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded border border-indigo-100 dark:border-indigo-900/40">
+                                      {mat?.category || 'Umum'}
+                                    </span>
+                                  </div>
                                 </td>
+                                <td className="px-3 py-2.5 text-right font-mono text-slate-600 dark:text-slate-300">
+                                  {formatCurrency(unitCost)}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  {isModalCustomBOM ? (
+                                    <Input
+                                      type="number"
+                                      min={0.01}
+                                      step={0.01}
+                                      value={item.qty}
+                                      onChange={e => handleUpdateActiveVariantBOMQty(item.materialId, parseFloat(e.target.value) || 0)}
+                                      inputSize="sm"
+                                      containerClassName="w-20 mx-auto"
+                                      className="font-mono font-bold text-right"
+                                    />
+                                  ) : (
+                                    <span className="font-bold font-mono text-slate-900 dark:text-white">
+                                      {item.qty}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    {mat?.unit || 'unit'}
+                                  </span>
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                                  {formatCurrency(subtotal)}
+                                </td>
+                                {isModalCustomBOM && (
+                                  <td className="px-2 py-2.5 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveActiveVariantBOMItem(item.materialId)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                                      title="Hapus Material"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+
+                              {mat?.isSubAssembly && isExpanded && (
+                                <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                                  <td colSpan={isModalCustomBOM ? 6 : 5} className="px-4 py-3 border-t border-b border-slate-100 dark:border-slate-800">
+                                    <div className="space-y-2 text-xs">
+                                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 font-semibold">
+                                        <span className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-bold">
+                                          <Layers className="h-3.5 w-3.5" /> Material Penyusun Sub-Assembly ({mat.name}):
+                                        </span>
+                                        <span className="text-[10px] italic text-slate-400">
+                                          (Bahan penyusun terkunci dari Master BOM Sub-Assembly di Inventory)
+                                        </span>
+                                      </div>
+                                      <div className="rounded-lg border border-purple-100 dark:border-purple-900/40 overflow-hidden bg-white dark:bg-slate-900">
+                                        <table className="w-full text-left text-xs">
+                                          <thead className="bg-purple-50/50 dark:bg-purple-950/20 text-purple-900 dark:text-purple-200 text-[10px] font-bold">
+                                            <tr>
+                                              <th className="px-3 py-1.5">Material Child</th>
+                                              <th className="px-3 py-1.5 text-center">Qty / Sub-Assembly</th>
+                                              <th className="px-3 py-1.5 text-center">Total Qty Kebutuhan</th>
+                                              <th className="px-3 py-1.5 text-right">Biaya Satuan</th>
+                                              <th className="px-3 py-1.5 text-right">Subtotal</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                                            {(mat.childBom || []).map((child, cIdx) => {
+                                              const cMat = materials.find(m => m.id === child.materialId);
+                                              const cUnitCost = cMat?.unitCost || 0;
+                                              const totalQty = child.qty * item.qty;
+                                              const cSubtotal = cUnitCost * totalQty;
+
+                                              return (
+                                                <tr key={cIdx}>
+                                                  <td className="px-3 py-1.5 font-medium">
+                                                    {cMat?.name || child.materialId}
+                                                    <span className="text-[10px] text-slate-400 ml-1 font-normal">({cMat?.code})</span>
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-center font-mono">{child.qty} {cMat?.unit}</td>
+                                                  <td className="px-3 py-1.5 text-center font-mono font-bold">{totalQty} {cMat?.unit}</td>
+                                                  <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(cUnitCost)}</td>
+                                                  <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-900 dark:text-white">{formatCurrency(cSubtotal)}</td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
                               )}
-                            </tr>
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
@@ -2105,7 +2239,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                 <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20 space-y-2">
                   <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
                     <Plus className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    Tambah Material Manual ke Varian Custom
+                    Tambah Material / Sub-Assembly Manual ke Varian Custom
                   </div>
                   <div className="flex flex-col sm:flex-row items-center gap-2">
                     <Select
@@ -2116,12 +2250,12 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     >
                       <option value="">
                         {availableMaterialsForVariant.length > 0
-                          ? '-- Pilih Bahan Baku --'
+                          ? '-- Pilih Bahan Baku / Sub-Assembly --'
                           : '-- Semua material telah ditambahkan --'}
                       </option>
                       {availableMaterialsForVariant.map(m => (
                         <option key={m.id} value={m.id}>
-                          [{m.category}] {m.name} — {formatCurrency(m.unitCost)} / {m.unit}
+                          [{m.category}] {m.name} {m.isSubAssembly ? '(Sub-Assembly) ' : ''}— {formatCurrency(m.unitCost)} / {m.unit}
                         </option>
                       ))}
                     </Select>
@@ -2154,22 +2288,11 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                 </div>
               )}
 
-              {/* Modal Actions */}
-              <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {isModalCustomBOM
-                    ? '*Kustomisasi tersimpan pada varian ini'
-                    : '*Varian ini menggunakan rincian live dari Master Preset'}
-                </span>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => setEditingBOMVariantId(null)}
-                  className="px-5 shadow-sm"
-                >
-                  Selesai & Simpan Blueprint
-                </Button>
-              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+                {isModalCustomBOM
+                  ? '*Kustomisasi tersimpan pada varian ini'
+                  : '*Varian ini menggunakan rincian live dari Master Preset'}
+              </p>
             </div>
           </Modal>
         );

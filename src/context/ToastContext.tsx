@@ -123,9 +123,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           return (
             <div
               key={t.id}
-              className={`pointer-events-auto flex items-center justify-between gap-3.5 px-4 py-3 rounded-xl bg-white text-slate-900 border border-slate-200 shadow-xl shadow-slate-400/20 dark:bg-slate-900 dark:text-white dark:border-slate-700/80 dark:shadow-2xl dark:shadow-black/80 transition-all ${
-                t.isExiting ? 'animate-toast-out' : 'animate-toast-in'
-              } max-w-full`}
+              className={`pointer-events-auto flex items-center justify-between gap-3.5 px-4 py-3 rounded-xl bg-white text-slate-900 border border-slate-200 shadow-xl shadow-slate-400/20 dark:bg-slate-900 dark:text-white dark:border-slate-700/80 dark:shadow-2xl dark:shadow-black/80 transition-all ${t.isExiting ? 'animate-toast-out' : 'animate-toast-in'
+                } max-w-full`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <Icon className={`h-5 w-5 shrink-0 ${iconColorStyle}`} />
@@ -155,21 +154,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             <div className="p-6 space-y-4">
               <div className="flex items-start gap-3.5">
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  confirmState.variant === 'danger'
-                    ? 'bg-red-50 text-red-600 border border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20'
-                    : confirmState.variant === 'warning'
-                    ? 'bg-amber-50 text-amber-600 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
-                    : 'bg-indigo-50 text-indigo-600 border border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20'
-                }`}>
+                <div className={`flex shrink-0 items-center justify-center rounded-xl ${confirmState.variant === 'danger'
+                  ? 'text-red-600 dark:text-red-400'
+                  : confirmState.variant === 'warning'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-indigo-600 dark:text-indigo-400'
+                  }`}>
                   {confirmState.variant === 'danger' || confirmState.variant === 'warning' ? (
-                    <AlertTriangle className="h-5 w-5" />
+                    <AlertTriangle className="h-8 w-8" />
                   ) : (
-                    <HelpCircle className="h-5 w-5" />
+                    <HelpCircle className="h-8 w-8" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
+                  <h3 className="font-bold text-slate-900 dark:text-white leading-snug">
                     {confirmState.title}
                   </h3>
                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5 leading-relaxed">

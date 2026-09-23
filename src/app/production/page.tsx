@@ -11,7 +11,10 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { formatCurrency, formatDate, formatDateTime, formatDurationBetween, formatVariantLabel } from '@/lib/utils';
 import { canManageProduction } from '@/lib/roles';
-import type { WorkOrder, JobCard } from '@/lib/types';
+import type { JobCard } from '@/lib/types';
+import { Badge } from '@/components/ui/Badge';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import {
   Factory,
   CheckCircle,
@@ -38,6 +41,10 @@ import {
   ShieldAlert,
   Sparkles,
   TrendingDown,
+  Plus,
+  Layers,
+  AlertCircle,
+  Lock,
 } from 'lucide-react';
 
 function ProductionContent() {
@@ -45,17 +52,25 @@ function ProductionContent() {
   const {
     currentUser,
     workOrders,
+    materials = [],
     operators = [],
     operations = [],
     startJobCard,
     pauseJobCard,
     completeJobCard,
+    createSubAssemblyWorkOrder,
   } = useApp();
 
   const canManage = canManageProduction(currentUser.role);
   const [activeTab, setActiveTab] = useUrlTab(['active', 'completed', 'analytics'] as const, 'active');
   const [searchTerm, setSearchTerm] = useState('');
   const [spkTypeFilter, setSpkTypeFilter] = useState('');
+
+  // Sub-Assembly SPK Modal state
+  const [showSaModal, setShowSaModal] = useState(false);
+  const [saMaterialId, setSaMaterialId] = useState('');
+  const [saTargetQty, setSaTargetQty] = useState('1');
+  const [saError, setSaError] = useState('');
 
   // ... (keeping other states same)
   const [selectedWOId, setSelectedWOId] = useState<string | null>(null);
@@ -95,7 +110,11 @@ function ProductionContent() {
       return;
     }
     const foundOp = operators.find(o => o.name === picName);
-    completeJobCard(woId, jc.id, jc.targetQty, picName, undefined, foundOp?.id);
+    const res = completeJobCard(woId, jc.id, jc.targetQty, picName, undefined, foundOp?.id);
+    if (res && !res.success) {
+      toast.error('Gagal Menyelesaikan SPK', res.error);
+      return;
+    }
     toast.success('Pekerjaan Selesai', `Tugas "${jc.operationName}" telah diselesaikan.`);
   };
 
@@ -209,11 +228,50 @@ function ProductionContent() {
     };
   }).sort((a, b) => b.efficiencyScore - a.efficiencyScore);
 
+  const handleCreateSaWorkOrder = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaError('');
+
+    if (!saMaterialId) {
+      setSaError('Pilih barang setengah jadi (Sub-Assembly).');
+      return;
+    }
+
+    const qty = parseFloat(saTargetQty.replace(',', '.'));
+    if (isNaN(qty) || qty <= 0) {
+      setSaError('Kuantitas produksi harus lebih besar dari 0.');
+      return;
+    }
+
+    const res = createSubAssemblyWorkOrder(saMaterialId, qty);
+    if (!res.success) {
+      setSaError(res.error || 'Gagal menerbitkan SPK Sub-Assembly.');
+      return;
+    }
+
+    const targetMat = materials.find(m => m.id === saMaterialId);
+    toast.success('SPK Sub-Assembly Diterbitkan', `SPK untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name}" berhasil dibuat.`);
+    setShowSaModal(false);
+  };
+
   return (
     <div className="space-y-3">
       <PageHeader
         title="Manajemen Produksi"
       >
+        {canManage && (
+          <Button
+            variant="primary"
+            onClick={() => {
+              setSaMaterialId('');
+              setSaTargetQty('1');
+              setSaError('');
+              setShowSaModal(true);
+            }}
+          >
+            <Layers className="h-4 w-4" /> Buat SPK Sub-Assembly
+          </Button>
+        )}
         <Link href="/production/config">
           <Button variant="outline">
             <Settings className="h-4 w-4" /> Konfigurasi
@@ -258,6 +316,7 @@ function ProductionContent() {
               const totalJc = wo.jobCards.length;
               // Default open if unset or true
               const isExpanded = expandedWOIds[wo.id] !== false;
+              const isLockedBySA = !wo.isSubAssembly && workOrders.some(w => w.salesOrderId === wo.salesOrderId && w.isSubAssembly && w.status !== 'COMPLETED');
 
               return (
                 <div
@@ -267,14 +326,22 @@ function ProductionContent() {
                   {/* Card Header (Accordion Trigger) */}
                   <div
                     onClick={() => toggleExpand(wo.id)}
-                    className="p-4 cursor-pointer flex flex-col md:flex-row md:items-start justify-between gap-4 bg-slate-50/60 hover:bg-slate-100/80 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 transition-colors"
+                    className="p-4 cursor-pointer flex flex-col md:flex-row md:items-start justify-between gap-4 bg-slate-50/60 hover:bg-slate-100/80 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 group transition-colors"
                   >
                     {/* Left Side: SPK Info */}
                     <div className="space-y-1.5 flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="font-mono font-extrabold text-base text-indigo-600 dark:text-indigo-400">
+                        <span className="font-mono font-extrabold text-base text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
                           {wo.spkNumber}
+                          {isLockedBySA && (
+                            <span title="Menunggu SPK Sub-Assembly" className="inline-flex items-center">
+                              <Lock className="h-4 w-4 text-amber-500 shrink-0" />
+                            </span>
+                          )}
                         </span>
+                        {wo.isSubAssembly && (
+                          <Badge variant="purple">SUB-ASSEMBLY</Badge>
+                        )}
                         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                           Order #{wo.salesOrderNumber}
                         </span>
@@ -287,7 +354,7 @@ function ProductionContent() {
                           </h3>
                           <button
                             type="button"
-                            className="p-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-800 dark:text-slate-200 hover:text-slate-600 dark:hover:text-slate-200"
+                            className="p-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-800 dark:text-slate-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-700/70 transition-all"
                           >
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </button>
@@ -486,6 +553,9 @@ function ProductionContent() {
                       <span className="font-mono font-extrabold text-base text-indigo-600 dark:text-indigo-400">
                         {wo.spkNumber}
                       </span>
+                      {wo.isSubAssembly && (
+                        <Badge variant="purple">SUB-ASSEMBLY</Badge>
+                      )}
                       <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                         Order #{wo.salesOrderNumber}
                       </span>
@@ -989,6 +1059,162 @@ function ProductionContent() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* MODAL: BUAT SPK SUB-ASSEMBLY */}
+      <Modal
+        isOpen={showSaModal}
+        onClose={() => setShowSaModal(false)}
+        title="Buat SPK Sub-Assembly (Barang Setengah Jadi)"
+        size="lg"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setShowSaModal(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleCreateSaWorkOrder}
+              disabled={!saMaterialId}
+            >
+              <Layers className="h-4 w-4" /> Terbitkan SPK Sub-Assembly
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={handleCreateSaWorkOrder} className="space-y-4 text-xs">
+          {saError && (
+            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{saError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2 space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Pilih Barang Setengah Jadi (Sub-Assembly) <span className="text-red-500">*</span>
+              </label>
+              <Select
+                value={saMaterialId}
+                onChange={e => {
+                  setSaMaterialId(e.target.value);
+                  setSaError('');
+                }}
+                inputSize="sm"
+              >
+                <option value="">-- Pilih Barang Setengah Jadi --</option>
+                {materials.filter(m => m.isSubAssembly).map(m => (
+                  <option key={m.id} value={m.id}>
+                    [{m.code}] {m.name} — Stok Saat Ini: {m.stock} {m.unit}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Kuantitas Rencana SPK <span className="text-red-500">*</span>
+              </label>
+              <Input
+                type="text"
+                value={saTargetQty}
+                onChange={e => setSaTargetQty(e.target.value)}
+                placeholder="0"
+                inputSize="sm"
+                className="font-bold text-right"
+              />
+            </div>
+          </div>
+
+          {/* Child BOM Requirement & Stock Preview */}
+          {saMaterialId && (() => {
+            const targetMat = materials.find(m => m.id === saMaterialId);
+            const targetQtyNum = parseFloat(saTargetQty.replace(',', '.')) || 0;
+            const childBom = targetMat?.childBom || [];
+
+            let hasInsufficientStock = false;
+
+            return (
+              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-indigo-500" />
+                    Kebutuhan Bahan Baku Penyusun (Child BOM)
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Untuk Produksi: <strong className="text-indigo-600 dark:text-indigo-400">{targetQtyNum} {targetMat?.unit || 'unit'}</strong>
+                  </span>
+                </div>
+
+                {childBom.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-amber-200 bg-amber-50/50 text-amber-800 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
+                    <p className="font-semibold text-xs">Item Sub-Assembly ini belum memiliki Child BOM yang terdaftar di Inventory.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                          <th className="px-3 py-2">Bahan Baku Penyusun</th>
+                          <th className="px-3 py-2 text-center">BOM / Unit</th>
+                          <th className="px-3 py-2 text-center">Dibutuhkan</th>
+                          <th className="px-3 py-2 text-center">Stok Gudang</th>
+                          <th className="px-3 py-2 text-center">Status Stok</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {childBom.map((child, idx) => {
+                          const childMat = materials.find(m => m.id === child.materialId);
+                          const requiredQty = child.qty * targetQtyNum;
+                          const currentStock = childMat?.stock || 0;
+                          const isOk = currentStock >= requiredQty;
+                          if (!isOk) hasInsufficientStock = true;
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
+                              <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
+                                {childMat?.name || child.materialId}
+                                <div className="text-[10px] text-slate-400 font-normal">{childMat?.code} • {childMat?.category}</div>
+                              </td>
+                              <td className="px-3 py-2 text-center font-mono">{child.qty} {childMat?.unit}</td>
+                              <td className="px-3 py-2 text-center font-mono font-bold text-slate-900 dark:text-white">
+                                {requiredQty} {childMat?.unit}
+                              </td>
+                              <td className="px-3 py-2 text-center font-mono">
+                                {currentStock} {childMat?.unit}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {isOk ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    Stok Cukup
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+                                    Stok Kurang ({requiredQty - currentStock})
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasInsufficientStock && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-900/50 dark:text-amber-300 text-xs flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="font-semibold">Peringatan Stok Kurang:</strong> Beberapa bahan baku penyusun memiliki stok di bawah kuantitas kebutuhan produksi. Penerbitan SPK tetap dapat diproses namun disarankan melakukan pengadaan bahan baku terlebih dahulu.
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </form>
       </Modal>
     </div>
   );

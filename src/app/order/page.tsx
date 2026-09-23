@@ -2,7 +2,7 @@
 
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useUrlTab } from '@/lib/useUrlTab';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl, SegmentOption } from '@/components/ui/SegmentedControl';
-import { formatCurrency, formatDateTime, formatPhoneDisplay, formatVariantLabel, getOrderStatusColor, getOrderStatusLabel } from '@/lib/utils';
+import { formatCurrency, formatDateTime, formatPhoneDisplay, formatVariantLabel, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel } from '@/lib/utils';
 import { canApproveOrder, canCreateOrder } from '@/lib/roles';
 import type { OrderStatus } from '@/lib/types';
 import {
@@ -37,8 +37,10 @@ import {
   Check,
 } from 'lucide-react';
 
-function OrderListContent() {
+export function OrderListContent() {
   const router = useRouter();
+  const pathname = usePathname();
+  const createHref = '/order/create';
   const { toast } = useToast();
   const {
     salesOrders,
@@ -168,7 +170,7 @@ function OrderListContent() {
             </Button>
           </Link>
           {canCreateOrder(currentUser.role) && (
-            <Link href="/order/create">
+            <Link href={createHref}>
               <Button>
                 <Plus className="h-4 w-4" />
                 Buat Pesanan
@@ -230,7 +232,7 @@ function OrderListContent() {
                         <span className="font-mono text-xs font-normal text-slate-500 dark:text-slate-400">
                           {order.orderNumber}
                         </span>
-                        <Badge className={getOrderStatusColor(order.status)}>
+                        <Badge variant={getOrderStatusVariant(order.status)}>
                           {getOrderStatusLabel(order.status, order.cancelledByRole)}
                         </Badge>
                       </div>
@@ -439,6 +441,14 @@ function OrderListContent() {
         onClose={() => setCancelModalOrderId(null)}
         title={`Batalkan Sales Order — ${orderToCancel?.orderNumber || ''}`}
         size="md"
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setCancelModalOrderId(null)}>Batal</Button>
+            <Button onClick={handleConfirmCancelOrder} className="bg-red-600 hover:bg-red-700 text-white font-semibold">
+              Konfirmasi Pembatalan
+            </Button>
+          </>
+        }
       >
         <div className="space-y-4 text-xs">
           <p className="text-slate-600 dark:text-slate-300">
@@ -461,13 +471,6 @@ function OrderListContent() {
                 {cancelReasonError}
               </span>
             )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="ghost" onClick={() => setCancelModalOrderId(null)}>Batal</Button>
-            <Button onClick={handleConfirmCancelOrder} className="bg-red-600 hover:bg-red-700 text-white font-semibold">
-              Konfirmasi Pembatalan
-            </Button>
           </div>
         </div>
       </Modal>

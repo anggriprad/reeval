@@ -1,6 +1,8 @@
 import React, { useState, useEffect, forwardRef } from 'react';
 
 export interface CurrencyInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'size'> {
+  label?: string;
+  required?: boolean;
   value: number | string;
   onChange: (val: number | '') => void;
   inputSize?: 'sm' | 'md' | 'lg';
@@ -22,6 +24,8 @@ const prefixSizes = {
 };
 
 export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(({
+  label,
+  required,
   value,
   onChange,
   inputSize = 'md',
@@ -55,25 +59,33 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(({
   };
 
   return (
-    <div className={`relative ${containerClassName}`}>
-      {prefix && (
-        <span className={`absolute top-1/2 -translate-y-1/2 font-bold text-slate-400 select-none pointer-events-none ${prefixSizes[inputSize]}`}>
-          {prefix}
-        </span>
+    <div className={containerClassName}>
+      {label && (
+        <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+          {label}
+          {required && <span className="ml-1 text-red-500 font-bold">*</span>}
+        </label>
       )}
-      <input
-        ref={ref}
-        type="text"
-        value={displayValue}
-        onChange={handleChange}
-        disabled={disabled}
-        className={`w-full rounded-md border border-slate-200 bg-white font-bold text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-indigo-400 transition-colors shadow-xs ${
-          sizeClasses[inputSize]
-        } ${error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''} ${
-          disabled ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-850' : ''
-        } ${className}`}
-        {...props}
-      />
+      <div className="relative w-full">
+        {prefix && (
+          <span className={`absolute top-1/2 -translate-y-1/2 font-bold text-slate-400 select-none pointer-events-none ${prefixSizes[inputSize]}`}>
+            {prefix}
+          </span>
+        )}
+        <input
+          ref={ref}
+          type="text"
+          value={displayValue}
+          onChange={handleChange}
+          disabled={disabled}
+          className={`w-full rounded-md border border-slate-200 bg-white font-bold text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-indigo-400 transition-colors shadow-xs ${
+            sizeClasses[inputSize]
+          } ${error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''} ${
+            disabled ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-850' : ''
+          } ${className}`}
+          {...props}
+        />
+      </div>
       {error && <p className="mt-1 text-[11px] font-medium text-red-500">{error}</p>}
     </div>
   );

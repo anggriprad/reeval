@@ -402,7 +402,21 @@ function DeliveryContent() {
       )}
 
       {/* Modal: Create Delivery Order */}
-      <Modal isOpen={showCreateModal} onClose={closeCreateModal} title="Penerbitan Surat Jalan" size="md">
+      <Modal
+        isOpen={showCreateModal}
+        onClose={closeCreateModal}
+        title="Penerbitan Surat Jalan"
+        size="md"
+        actions={
+          <>
+            <Button variant="outline" onClick={closeCreateModal}>Batal</Button>
+            <Button onClick={submitDO} disabled={!selectedSOId || !driverName.trim() || !vehiclePlate.trim() || !shipDate}>
+              <Truck className="h-4 w-4" />
+              Terbitkan Surat Jalan
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-4">
           {/* If pre-selected via order row action, display clean read-only summary card */}
           {isPreSelected && selectedSO ? (
@@ -413,67 +427,65 @@ function DeliveryContent() {
                 </span>
                 <Badge variant="purple" className="text-[10px]">Terkunci dari Baris Order</Badge>
               </div>
-              <div>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">{selectedSO.customer.name}</p>
-                <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {selectedSO.items.map(i => `${i.productName} x${i.qty}`).join(', ')}
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-500 pt-1">
-                <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                <span className="truncate">{selectedSO.customer.address}</span>
-              </div>
+              <p className="text-xs font-bold text-slate-900 dark:text-white">
+                {selectedSO.customer.name}
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate">
+                📍 {selectedSO.customer.address || 'Alamat tidak dispesifikasikan'}
+              </p>
             </div>
           ) : (
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Pilih Order Selesai Produksi *
+                Pilih Sales Order (Siap Kirim) *
               </label>
               <select
                 value={selectedSOId}
-                onChange={e => setSelectedSOId(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                onChange={e => {
+                  setSelectedSOId(e.target.value);
+                  setIsPreSelected(false);
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               >
-                <option value="">Pilih order...</option>
+                <option value="">-- Pilih Sales Order --</option>
                 {readyToShip.map(so => (
                   <option key={so.id} value={so.id}>
-                    {so.orderNumber} — {so.customer.name} ({so.items.map(i => `${i.productName} x${i.qty}`).join(', ')})
+                    {so.orderNumber} — {so.customer.name} ({so.items?.length || 0} item)
                   </option>
                 ))}
               </select>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <User className="inline h-3.5 w-3.5 mr-1" /> Nama Driver *
-              </label>
-              <input
-                type="text"
-                value={driverName}
-                onChange={e => setDriverName(e.target.value)}
-                placeholder="Nama driver"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <Car className="inline h-3.5 w-3.5 mr-1" /> Nomor Plat Kendaraan *
-              </label>
-              <input
-                type="text"
-                value={vehiclePlate}
-                onChange={e => setVehiclePlate(e.target.value)}
-                placeholder="B 9876 KLM"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Nama Kurir / Driver *
+            </label>
+            <input
+              type="text"
+              value={driverName}
+              onChange={e => setDriverName(e.target.value)}
+              placeholder="Contoh: Pak Supri / JNE Express"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
           </div>
 
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-              <Calendar className="inline h-3.5 w-3.5 mr-1" /> Tanggal Kirim *
+              Plat Nomor Kendaraan *
+            </label>
+            <input
+              type="text"
+              value={vehiclePlate}
+              onChange={e => setVehiclePlate(e.target.value)}
+              placeholder="Contoh: B 9876 XYZ"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Tanggal Pengiriman *
             </label>
             <input
               type="date"
@@ -482,19 +494,27 @@ function DeliveryContent() {
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="outline" onClick={closeCreateModal}>Batal</Button>
-            <Button onClick={submitDO} disabled={!selectedSOId || !driverName.trim() || !vehiclePlate.trim() || !shipDate}>
-              <Truck className="h-4 w-4" />
-              Terbitkan Surat Jalan
-            </Button>
-          </div>
         </div>
       </Modal>
 
       {/* Modal: Driver Proof of Delivery */}
-      <Modal isOpen={!!deliveryToConfirm} onClose={() => setShowProofModal(null)} title={`Konfirmasi Serah Terima — ${deliveryToConfirm?.doNumber || ''}`} size="md">
+      <Modal
+        isOpen={!!deliveryToConfirm}
+        onClose={() => setShowProofModal(null)}
+        title={`Konfirmasi Serah Terima — ${deliveryToConfirm?.doNumber || ''}`}
+        size="md"
+        actions={
+          deliveryToConfirm ? (
+            <>
+              <Button variant="outline" onClick={() => setShowProofModal(null)}>Batal</Button>
+              <Button variant="success" onClick={handleConfirmDelivery} disabled={!receiverName.trim()}>
+                <CheckCircle2 className="h-4 w-4" />
+                Simpan & Tandai Terkirim
+              </Button>
+            </>
+          ) : undefined
+        }
+      >
         {deliveryToConfirm && (
           <div className="space-y-4">
             <div className="rounded-lg bg-slate-50 p-3.5 dark:bg-slate-800 text-xs space-y-1">
@@ -554,14 +574,6 @@ function DeliveryContent() {
                   Tanda Tangan Surat Jalan
                 </button>
               </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <Button variant="outline" onClick={() => setShowProofModal(null)}>Batal</Button>
-              <Button variant="success" onClick={handleConfirmDelivery} disabled={!receiverName.trim()}>
-                <CheckCircle2 className="h-4 w-4" />
-                Simpan & Tandai Terkirim
-              </Button>
             </div>
           </div>
         )}

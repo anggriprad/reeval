@@ -73,8 +73,8 @@ export const ROLE_ALLOWED_ROUTES: Record<RoleType, string[]> = {
   ADMIN: [
     '/',
     '/order',
-    '/sales-order',
     '/sales',
+    '/sales-order',
     '/production',
     '/inventory',
     '/products',
@@ -84,8 +84,8 @@ export const ROLE_ALLOWED_ROUTES: Record<RoleType, string[]> = {
   SALES: [
     '/',
     '/order',
-    '/sales-order',
     '/sales',
+    '/sales-order',
     '/products',
   ],
   PRODUKSI: [
@@ -144,4 +144,8 @@ export function canConfirmPayment(role: RoleType): boolean {
 
 export function canViewFinance(role: RoleType): boolean {
   return role === 'ADMIN';
+}
+
+export function canSeeCosts(role: RoleType): boolean {
+  return role === 'ADMIN' || role === 'PRODUKSI' || role === 'GUDANG';
 }

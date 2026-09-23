@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useApp, initialOrderFormConfiguration } from '@/context/AppContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -29,10 +29,12 @@ import {
 
 const iconMap: Record<string, React.ElementType> = { BedDouble, Layers, Box };
 
-function CreateOrderContent() {
+export function CreateOrderContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
+  const targetListHref = '/order';
 
   const {
     salesOrders,
@@ -362,7 +364,7 @@ function CreateOrderContent() {
       createSalesOrder(customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
     }
 
-    router.push('/order');
+    router.push(targetListHref);
   };
 
   // Filter products for catalog picker
@@ -495,7 +497,7 @@ function CreateOrderContent() {
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
       <PageHeader
-        backHref="/order"
+        backHref={targetListHref}
         title={editId ? "Edit Sales Order" : "Buat Sales Order Baru"}
       />
 
@@ -547,19 +549,15 @@ function CreateOrderContent() {
                   return (
                     <div key={field.id} className="md:col-span-1">
                       {renderLabel()}
-                      <div className="flex items-center rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-colors shadow-xs">
-                        <span className="px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-mono text-xs font-bold border-r border-slate-200 dark:border-slate-600 select-none">
-                          +62
-                        </span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder={field.placeholder}
-                          value={customerPhone}
-                          onChange={e => handlePhoneChange(e.target.value)}
-                          className="w-full bg-transparent px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
-                        />
-                      </div>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        prefix="+62"
+                        placeholder={field.placeholder}
+                        value={customerPhone}
+                        onChange={e => handlePhoneChange(e.target.value)}
+                        className="font-mono"
+                      />
                     </div>
                   );
                 }
@@ -753,6 +751,27 @@ function CreateOrderContent() {
         onBack={selectedProduct ? () => setSelectedProduct(null) : undefined}
         title={selectedProduct ? `Pilih Varian` : 'Katalog Produk'}
         size="lg"
+        actions={
+          selectedProduct ? (
+            <>
+              <div className="mr-auto font-mono text-left">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Harga Satuan</span>
+                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-base">
+                  {formatCurrency(calculatedModalUnitPrice)}
+                </span>
+              </div>
+              <Button type="button" variant="ghost" onClick={() => setSelectedProduct(null)}>
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={handleAddItemToCart}
+              >
+                Tambahkan ke Pesanan
+              </Button>
+            </>
+          ) : undefined
+        }
       >
         {/* STEP A: CATALOG GRID / LIST PICKER */}
         {!selectedProduct && (
@@ -938,33 +957,10 @@ function CreateOrderContent() {
                 }
               </div>
             )}
-
-            {/* Price Preview & Submit Button (No redundant Qty input in Modal!) */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-              <div className="font-mono">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Harga Satuan</span>
-                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-base">
-                  {formatCurrency(calculatedModalUnitPrice)}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="ghost" onClick={() => setSelectedProduct(null)}>
-                  Batal
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleAddItemToCart}
-                >
-                  Tambahkan ke Pesanan
-                </Button>
-              </div>
-            </div>
           </div>
-        )
-        }
-      </Modal >
-    </div >
+        )}
+      </Modal>
+    </div>
   );
 }
 

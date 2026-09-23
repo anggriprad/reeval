@@ -11,9 +11,14 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatCurrency, formatDateTime, getStockLevel, getStockLevelColor } from '@/lib/utils';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { Table } from '@/components/ui/Table';
+import { formatCurrency, formatDateTime, getStockLevel, getStockLevelColor, getStockLevelTextColor, calculateSubAssemblyCost } from '@/lib/utils';
 import { canCreatePO, canManageInventory } from '@/lib/roles';
-import type { PurchaseOrderItem, RawMaterial, CompanyAsset, CompanyAssetServiceLog } from '@/lib/types';
+import type { PurchaseOrderItem, RawMaterial, CompanyAsset, CompanyAssetServiceLog, PurchaseOrder, BOMItem } from '@/lib/types';
+import Link from 'next/link';
 import {
   Plus,
   PackageCheck,
@@ -27,6 +32,22 @@ import {
   AlertTriangle,
   Wrench,
   History,
+  Settings,
+  Eye,
+  Info,
+  Building2,
+  Calendar,
+  CreditCard,
+  Receipt,
+  Send,
+  Truck,
+  CheckCircle2,
+  User,
+  ChevronRight,
+  Check,
+  X,
+  Box,
+  Layers,
 } from 'lucide-react';
 
 export default function InventoryPage() {
@@ -51,6 +72,7 @@ export function InventoryContent() {
     addMaterialCategory,
     deleteMaterialCategory,
     createPO,
+    createDirectPurchase,
     receivePO,
     orderPO,
     rejectPO,
@@ -65,14 +87,17 @@ export function InventoryContent() {
     assetServiceLogs,
     recordAssetService,
     deleteAssetServiceLog,
+    bankAccounts,
+    routings = [],
+    operations = [],
   } = useApp();
 
 
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryFilter, setInventoryFilter] = useState('');
-  const [activeTab, setActiveTab] = useUrlTab(['stock', 'po', 'movements', 'assets'] as const, 'stock');
+  const [activeTab, setActiveTab] = useUrlTab(['stock', 'finished', 'po', 'movements', 'assets'] as const, 'stock');
 
-  // Master Material CRUD state
+  // Master Material / Barang Jadi CRUD state
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [editMaterialId, setEditMaterialId] = useState<string | null>(null);
   const [matCode, setMatCode] = useState('');
@@ -82,6 +107,11 @@ export function InventoryContent() {
   const [matUnitCost, setMatUnitCost] = useState(0);
   const [matInitialStock, setMatInitialStock] = useState<string>('0');
   const [matMinStock, setMatMinStock] = useState(5);
+  const [matIsSubAssembly, setMatIsSubAssembly] = useState(false);
+  const [matChildBom, setMatChildBom] = useState<BOMItem[]>([]);
+  const [matRoutingId, setMatRoutingId] = useState('');
+  const [childMatId, setChildMatId] = useState('');
+  const [childMatQty, setChildMatQty] = useState<string>('');
   const [crudError, setCrudError] = useState('');
 
   // Master Asset CRUD state
@@ -114,12 +144,23 @@ export function InventoryContent() {
   const [newAssetCatInput, setNewAssetCatInput] = useState('');
   const [assetCatError, setAssetCatError] = useState('');
 
-  // PO form state
+  // Pengadaan (PO & Pembelian Langsung) form state
   const [showPOModal, setShowPOModal] = useState(false);
+  const [selectedProcurementDetail, setSelectedProcurementDetail] = useState<PurchaseOrder | null>(null);
+  const [purchaseType, setPurchaseType] = useState<'PO' | 'DIRECT'>('PO');
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState('');
+  const [additionalCost, setAdditionalCost] = useState(0);
+  const [procurementError, setProcurementError] = useState('');
   const [poItems, setPOItems] = useState<any[]>([]);
   const [selectedMat, setSelectedMat] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [selectedQty, setSelectedQty] = useState(0);
+  const [showAddItemRow, setShowAddItemRow] = useState(false);
+
+  // Cancellation PO modal state
+  const [showCancelPOModal, setShowCancelPOModal] = useState(false);
+  const [cancelPOReason, setCancelPOReason] = useState('');
+  const [cancelPOError, setCancelPOError] = useState('');
 
   const filteredMaterials = materials.filter(m => {
     const matchesFilter = !inventoryFilter || m.category === inventoryFilter;
@@ -149,6 +190,11 @@ export function InventoryContent() {
     setMatUnitCost(0);
     setMatInitialStock('');
     setMatMinStock(5);
+    setMatIsSubAssembly(false);
+    setMatChildBom([]);
+    setMatRoutingId(routings[0]?.id || '');
+    setChildMatId('');
+    setChildMatQty('');
     setCrudError('');
     setShowMaterialModal(true);
   };
@@ -162,8 +208,42 @@ export function InventoryContent() {
     setMatUnitCost(mat.unitCost);
     setMatInitialStock(mat.stock.toString());
     setMatMinStock(mat.minStock);
+    setMatIsSubAssembly(!!mat.isSubAssembly);
+    const initialChild = mat.childBom ? [...mat.childBom] : [];
+    setMatChildBom(initialChild);
+    const initialRtId = mat.routingId || routings[0]?.id || '';
+    setMatRoutingId(initialRtId);
+    setChildMatId('');
+    setChildMatQty('');
+    if (mat.isSubAssembly) {
+      setMatUnitCost(calculateSubAssemblyCost(initialChild, materials, initialRtId, routings, operations));
+    }
     setCrudError('');
     setShowMaterialModal(true);
+  };
+
+  const handleAddChildBomItem = () => {
+    if (!childMatId) return;
+    const parsedQty = parseFloat(childMatQty.replace(',', '.'));
+    if (isNaN(parsedQty) || parsedQty <= 0) return;
+    const existingIndex = matChildBom.findIndex(item => item.materialId === childMatId);
+    let updated: BOMItem[];
+    if (existingIndex !== -1) {
+      updated = [...matChildBom];
+      updated[existingIndex].qty += parsedQty;
+    } else {
+      updated = [...matChildBom, { materialId: childMatId, qty: parsedQty }];
+    }
+    setMatChildBom(updated);
+    setChildMatId('');
+    setChildMatQty('');
+    setMatUnitCost(calculateSubAssemblyCost(updated, materials, matRoutingId, routings, operations));
+  };
+
+  const handleRemoveChildBomItem = (materialId: string) => {
+    const updated = matChildBom.filter(item => item.materialId !== materialId);
+    setMatChildBom(updated);
+    setMatUnitCost(calculateSubAssemblyCost(updated, materials, matRoutingId, routings, operations));
   };
 
   const handleSaveMaterial = () => {
@@ -171,19 +251,30 @@ export function InventoryContent() {
       setCrudError('Kode, nama, dan satuan bahan wajib diisi.');
       return;
     }
+    if (!editMaterialId && (matInitialStock === '' || matInitialStock === undefined || String(matInitialStock).trim() === '')) {
+      setCrudError('Stok awal wajib diisi.');
+      return;
+    }
     if (!matCategory.trim()) {
       setCrudError('Kategori bahan wajib diisi. Silakan tambah kategori terlebih dahulu.');
       return;
     }
+
+    const finalUnitCost = matIsSubAssembly
+      ? calculateSubAssemblyCost(matChildBom, materials, matRoutingId, routings, operations)
+      : (Number(matUnitCost) || 0);
 
     const payload = {
       code: matCode.trim().toUpperCase(),
       name: matName.trim(),
       category: matCategory,
       unit: matUnit.trim().toLowerCase(),
-      unitCost: Number(matUnitCost) || 0,
+      unitCost: finalUnitCost,
       stock: Number(matInitialStock) || 0,
       minStock: Number(matMinStock) || 0,
+      isSubAssembly: matIsSubAssembly,
+      childBom: matIsSubAssembly ? matChildBom : undefined,
+      routingId: matIsSubAssembly ? matRoutingId : undefined,
     };
 
     if (editMaterialId) {
@@ -360,43 +451,88 @@ export function InventoryContent() {
   const addPOItem = () => {
     const mat = materials.find(m => m.id === selectedMat);
     if (!mat || selectedQty <= 0) return;
-    const supplierToUse = selectedSupplier.trim() || 'Supplier Umum';
-    setPOItems(prev => [...prev, { materialId: mat.id, materialName: mat.name, qty: selectedQty, unitCost: mat.unitCost, supplier: supplierToUse }]);
+    setPOItems(prev => [...prev, {
+      materialId: mat.id,
+      materialName: mat.name,
+      qty: selectedQty,
+      unitCost: mat.unitCost,
+      unit: mat.unit || 'unit',
+    }]);
     setSelectedMat('');
     setSelectedQty(0);
-    setSelectedSupplier('');
+    setShowAddItemRow(false);
   };
 
   const removePOItem = (idx: number) => {
-    setPOItems(prev => prev.filter((_, i) => i !== idx));
+    setPOItems(prev => {
+      const updated = prev.filter((_, i) => i !== idx);
+      if (updated.length === 0) {
+        setShowAddItemRow(true);
+      }
+      return updated;
+    });
   };
 
-  const submitPO = () => {
-    if (poItems.length === 0) return;
-
-    // Group items by supplier
-    const grouped: Record<string, any[]> = {};
-    poItems.forEach(item => {
-      const sup = item.supplier || 'Supplier Umum';
-      if (!grouped[sup]) {
-        grouped[sup] = [];
-      }
-      grouped[sup].push({
-        materialId: item.materialId,
-        materialName: item.materialName,
-        qty: item.qty,
-        unitCost: item.unitCost,
-      });
-    });
-
-    // Create PO for each supplier group
-    Object.entries(grouped).forEach(([supplier, items]) => {
-      createPO(supplier, items);
-    });
-
+  const openAddProcurement = () => {
+    if (materials.length === 0) {
+      toast.warning('Bahan Baku Kosong', 'Belum ada bahan baku yang terdaftar. Silakan register bahan baku terlebih dahulu di tab Stok Bahan Baku.');
+      return;
+    }
+    setPurchaseType('PO');
+    setSelectedBankAccountId(bankAccounts[0]?.id || '');
+    setAdditionalCost(0);
+    setProcurementError('');
     setPOItems([]);
-    setShowPOModal(false);
-    toast.success('PO Berhasil Dibuat', 'Purchase Order baru telah terbit.');
+    setSelectedMat('');
+    setSelectedSupplier('');
+    setSelectedQty(0);
+    setShowAddItemRow(true);
+    setShowPOModal(true);
+  };
+
+  const submitProcurement = () => {
+    setProcurementError('');
+    const supplierName = selectedSupplier.trim();
+    if (!supplierName) {
+      setProcurementError('Nama Vendor wajib diisi.');
+      return;
+    }
+
+    if (poItems.length === 0) {
+      setProcurementError('Daftar item pengadaan masih kosong. Silakan tambah minimal 1 item.');
+      return;
+    }
+
+    if (purchaseType === 'DIRECT') {
+      if (!selectedBankAccountId) {
+        setProcurementError('Kas / Rekening Pembayaran wajib dipilih untuk Pembelian Langsung.');
+        return;
+      }
+      const selectedBank = bankAccounts.find(b => b.id === selectedBankAccountId);
+      if (!selectedBank) {
+        setProcurementError('Kas / Rekening Pembayaran tidak valid.');
+        return;
+      }
+
+      createDirectPurchase(supplierName, poItems, selectedBankAccountId, additionalCost);
+
+      setPOItems([]);
+      setSelectedSupplier('');
+      setSelectedBankAccountId('');
+      setAdditionalCost(0);
+      setShowPOModal(false);
+      toast.success(
+        'Pembelian Langsung Berhasil',
+        'Stok bahan baku otomatis bertambah dan saldo kas langsung berkurang.'
+      );
+    } else {
+      createPO(supplierName, poItems);
+
+      setPOItems([]);
+      setSelectedSupplier('');
+      setShowPOModal(false);
+      toast.success('PO Berhasil Dibuat', 'Purchase Order baru telah terbit.');
+    }
   };
 
   const handleDeletePO = async (id: string, poNumber: string) => {
@@ -438,16 +574,35 @@ export function InventoryContent() {
     return matchesFilter && matchesSearch;
   });
 
+  const filteredRawMaterials = materials.filter(m => {
+    const matchesFilter = !inventoryFilter || m.category === inventoryFilter;
+    const matchesSearch = !searchTerm ||
+      m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.category.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
+
+
+
   return (
     <div className='space-y-3'>
       <PageHeader
         title="Inventaris & Pengadaan"
       >
         <div className="flex gap-2">
-          {canManageInventory(currentUser.role) && activeTab === 'stock' && (
+          {canManageInventory(currentUser.role) && (
+            <Link href="/inventory/config">
+              <Button variant="outline">
+                <Settings className="h-4 w-4 mr-1.5" />
+                Konfigurasi
+              </Button>
+            </Link>
+          )}
+          {canManageInventory(currentUser.role) && (activeTab === 'stock' || activeTab === 'finished') && (
             <Button onClick={openAddMaterial}>
               <Plus className="h-4 w-4" />
-              Register Bahan Baku
+              {activeTab === 'finished' ? 'Register Barang Jadi' : 'Register Bahan Baku'}
             </Button>
           )}
           {canManageInventory(currentUser.role) && activeTab === 'assets' && (
@@ -457,15 +612,9 @@ export function InventoryContent() {
             </Button>
           )}
           {canCreatePO(currentUser.role) && activeTab === 'po' && (
-            <Button onClick={() => {
-              if (materials.length === 0) {
-                toast.warning('Bahan Baku Kosong', 'Belum ada bahan baku (material) yang terdaftar. Silakan register bahan baku terlebih dahulu di tab Stok Bahan Baku.');
-                return;
-              }
-              setShowPOModal(true);
-            }}>
+            <Button onClick={openAddProcurement}>
               <Plus className="h-4 w-4" />
-              Buat PO Baru
+              Buat Pengadaan Baru
             </Button>
           )}
         </div>
@@ -478,22 +627,23 @@ export function InventoryContent() {
         let filterOptions: { value: string; label: string }[] = [];
         let filterPlaceholder = "Filter Atribut";
 
-        if (activeTab === 'stock') {
-          filterPlaceholder = "Semua Kategori Material";
+        if (activeTab === 'stock' || activeTab === 'finished') {
+          filterPlaceholder = "Semua Kategori";
           filterOptions = categories.map(c => ({ value: c, label: c }));
         } else if (activeTab === 'movements') {
           filterPlaceholder = "Semua Tipe Mutasi";
           filterOptions = [
-            { value: 'IN', label: 'Masuk (PO / Restock)' },
+            { value: 'IN', label: 'Masuk (PO / Pembelian)' },
             { value: 'OUT', label: 'Keluar (SPK / Konsumsi)' },
           ];
         } else if (activeTab === 'po') {
-          filterPlaceholder = "Semua Status PO";
+          filterPlaceholder = "Semua Status Pengadaan";
           filterOptions = [
-            { value: 'DRAFT', label: 'Draft' },
-            { value: 'ORDERED', label: 'Diproses / Dikirim' },
+            { value: '', label: 'Semua Status' },
+            { value: 'DRAFT', label: 'Dibuat' },
+            { value: 'ORDERED', label: 'Dipesan' },
             { value: 'RECEIVED', label: 'Diterima' },
-            { value: 'REJECTED', label: 'Ditolak' },
+            { value: 'REJECTED', label: 'Dibatalkan' },
           ];
         } else if (activeTab === 'assets') {
           filterPlaceholder = "Semua Kategori Aset";
@@ -510,7 +660,7 @@ export function InventoryContent() {
             options={[
               { key: 'stock', label: 'Stok Bahan Baku', icon: Warehouse },
               { key: 'movements', label: 'Mutasi Stok', icon: ArrowDownCircle },
-              { key: 'po', label: 'Purchase Orders', count: activePOsCount, icon: FileText },
+              { key: 'po', label: 'Pengadaan', count: activePOsCount, icon: FileText },
               { key: 'assets', label: 'Aset & Alat Kerja', icon: Wrench },
             ]}
             filterValue={inventoryFilter}
@@ -519,169 +669,213 @@ export function InventoryContent() {
             filterOptions={filterOptions}
             searchValue={searchTerm}
             onSearchChange={setSearchTerm}
-            searchPlaceholder="Cari bahan baku, PO, mutasi, atau aset..."
+            searchPlaceholder="Cari bahan baku, barang jadi, pengadaan, mutasi, atau aset..."
           />
         );
       })()}
 
-      {/* Stock Table */}
+      {/* Raw Materials Stock Table */}
       {activeTab === 'stock' && (
         <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                  <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kode</th>
-                  <th className="pb-3 pr-3 text-left font-medium text-slate-500">Nama Bahan</th>
-                  <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kategori</th>
-                  <th className="pb-3 pr-3 text-right font-medium text-slate-500">Stok</th>
-                  <th className="pb-3 pr-3 text-left font-medium text-slate-500">Satuan</th>
-                  <th className="pb-3 pr-3 text-right font-medium text-slate-500">HPP Satuan</th>
-                  <th className="pb-3 pr-3 text-right font-medium text-slate-500">Total Nilai</th>
-                  <th className="pb-3 pr-3 text-center font-medium text-slate-500">Batas Min</th>
-                  <th className="pb-3 pr-3 text-center font-medium text-slate-500">Status</th>
-                  {canManageInventory(currentUser.role) && (
-                    <th className="pb-3 text-center font-medium text-slate-500">Aksi</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMaterials.map(mat => {
-                  const level = getStockLevel(mat.stock, mat.minStock);
-                  return (
-                    <tr key={mat.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                      <td className="py-3.5 pr-3 font-mono text-xs font-semibold text-slate-600 dark:text-slate-400">{mat.code}</td>
-                      <td className="py-3.5 pr-3 font-medium text-slate-900 dark:text-white">{mat.name}</td>
-                      <td className="py-3.5 pr-3">
-                        <Badge>{mat.category}</Badge>
-                      </td>
-                      <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{mat.stock}</td>
-                      <td className="py-3.5 pr-3 text-slate-500 dark:text-slate-400 text-xs">{mat.unit}</td>
-                      <td className="py-3.5 pr-3 text-right text-slate-700 dark:text-slate-300">{formatCurrency(mat.unitCost)}</td>
-                      <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{formatCurrency(mat.stock * mat.unitCost)}</td>
-                      <td className="py-3.5 pr-3 text-center text-slate-500">{mat.minStock}</td>
-                      <td className="py-3.5 pr-3 text-center">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${getStockLevelColor(level)}`}>
-                          {level}
-                        </span>
-                      </td>
-                      {canManageInventory(currentUser.role) && (
-                        <td className="py-3.5 text-center">
-                          <div className="flex justify-center gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => openEditMaterial(mat)} title="Edit Master">
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Button>
-                            <button
-                              onClick={() => handleDeleteMaterial(mat.id, mat.name)}
-                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg dark:hover:bg-red-950/20"
-                              title="Hapus Bahan"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* Purchase Orders */}
-      {activeTab === 'po' && (
-        <Card>
-          {filteredPOs.length === 0 ? (
-            <EmptyState title="Belum ada Purchase Order" description={searchTerm ? "Tidak ada Purchase Order yang cocok dengan pencarian." : "Buat PO baru untuk memesan bahan baku ke supplier"} />
+          {filteredRawMaterials.length === 0 ? (
+            <EmptyState
+              title="Belum ada bahan baku"
+              description={
+                searchTerm || inventoryFilter
+                  ? "Tidak ada bahan baku yang cocok dengan pencarian atau filter."
+                  : "Register bahan baku baru untuk mulai mengelola stok inventaris gudang."
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">No. PO</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Dibuat Oleh</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Supplier</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Item Bahan</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Total</th>
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kode</th>
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Nama Bahan</th>
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kategori</th>
+                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Stok</th>
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Satuan</th>
+                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">HPP Satuan</th>
+                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Total Nilai</th>
+                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Batas Min</th>
                     <th className="pb-3 pr-3 text-center font-medium text-slate-500">Status</th>
-                    <th className="pb-3 text-center font-medium text-slate-500">Aksi</th>
+                    {canManageInventory(currentUser.role) && (
+                      <th className="pb-3 text-center font-medium text-slate-500">Aksi</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
-                  {[...filteredPOs].reverse().map(po => (
-                    <tr key={po.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
-                      <td className="py-3.5 pr-3 font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">{po.poNumber}</td>
-                      <td className="py-3.5 pr-3 text-xs text-slate-600 dark:text-slate-400">
-                        {po.createdBy || 'Gudang'}
-                      </td>
-                      <td className="py-3.5 pr-3 text-slate-800 dark:text-slate-200">{po.supplier}</td>
-                      <td className="py-3.5 pr-3">
-                        <div className="space-y-0.5">
-                          {po.items.map((item, idx) => (
-                            <p key={idx} className="text-xs text-slate-600 dark:text-slate-400">
-                              {item.materialName} ({item.qty} unit)
-                            </p>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{formatCurrency(po.totalAmount)}</td>
-                      <td className="py-3.5 pr-3 text-center">
-                        <Badge variant={po.status === 'RECEIVED' ? 'success' : po.status === 'ORDERED' ? 'info' : po.status === 'REJECTED' ? 'danger' : 'warning'}>
-                          {po.status === 'RECEIVED' ? 'Diterima' : po.status === 'ORDERED' ? 'Dipesan' : po.status === 'REJECTED' ? 'Ditolak' : 'Dibuat'}
-                        </Badge>
-                      </td>
-                      <td className="py-3.5 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {po.status === 'DRAFT' && canManageInventory(currentUser.role) && (
-                            <>
-                              <Button size="sm" variant="secondary" onClick={() => orderPO(po.id)}>
-                                Pesan Barang
+                  {filteredRawMaterials.map(mat => {
+                    const level = getStockLevel(mat.stock, mat.minStock);
+                    return (
+                      <tr key={mat.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="py-3.5 pr-3 font-mono text-xs font-semibold text-slate-600 dark:text-slate-400">{mat.code}</td>
+                        <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{mat.name}</span>
+                            {mat.isSubAssembly && (
+                              <Badge variant="purple" className="text-[10px]">SUB-ASSEMBLY</Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3.5 pr-3">
+                          <Badge>{mat.category}</Badge>
+                        </td>
+                        <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{mat.stock}</td>
+                        <td className="py-3.5 pr-3 text-slate-500 dark:text-slate-400 text-xs">{mat.unit}</td>
+                        <td className="py-3.5 pr-3 text-right font-mono text-slate-700 dark:text-slate-300">{formatCurrency(mat.unitCost)}</td>
+                        <td className="py-3.5 pr-3 text-right font-mono text-emerald-600 dark:text-emerald-400">{formatCurrency(mat.stock * mat.unitCost)}</td>
+                        <td className="py-3.5 pr-3 text-center text-slate-500">{mat.minStock}</td>
+                        <td className={`py-3.5 pr-3 text-center text-xs font-semibold ${getStockLevelTextColor(level)}`}>
+                          {level}
+                        </td>
+                        {canManageInventory(currentUser.role) && (
+                          <td className="py-3.5 text-center">
+                            <div className="flex justify-center gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => openEditMaterial(mat)} title="Edit Master">
+                                <Edit2 className="h-3.5 w-3.5" />
                               </Button>
-                              <Button size="sm" variant="danger" onClick={async () => {
-                                const isOk = await confirm({
-                                  title: 'Tolak Purchase Order',
-                                  message: `Apakah Anda yakin ingin menolak PO ${po.poNumber}?`,
-                                  confirmText: 'Tolak PO',
-                                  variant: 'danger',
-                                });
-                                if (isOk) {
-                                  rejectPO(po.id);
-                                  toast.success('PO Ditolak', `Purchase Order ${po.poNumber} telah ditolak.`);
-                                }
-                              }}>
-                                Tolak PO
-                              </Button>
-                            </>
-                          )}
-                          {po.status === 'ORDERED' && canManageInventory(currentUser.role) && (
-                            <Button size="sm" variant="success" onClick={() => receivePO(po.id)}>
-                              <PackageCheck className="h-3.5 w-3.5" />
-                              Terima Barang
-                            </Button>
-                          )}
-                          {po.status === 'DRAFT' && currentUser.name === po.createdBy && (
-                            <button
-                              onClick={() => handleDeletePO(po.id, po.poNumber)}
-                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg dark:hover:bg-red-950/20"
-                              title="Hapus PO"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          {po.status === 'RECEIVED' && (
-                            <span className="text-xs text-slate-400">✓ {po.receivedAt ? formatDateTime(po.receivedAt) : ''}</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                              <button
+                                onClick={() => handleDeleteMaterial(mat.id, mat.name)}
+                                className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg dark:hover:bg-red-950/20"
+                                title="Hapus Bahan"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </Card>
+      )}
+
+
+
+      {/* Purchase Orders / Pengadaan */}
+      {activeTab === 'po' && (
+        <Table
+          data={[...filteredPOs].reverse()}
+          emptyTitle="Belum ada riwayat pengadaan"
+          emptyDescription={searchTerm ? "Tidak ada pengadaan yang cocok dengan pencarian." : "Buat pengadaan baru untuk memesan atau membeli bahan baku"}
+          onRowClick={(po) => setSelectedProcurementDetail(po)}
+          columns={[
+            {
+              key: 'poNumber',
+              header: 'No. Pengadaan',
+              cell: (po) => (
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
+                    {po.poNumber}
+                  </span>
+                  {po.purchaseType === 'DIRECT' ? (
+                    <Badge variant="purple">Cash</Badge>
+                  ) : (
+                    <Badge variant="info">PO</Badge>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: 'supplier',
+              header: 'Vendor',
+              cell: (po) => <span className="text-sm font-normal text-slate-700 dark:text-slate-300">{po.supplier}</span>,
+            },
+            {
+              key: 'itemsSummary',
+              header: 'Item Material',
+              cell: (po) => {
+                if (!po.items || po.items.length === 0) return <span className="text-slate-400 text-xs">-</span>;
+                const firstItem = po.items[0];
+                const extraCount = po.items.length - 1;
+                return (
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                      {firstItem.materialName}
+                    </span>
+                    {extraCount > 0 && (
+                      <span className="text-indigo-600 dark:text-indigo-400 font-semibold text-xs">
+                        +{extraCount} lainnya
+                      </span>
+                    )}
+                  </div>
+                );
+              },
+            },
+            {
+              key: 'quantitySummary',
+              header: 'Kuantitas',
+              cell: (po) => {
+                if (!po.items || po.items.length === 0) return <span className="text-slate-400 text-xs">-</span>;
+                const firstItem = po.items[0];
+                const matUnit = firstItem.unit || materials.find(m => m.id === firstItem.materialId)?.unit || 'unit';
+                return (
+                  <span className="text-sm font-normal text-slate-700 dark:text-slate-300">
+                    {firstItem.qty} {matUnit}
+                  </span>
+                );
+              },
+            },
+            {
+              key: 'totalAmount',
+              header: 'Total Transaksi',
+              align: 'right',
+              cell: (po) => (
+                <span className="font-mono font-bold text-slate-900 dark:text-white">
+                  {formatCurrency(po.totalAmount)}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              align: 'left',
+              cell: (po) => (
+                po.status === 'REJECTED' ? (
+                  <Badge variant="danger">Dibatalkan</Badge>
+                ) : po.purchaseType === 'DIRECT' || po.status === 'RECEIVED' ? (
+                  <Badge variant="success">Diterima</Badge>
+                ) : po.status === 'ORDERED' ? (
+                  <Badge variant="info">Dipesan</Badge>
+                ) : (
+                  <Badge variant="warning">Dibuat</Badge>
+                )
+              ),
+            },
+            {
+              key: 'actions',
+              header: 'Aksi',
+              align: 'left',
+              cell: (po) => (
+                <div className="flex items-center justify-start gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {po.purchaseType !== 'DIRECT' && po.status === 'ORDERED' && canManageInventory(currentUser.role) && (
+                    <Button size="sm" variant="success" className="h-8 px-3 text-xs font-semibold whitespace-nowrap" onClick={() => receivePO(po.id)}>
+                      Terima Barang
+                    </Button>
+                  )}
+
+                  {po.purchaseType !== 'DIRECT' && po.status === 'DRAFT' && canManageInventory(currentUser.role) && (
+                    <Button size="sm" variant="primary" className="h-8 px-3 text-xs font-semibold whitespace-nowrap" onClick={() => orderPO(po.id)}>
+                      Pesan Barang
+                    </Button>
+                  )}
+
+                  {(po.purchaseType === 'DIRECT' || po.status === 'RECEIVED' || po.status === 'REJECTED' || !canManageInventory(currentUser.role)) && (
+                    <span className="text-xs text-slate-400 font-medium hover:text-slate-600 transition-colors whitespace-nowrap">
+                      Lihat Detail
+                    </span>
+                  )}
+                </div>
+              ),
+            },
+          ]}
+        />
       )}
 
       {/* Stock Movements */}
@@ -802,8 +996,19 @@ export function InventoryContent() {
       )}
 
       {/* Modal: Master Material CRUD (Add / Edit) */}
-      <Modal isOpen={showMaterialModal} onClose={() => setShowMaterialModal(false)} title={editMaterialId ? 'Edit Bahan Baku' : 'Register Bahan Baku Baru'} size="md">
-        <div className="space-y-4">
+      <Modal
+        isOpen={showMaterialModal}
+        onClose={() => setShowMaterialModal(false)}
+        title={editMaterialId ? 'Edit Material / Inventaris' : 'Register Material Baru'}
+        size="lg"
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setShowMaterialModal(false)}>Batal</Button>
+            <Button onClick={handleSaveMaterial}>Simpan</Button>
+          </>
+        }
+      >
+        <div className="space-y-4 pb-4">
           {crudError && (
             <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -812,176 +1017,249 @@ export function InventoryContent() {
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Kode Bahan *</label>
-              <input
-                type="text"
-                value={matCode}
-                onChange={e => setMatCode(e.target.value)}
-                placeholder="Misal: MAT-KAYU-JATI"
-                disabled={!!editMaterialId}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-900"
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Kategori *</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowManageCats(!showManageCats);
-                    setNewCatInput('');
-                    setCatError('');
-                  }}
-                  className="text-[10px] text-indigo-600 hover:underline dark:text-indigo-400 font-semibold"
-                >
-                  {showManageCats ? 'Selesai' : '➕ Kelola Kategori'}
-                </button>
-              </div>
-              <select
-                value={matCategory}
-                onChange={e => setMatCategory(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Inline category manager */}
-          {showManageCats && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-700 dark:bg-slate-800/40 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 dark:border-slate-700">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Kelola Kategori Bahan</span>
-                {catError && <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">{catError}</span>}
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Kategori baru..."
-                  value={newCatInput}
-                  onChange={e => setNewCatInput(e.target.value)}
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const trimmed = newCatInput.trim();
-                    if (!trimmed) return;
-                    addMaterialCategory(trimmed);
-                    setMatCategory(trimmed);
-                    setNewCatInput('');
-                    setCatError('');
-                  }}
-                >
-                  Tambah
-                </Button>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pt-1">
-                {categories.map(cat => (
-                  <div
-                    key={cat}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
-                  >
-                    <span>{cat}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const deleted = deleteMaterialCategory(cat);
-                        if (!deleted) {
-                          setCatError(`"${cat}" sedang digunakan bahan baku.`);
-                        } else {
-                          setCatError('');
-                          if (matCategory === cat && categories.length > 0) {
-                            setMatCategory(categories.find(c => c !== cat) || '');
-                          }
-                        }
-                      }}
-                      className="text-red-450 hover:text-red-650 font-bold"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Nama Bahan Baku *</label>
-            <input
+            <Input
+              label="Kode Bahan Baku"
+              required
               type="text"
-              value={matName}
-              onChange={e => setMatName(e.target.value)}
-              placeholder="Contoh: Kayu Jati TPK Kering"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              value={matCode}
+              onChange={e => setMatCode(e.target.value)}
+              disabled={!!editMaterialId}
+              placeholder="Contoh: MAT-PLY-18MM"
+            />
+            <Select
+              label="Kategori"
+              required
+              value={matCategory}
+              onChange={e => setMatCategory(e.target.value)}
+              options={categories.map(cat => ({ value: cat, label: cat }))}
             />
           </div>
 
+          <Input
+            label="Nama Bahan Baku"
+            required
+            type="text"
+            value={matName}
+            onChange={e => setMatName(e.target.value)}
+            placeholder="Contoh: Multiplek 18mm"
+          />
+
           <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Satuan"
+              required
+              type="text"
+              value={matUnit}
+              onChange={e => setMatUnit(e.target.value)}
+              placeholder="pcs / unit / meter"
+            />
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Satuan *</label>
-              <input
-                type="text"
-                value={matUnit}
-                onChange={e => setMatUnit(e.target.value)}
-                placeholder="Misal: m³, lembar, meter, pcs"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              <CurrencyInput
+                label="HPP Satuan (Rp)"
+                required
+                value={matIsSubAssembly ? calculateSubAssemblyCost(matChildBom, materials, matRoutingId, routings, operations) : matUnitCost}
+                onChange={val => !matIsSubAssembly && setMatUnitCost(typeof val === 'number' ? val : 0)}
+                disabled={matIsSubAssembly}
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">HPP Satuan (Rp) *</label>
-              <input
-                type="number"
-                value={matUnitCost || ''}
-                onChange={e => setMatUnitCost(Number(e.target.value))}
-                placeholder="Biaya per satuan"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
+              {matIsSubAssembly && (
+                <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold mt-1">
+                  *Terhitung otomatis dari Bahan + Upah Routing
+                </p>
+              )}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Stok Awal</label>
-              <input
-                type="number"
-                step="any"
-                value={matInitialStock}
-                onChange={e => setMatInitialStock(e.target.value)}
-                disabled={!!editMaterialId}
-                placeholder="0"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-900"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Batas Stok Minimum *</label>
-              <input
-                type="number"
-                value={matMinStock || ''}
-                onChange={e => setMatMinStock(Number(e.target.value))}
-                placeholder="Batas minimal sebelum restock"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
+            <Input
+              label="Stok Awal"
+              required
+              type="number"
+              step="any"
+              value={matInitialStock}
+              onChange={e => setMatInitialStock(e.target.value)}
+              disabled={!!editMaterialId}
+              placeholder="0"
+            />
+            <Input
+              label="Batas Stok Minimum"
+              required
+              type="number"
+              value={matMinStock || ''}
+              onChange={e => setMatMinStock(Number(e.target.value))}
+              placeholder="0"
+            />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="outline" onClick={() => setShowMaterialModal(false)}>Batal</Button>
-            <Button onClick={handleSaveMaterial}>Simpan</Button>
+          {/* Sub-Assembly Checkbox & Child BOM Builder */}
+          <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={matIsSubAssembly}
+                onChange={e => {
+                  const checked = e.target.checked;
+                  setMatIsSubAssembly(checked);
+                  if (checked && matChildBom.length > 0) {
+                    setMatUnitCost(calculateSubAssemblyCost(matChildBom, materials, matRoutingId, routings, operations));
+                  }
+                }}
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                Item ini adalah Barang Setengah Jadi (Sub-Assembly / Memiliki Child BOM)
+              </span>
+            </label>
+
+            {matIsSubAssembly && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3.5 dark:border-indigo-900/60 dark:bg-indigo-950/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5 text-indigo-600" />
+                    Child BOM Builder & Routing Sub-Assembly
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                    Total HPP Sub-Assembly: {formatCurrency(calculateSubAssemblyCost(matChildBom, materials, matRoutingId, routings, operations))}
+                  </span>
+                </div>
+
+                {/* Routing Selector */}
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                    Pilih Alur Routing Produksi Sub-Assembly <span className="text-red-500">*</span>
+                  </label>
+                  <Select
+                    value={matRoutingId}
+                    onChange={e => {
+                      const newRtId = e.target.value;
+                      setMatRoutingId(newRtId);
+                      setMatUnitCost(calculateSubAssemblyCost(matChildBom, materials, newRtId, routings, operations));
+                    }}
+                    options={[
+                      { value: '', label: '-- Tanpa Routing (Hanya Biaya Bahan) --' },
+                      ...routings.map(r => ({ value: r.id, label: `${r.name} (${r.steps.length} Tahap Operasi)` })),
+                    ]}
+                    inputSize="sm"
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Biaya upah dari alur routing ini akan otomatis ditambahkan ke HPP Sub-Assembly dan teralokasi saat SPK dibuat.
+                  </p>
+                </div>
+
+                {/* Add Row */}
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-6">
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      Pilih Material Penyusun
+                    </label>
+                    <Select
+                      value={childMatId}
+                      onChange={e => setChildMatId(e.target.value)}
+                      options={[
+                        { value: '', label: '-- Pilih Bahan Baku Anak --' },
+                        ...materials
+                          .filter(m => m.id !== editMaterialId)
+                          .map(m => ({
+                            value: m.id,
+                            label: `${m.name} (${m.unit})`,
+                          })),
+                      ]}
+                      inputSize="sm"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      Jumlah Qty
+                    </label>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={childMatQty}
+                      onChange={e => setChildMatQty(e.target.value)}
+                      placeholder="0"
+                      inputSize="sm"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Button type="button" size="sm" onClick={handleAddChildBomItem} className="w-full">
+                      <Plus className="h-3.5 w-3.5" /> Tambah
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Child BOM Table */}
+                {matChildBom.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic text-center py-2">
+                    Belum ada bahan penyusun yang ditambahkan ke Child BOM ini.
+                  </p>
+                ) : (
+                  <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
+                        <tr>
+                          <th className="px-3 py-1.5">Material</th>
+                          <th className="px-3 py-1.5 text-center">Qty Required</th>
+                          <th className="px-3 py-1.5 text-right">Biaya Subtotal</th>
+                          <th className="px-2 py-1.5 text-center w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {matChildBom.map((item, idx) => {
+                          const compMat = materials.find(m => m.id === item.materialId);
+                          const compCost = compMat
+                            ? (compMat.isSubAssembly && compMat.childBom
+                                ? calculateSubAssemblyCost(compMat.childBom, materials, compMat.routingId, routings, operations)
+                                : compMat.unitCost)
+                            : 0;
+                          const subtotal = compCost * item.qty;
+                          return (
+                            <tr key={idx}>
+                              <td className="px-3 py-1.5">
+                                <div className="font-semibold text-slate-800 dark:text-slate-200">{compMat?.name || 'Unknown'}</div>
+                                <div className="text-[10px] text-slate-400">{compMat?.code}</div>
+                              </td>
+                              <td className="px-3 py-1.5 text-center font-bold text-slate-900 dark:text-white">
+                                {item.qty} {compMat?.unit}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-slate-600 dark:text-slate-400">
+                                {formatCurrency(subtotal)}
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveChildBomItem(item.materialId)}
+                                  className="text-red-500 hover:text-red-700 p-1"
+                                  title="Hapus Material Anak"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </Modal>
 
       {/* Modal: Master Asset CRUD (Add / Edit) */}
-      <Modal isOpen={showAssetModal} onClose={() => setShowAssetModal(false)} title={editAssetId ? 'Edit Aset & Alat Kerja' : 'Register Aset Baru'} size="md">
-        <form onSubmit={handleSaveAsset} className="space-y-4">
+      <Modal
+        isOpen={showAssetModal}
+        onClose={() => setShowAssetModal(false)}
+        title={editAssetId ? 'Edit Aset & Alat Kerja' : 'Register Aset Baru'}
+        size="md"
+        actions={
+          <>
+            <Button type="button" variant="ghost" onClick={() => setShowAssetModal(false)}>Batal</Button>
+            <Button type="button" onClick={handleSaveAsset}>Simpan</Button>
+          </>
+        }
+      >
+        <form onSubmit={handleSaveAsset} className="space-y-4 pb-6 min-h-[240px]">
           {crudError && (
             <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -1001,104 +1279,23 @@ export function InventoryContent() {
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-900"
               />
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Kategori *</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowManageAssetCats(!showManageAssetCats);
-                    setNewAssetCatInput('');
-                    setAssetCatError('');
-                  }}
-                  className="text-[10px] text-indigo-600 hover:underline dark:text-indigo-400 font-semibold"
-                >
-                  {showManageAssetCats ? 'Selesai' : '➕ Kelola Kategori'}
-                </button>
-              </div>
-              <select
-                value={astCategory}
-                onChange={e => setAstCategory(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                {assetCategories.map(cat => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="Kategori"
+              required
+              value={astCategory}
+              onChange={e => setAstCategory(e.target.value)}
+              options={assetCategories.map(cat => ({ value: cat, label: cat }))}
+            />
           </div>
-
-          {/* Inline Asset Category manager */}
-          {showManageAssetCats && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-700 dark:bg-slate-800/40 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 dark:border-slate-700">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Kelola Kategori Aset</span>
-                {assetCatError && <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">{assetCatError}</span>}
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Kategori baru..."
-                  value={newAssetCatInput}
-                  onChange={e => setNewAssetCatInput(e.target.value)}
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const trimmed = newAssetCatInput.trim();
-                    if (!trimmed) return;
-                    addAssetCategory(trimmed);
-                    setAstCategory(trimmed);
-                    setNewAssetCatInput('');
-                    setAssetCatError('');
-                  }}
-                >
-                  Tambah
-                </Button>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pt-1">
-                {assetCategories.map(cat => (
-                  <div
-                    key={cat}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
-                  >
-                    <span>{cat}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const deleted = deleteAssetCategory(cat);
-                        if (!deleted) {
-                          setAssetCatError(`"${cat}" sedang digunakan aset.`);
-                        } else {
-                          setAssetCatError('');
-                          if (astCategory === cat && assetCategories.length > 0) {
-                            setAstCategory(assetCategories.find(c => c !== cat) || '');
-                          }
-                        }
-                      }}
-                      className="text-red-450 hover:text-red-650 font-bold"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
 
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Nama Aset / Alat Kerja *</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Nama Aset *</label>
             <input
               type="text"
               value={astName}
               onChange={e => setAstName(e.target.value)}
-              placeholder="Contoh: Mesin Jahit Singer"
+              placeholder="Contoh: Mesin Cutting CNC Wood Router"
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
@@ -1115,15 +1312,15 @@ export function InventoryContent() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Status *</label>
-              <select
+              <Select
                 value={astStatus}
                 onChange={e => setAstStatus(e.target.value as any)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="AKTIF">AKTIF</option>
-                <option value="MAINTENANCE">MAINTENANCE</option>
-                <option value="RUSAK">RUSAK</option>
-              </select>
+                options={[
+                  { value: 'AKTIF', label: 'AKTIF' },
+                  { value: 'MAINTENANCE', label: 'MAINTENANCE' },
+                  { value: 'RUSAK', label: 'RUSAK' },
+                ]}
+              />
             </div>
           </div>
 
@@ -1167,114 +1364,269 @@ export function InventoryContent() {
               <span className="font-semibold">Perkiraan Beban Overhead:</span> Penyusutan bulanan untuk aset ini adalah <strong className="font-bold">{formatCurrency(astPurchaseCost / (astUsefulLifeYears * 12))}</strong> per bulan.
             </div>
           )}
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <Button type="button" variant="outline" onClick={() => setShowAssetModal(false)}>Batal</Button>
-            <Button type="submit">Simpan</Button>
-          </div>
         </form>
       </Modal>
 
 
-      {/* Modal: Create PO */}
-      <Modal isOpen={showPOModal} onClose={() => setShowPOModal(false)} title="Buat Purchase Order Baru" size="lg">
+      {/* Modal: Form Pengadaan */}
+      <Modal
+        isOpen={showPOModal}
+        onClose={() => setShowPOModal(false)}
+        title="Form Pengadaan Bahan Baku"
+        size="lg"
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setShowPOModal(false)}>Batal</Button>
+            <Button onClick={submitProcurement} disabled={poItems.length === 0}>
+              <Plus className="h-4 w-4 mr-1" />
+              Buat Pengadaan
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-4">
-          <div className="rounded-lg border border-slate-200 p-3.5 dark:border-slate-700 space-y-3">
-            <h3 className="text-xs font-semibold text-slate-900 dark:text-white">Pilih Bahan Baku & Supplier</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <select
-                value={selectedMat}
-                onChange={e => {
-                  const val = e.target.value;
-                  setSelectedMat(val);
-                  setSelectedSupplier('');
-                }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="">Pilih bahan...</option>
-                {materials.map(m => (
-                  <option key={m.id} value={m.id}>{m.name} ({formatCurrency(m.unitCost)}/{m.unit})</option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                placeholder="Nama Supplier"
-                value={selectedSupplier}
-                onChange={e => setSelectedSupplier(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-
-              <input
-                type="number"
-                value={selectedQty || ''}
-                onChange={e => setSelectedQty(Number(e.target.value))}
-                placeholder="Qty"
-                min="1"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button size="md" variant="secondary" onClick={addPOItem} disabled={!selectedMat || selectedQty <= 0}>
-                Tambah ke Daftar PO
-              </Button>
-            </div>
-          </div>
-
-          {poItems.length > 0 && (
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                    <th className="p-3 text-left font-medium text-slate-500">Bahan</th>
-                    <th className="p-3 text-left font-medium text-slate-500">Supplier</th>
-                    <th className="p-3 text-right font-medium text-slate-500">Qty</th>
-                    <th className="p-3 text-right font-medium text-slate-500">Harga</th>
-                    <th className="p-3 text-right font-medium text-slate-500">Subtotal</th>
-                    <th className="p-3 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {poItems.map((item: any, idx) => (
-                    <tr key={idx} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
-                      <td className="p-3 text-slate-800 dark:text-slate-200">{item.materialName}</td>
-                      <td className="p-3 text-slate-650 dark:text-slate-400 text-xs font-semibold">{item.supplier}</td>
-                      <td className="p-3 text-right font-semibold">{item.qty}</td>
-                      <td className="p-3 text-right">{formatCurrency(item.unitCost)}</td>
-                      <td className="p-3 text-right font-semibold">{formatCurrency(item.qty * item.unitCost)}</td>
-                      <td className="p-3 text-center">
-                        <button onClick={() => removePOItem(idx)} className="text-red-500 hover:text-red-700">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-slate-200 dark:border-slate-700">
-                    <td colSpan={4} className="p-3 text-right font-semibold text-slate-950 dark:text-white">Total:</td>
-                    <td className="p-3 text-right font-bold text-indigo-600 dark:text-indigo-400">
-                      {formatCurrency(poItems.reduce((s, i) => s + i.qty * i.unitCost, 0))}
-                    </td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
+          {procurementError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{procurementError}</span>
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="outline" onClick={() => setShowPOModal(false)}>Batal</Button>
-            <Button onClick={submitPO} disabled={poItems.length === 0}>
-              <Plus className="h-4 w-4" />
-              Kirim PO
-            </Button>
+          {/* Separate card containers for each Purchase Type radio option */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div
+              onClick={() => setPurchaseType('PO')}
+              className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                purchaseType === 'PO'
+                  ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
+                  : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="radio"
+                  name="purchaseType"
+                  value="PO"
+                  checked={purchaseType === 'PO'}
+                  onChange={() => setPurchaseType('PO')}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Purchase Order (PO)
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                Alur pemesanan standar dengan persetujuan dan penerimaan barang.
+              </p>
+            </div>
+
+            <div
+              onClick={() => setPurchaseType('DIRECT')}
+              className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                purchaseType === 'DIRECT'
+                  ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
+                  : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="radio"
+                  name="purchaseType"
+                  value="DIRECT"
+                  checked={purchaseType === 'DIRECT'}
+                  onChange={() => setPurchaseType('DIRECT')}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Pembelian Langsung
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                Stok otomatis bertambah dan saldo kas langsung berkurang.
+              </p>
+            </div>
+          </div>
+
+          {/* Vendor Name */}
+          <div className="pt-1">
+            <Input
+              label="Nama Vendor"
+              required
+              placeholder="Contoh: UD Kayu Makmur Jaya"
+              value={selectedSupplier}
+              onChange={(e) => setSelectedSupplier(e.target.value)}
+            />
+          </div>
+
+          {/* Extra fields for Direct Purchase placed before item selection */}
+          {purchaseType === 'DIRECT' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <Select
+                label="Pilih Rekening Pembayaran"
+                required
+                value={selectedBankAccountId}
+                onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                options={bankAccounts.map((b) => ({
+                  value: b.id,
+                  label: `${b.name} (Saldo: ${formatCurrency(b.balance)})`,
+                }))}
+              />
+              <CurrencyInput
+                label="Biaya Tambahan (Opsional)"
+                value={additionalCost}
+                onChange={(val) => setAdditionalCost(typeof val === 'number' ? val : 0)}
+              />
+            </div>
+          )}
+
+          {/* List of Saved Items & Add Item Section */}
+          <div className="space-y-3 pt-1">
+            {/* Render Saved Items List */}
+            {poItems.length > 0 && (
+              <div className="space-y-1.5">
+                {poItems.map((item: any, idx: number) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-4 px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 text-xs"
+                  >
+                    <div className="font-medium text-slate-900 dark:text-white truncate flex-1 min-w-0">
+                      {item.materialName}
+                    </div>
+
+                    <div className="text-slate-500 dark:text-slate-400 text-center min-w-[140px] px-2 shrink-0 font-medium">
+                      {item.qty} {item.unit || 'unit'}
+                    </div>
+
+                    <div className="font-mono font-semibold text-slate-900 dark:text-white text-right min-w-[110px] shrink-0">
+                      {formatCurrency(item.qty * item.unitCost)}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removePOItem(idx)}
+                      className="p-1 text-slate-400 hover:text-red-500 rounded transition-colors shrink-0"
+                      title="Hapus Item"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Flat Row Input Form (Langsung Siap Diiisi) */}
+            {showAddItemRow && (
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 py-1">
+                <div className="flex-1 min-w-[180px]">
+                  <Select
+                    placeholder="Pilih Bahan Baku..."
+                    value={selectedMat}
+                    onChange={(e) => setSelectedMat(e.target.value)}
+                    options={materials.map((m) => ({
+                      value: m.id,
+                      label: `${m.name} (${formatCurrency(m.unitCost)} / ${m.unit})`,
+                    }))}
+                  />
+                </div>
+
+                <div className="w-14 shrink-0">
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    value={selectedQty || ''}
+                    onChange={(e) => setSelectedQty(Number(e.target.value))}
+                  />
+                </div>
+
+                <div className="shrink-0 text-right min-w-[130px] px-2">
+                  <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                    {(() => {
+                      const m = materials.find((mat) => mat.id === selectedMat);
+                      return m && selectedQty > 0 ? formatCurrency(m.unitCost * selectedQty) : 'Rp 0';
+                    })()}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="success"
+                    onClick={addPOItem}
+                    disabled={!selectedMat || selectedQty <= 0}
+                    className="h-9 w-9 p-0"
+                    title="Simpan Item"
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSelectedMat('');
+                      setSelectedQty(0);
+                      if (poItems.length > 0) {
+                        setShowAddItemRow(false);
+                      }
+                    }}
+                    className="h-9 w-9 p-0"
+                    title="Batal"
+                  >
+                    <X className="h-4 w-4 text-slate-500" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Bottom Action Bar: Tombol Tambah Item (Kiri) & Subtotal (Kanan) */}
+            {poItems.length > 0 && (
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <div>
+                  {!showAddItemRow && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setShowAddItemRow(true);
+                        setSelectedMat('');
+                        setSelectedQty(0);
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Tambah Item
+                    </Button>
+                  )}
+                </div>
+
+                <div className="text-right text-xs">
+                  <span className="text-slate-500 dark:text-slate-400 mr-2">
+                    Subtotal ({poItems.length} item):
+                  </span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                    {formatCurrency(
+                      poItems.reduce((s: number, i: any) => s + i.qty * i.unitCost, 0) +
+                      (purchaseType === 'DIRECT' ? (additionalCost || 0) : 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </Modal>
 
       {/* Modal: Service History */}
-      <Modal isOpen={showServiceModal} onClose={() => setShowServiceModal(false)} title={`Riwayat Pemeliharaan & Servis: ${selectedServiceAsset?.name || ''}`} size="lg">
+      <Modal
+        isOpen={showServiceModal}
+        onClose={() => setShowServiceModal(false)}
+        title={`Riwayat Pemeliharaan & Servis: ${selectedServiceAsset?.name || ''}`}
+        size="lg"
+        actions={
+          <Button variant="ghost" onClick={() => setShowServiceModal(false)}>Tutup</Button>
+        }
+      >
         <div className="space-y-4">
           {/* Header info */}
           <div className="flex flex-wrap gap-4 justify-between bg-slate-50 p-3 rounded-lg dark:bg-slate-800/40 text-xs">
@@ -1382,9 +1734,244 @@ export function InventoryContent() {
               </tbody>
             </table>
           </div>
+        </div>
+      </Modal>
 
-          <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="outline" onClick={() => setShowServiceModal(false)}>Tutup</Button>
+      {/* Modal: Detail Pengadaan (PO & Pembelian Langsung) */}
+      <Modal
+        isOpen={!!selectedProcurementDetail}
+        onClose={() => setSelectedProcurementDetail(null)}
+        title="Detail Pengadaan"
+        size="lg"
+        actions={(() => {
+          if (!selectedProcurementDetail || !canManageInventory(currentUser.role)) return undefined;
+
+          const canCancel = selectedProcurementDetail.status !== 'REJECTED';
+          const canOrder = selectedProcurementDetail.purchaseType !== 'DIRECT' && selectedProcurementDetail.status === 'DRAFT';
+          const canReceive = selectedProcurementDetail.purchaseType !== 'DIRECT' && selectedProcurementDetail.status === 'ORDERED';
+
+          if (!canCancel && !canOrder && !canReceive) return undefined;
+
+          return (
+            <div className="flex justify-end items-center gap-2">
+              {canCancel && (
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    setCancelPOReason('');
+                    setCancelPOError('');
+                    setShowCancelPOModal(true);
+                  }}
+                >
+                  Batalkan Pengadaan
+                </Button>
+              )}
+
+              {canOrder && (
+                <Button
+                  variant="primary"
+                  className="whitespace-nowrap font-medium"
+                  onClick={() => {
+                    orderPO(selectedProcurementDetail.id);
+                    setSelectedProcurementDetail(null);
+                  }}
+                >
+                  Pesan Barang
+                </Button>
+              )}
+
+              {canReceive && (
+                <Button
+                  variant="success"
+                  className="whitespace-nowrap font-medium"
+                  onClick={() => {
+                    receivePO(selectedProcurementDetail.id);
+                    setSelectedProcurementDetail(null);
+                  }}
+                >
+                  Terima Barang
+                </Button>
+              )}
+            </div>
+          );
+        })()}
+      >
+        {selectedProcurementDetail && (
+          <div className="space-y-5 py-1">
+            {/* Cancellation Callout Info */}
+            {selectedProcurementDetail.status === 'REJECTED' && (
+              <div className="rounded-xl border border-red-200 bg-red-50/70 p-4 text-xs dark:border-red-900/50 dark:bg-red-950/30 space-y-1">
+                <div className="flex items-center gap-2 text-red-800 dark:text-red-300 font-bold">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>Pengadaan Ini Telah Dibatalkan</span>
+                </div>
+                <p className="text-slate-600 dark:text-slate-300">
+                  Dibatalkan pada <strong className="font-semibold">{selectedProcurementDetail.cancelledAt ? formatDateTime(selectedProcurementDetail.cancelledAt) : '-'}</strong> oleh <strong className="font-semibold">{selectedProcurementDetail.cancelledBy || 'Admin'}</strong>.
+                </p>
+                {selectedProcurementDetail.cancelReason && (
+                  <p className="text-slate-700 dark:text-slate-200 font-medium italic pt-1 border-t border-red-200/60 dark:border-red-900/40">
+                    &quot;{selectedProcurementDetail.cancelReason}&quot;
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Header metadata line */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-base font-bold text-slate-900 dark:text-white">
+                    {selectedProcurementDetail.poNumber}
+                  </span>
+
+                  <Badge
+                    variant={
+                      selectedProcurementDetail.status === 'REJECTED'
+                        ? 'danger'
+                        : selectedProcurementDetail.purchaseType === 'DIRECT' || selectedProcurementDetail.status === 'RECEIVED'
+                        ? 'success'
+                        : selectedProcurementDetail.status === 'ORDERED'
+                        ? 'info'
+                        : 'warning'
+                    }
+                  >
+                    {selectedProcurementDetail.status === 'REJECTED'
+                      ? 'Dibatalkan'
+                      : selectedProcurementDetail.purchaseType === 'DIRECT' || selectedProcurementDetail.status === 'RECEIVED'
+                      ? 'Diterima'
+                      : selectedProcurementDetail.status === 'ORDERED'
+                      ? 'Dipesan'
+                      : 'Dibuat'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Dibuat {formatDateTime(selectedProcurementDetail.createdAt)} oleh {selectedProcurementDetail.createdBy || 'Gudang'}
+                </p>
+              </div>
+
+              <div className="text-right">
+                <span className="text-xs text-slate-400 block">Total Transaksi</span>
+                <span className="font-mono text-lg font-bold text-slate-900 dark:text-white">
+                  {formatCurrency(selectedProcurementDetail.totalAmount)}
+                </span>
+              </div>
+            </div>
+
+            {/* Clean Key-Value Grid: Tipe, Vendor, Diterima Pada */}
+            <div className="grid grid-cols-3 gap-4 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Tipe</span>
+                <span className="font-semibold text-slate-900 dark:text-white">
+                  {selectedProcurementDetail.purchaseType === 'DIRECT' ? 'Pembelian Langsung' : 'Purchase Order'}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Vendor</span>
+                <span className="font-semibold text-slate-900 dark:text-white">{selectedProcurementDetail.supplier}</span>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block text-[11px] mb-0.5">Diterima Pada</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {selectedProcurementDetail.receivedAt ? formatDateTime(selectedProcurementDetail.receivedAt) : 'Belum Diterima'}
+                </span>
+              </div>
+            </div>
+
+            {/* Item Table */}
+            <div className="pt-2">
+              <Table
+                dense
+                data={selectedProcurementDetail.items}
+                columns={[
+                  {
+                    key: 'materialName',
+                    header: 'Bahan Baku',
+                    cell: (item) => <span className="font-medium text-slate-900 dark:text-white">{item.materialName}</span>,
+                  },
+                  {
+                    key: 'qty',
+                    header: 'Kuantitas',
+                    align: 'center',
+                    cell: (item) => <span className="font-mono text-slate-800 dark:text-slate-200">{item.qty} unit</span>,
+                  },
+                  {
+                    key: 'unitCost',
+                    header: 'Harga Satuan',
+                    align: 'right',
+                    cell: (item) => <span className="font-mono text-slate-600 dark:text-slate-400">{formatCurrency(item.unitCost)}</span>,
+                  },
+                  {
+                    key: 'subtotal',
+                    header: 'Subtotal',
+                    align: 'right',
+                    cell: (item) => <span className="font-mono font-semibold text-slate-900 dark:text-white">{formatCurrency(item.qty * item.unitCost)}</span>,
+                  },
+                ]}
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Form Pembatalan Pengadaan */}
+      <Modal
+        isOpen={showCancelPOModal}
+        onClose={() => setShowCancelPOModal(false)}
+        title={`Batalkan Pengadaan ${selectedProcurementDetail?.poNumber || ''}`}
+        size="md"
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setShowCancelPOModal(false)}>Batal</Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (!selectedProcurementDetail) return;
+                if (!cancelPOReason.trim()) {
+                  setCancelPOError('Alasan pembatalan wajib diisi.');
+                  return;
+                }
+                const res = rejectPO(selectedProcurementDetail.id, cancelPOReason.trim());
+                if (!res.success) {
+                  setCancelPOError(res.error || 'Gagal membatalkan pengadaan.');
+                } else {
+                  toast.success('Pengadaan Dibatalkan', `Pengadaan ${selectedProcurementDetail.poNumber} berhasil dibatalkan.`);
+                  setShowCancelPOModal(false);
+                  setSelectedProcurementDetail(null);
+                }
+              }}
+            >
+              Konfirmasi Pembatalan
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {cancelPOError && (
+            <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{cancelPOError}</span>
+            </div>
+          )}
+
+          {selectedProcurementDetail?.status === 'RECEIVED' || selectedProcurementDetail?.purchaseType === 'DIRECT' ? (
+            <div className="rounded-xl bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              ⚠️ Pengadaan ini <strong>sudah diterima</strong>. Pembatalan akan otomatis <strong>mengurangi stok persediaan</strong> dan <strong>menerbitkan Jurnal Reversal Akuntansi</strong>. Pastikan fisik bahan belum terpakai oleh SPK produksi.
+            </div>
+          ) : null}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Alasan Pembatalan Pengadaan <span className="text-red-500 font-bold">*</span>
+            </label>
+            <textarea
+              rows={3}
+              value={cancelPOReason}
+              onChange={e => setCancelPOReason(e.target.value)}
+              placeholder="Contoh: Vendor kehabisan stok / Barang retur karena tidak sesuai spesifikasi..."
+              className="w-full rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
           </div>
         </div>
       </Modal>

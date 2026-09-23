@@ -46,6 +46,24 @@ export const initialMaterials: RawMaterial[] = [
   { id: 'mat-10', code: 'MAT-REL-LACI50CM', name: 'Rel Laci Double Track 50cm', category: 'Hardware', unit: 'pasang', unitCost: 45000, stock: 40, minStock: 8 },
   { id: 'mat-11', code: 'MAT-REBOUNDED-D50', name: 'Busa Kasur Rebounded D50', category: 'Busa', unit: 'blok', unitCost: 850000, stock: 20, minStock: 5 },
   { id: 'mat-12', code: 'MAT-KNITTING-QUILT', name: 'Kain Cover Knitted Kasur', category: 'Kain', unit: 'meter', unitCost: 65000, stock: 80, minStock: 15 },
+  {
+    id: 'mat-sub-laci',
+    code: 'SA-LACI-50CM',
+    name: 'Laci Tarik Storage 50cm (Sub-Assembly)',
+    category: 'Aksesoris',
+    unit: 'unit',
+    unitCost: 185000,
+    stock: 25,
+    minStock: 5,
+    isSubAssembly: true,
+    routingId: 'rt-1',
+    childBom: [
+      { materialId: 'mat-1', qty: 0.5 },
+      { materialId: 'mat-2', qty: 0.01 },
+      { materialId: 'mat-10', qty: 1 },
+      { materialId: 'mat-9', qty: 1 },
+    ],
+  },
 ];
 
 // ========================================
@@ -1047,94 +1065,53 @@ export const initialExpenses: Expense[] = [
 export const initialChartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS;
 
 export const initialJournalEntries: JournalEntry[] = [
-  // 1. Opening Balances
+  // 1. Transactions from August 2026
   {
-    id: 'je-seed-1',
-    entryNumber: 'JE-2026-0001',
-    date: '2026-01-01T00:00:00.000Z',
-    description: 'Saldo Awal Rekening: Bank BCA (8000456123)',
-    sourceType: 'OPENING_BALANCE',
-    sourceId: 'ba-1',
+    id: 'je-seed-11',
+    entryNumber: 'JE-2026-0011',
+    date: '2026-08-06T11:00:00.000Z',
+    description: 'Pembayaran Penjualan Bpk. Hendra Gunawan #INV-2026-002 (DP 50%)',
+    sourceType: 'INVOICE_PAYMENT',
+    sourceId: 'inv-2',
     lines: [
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank BCA)', debit: 50000000, credit: 0 },
-      { accountId: 'coa-31000', accountCode: '3-1000', accountName: 'Modal Disetor', debit: 0, credit: 50000000 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 2125000, credit: 0 },
+      { accountId: 'coa-11200', accountCode: '1-1200', accountName: 'Piutang Dagang', debit: 0, credit: 2125000 },
     ],
-    createdAt: '2026-01-01T00:00:00.000Z',
+    createdAt: '2026-08-06T11:00:00.000Z',
   },
   {
-    id: 'je-seed-2',
-    entryNumber: 'JE-2026-0002',
-    date: '2026-01-01T00:00:00.000Z',
-    description: 'Saldo Awal Rekening: Bank Mandiri (1370012345678)',
-    sourceType: 'OPENING_BALANCE',
-    sourceId: 'ba-2',
+    id: 'je-seed-10',
+    entryNumber: 'JE-2026-0010',
+    date: '2026-08-06T09:30:00.000Z',
+    description: 'Penjualan Bpk. Hendra Gunawan #INV-2026-002',
+    sourceType: 'INVOICE_ISSUED',
+    sourceId: 'inv-2',
     lines: [
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank Mandiri)', debit: 25000000, credit: 0 },
-      { accountId: 'coa-31000', accountCode: '3-1000', accountName: 'Modal Disetor', debit: 0, credit: 25000000 },
+      { accountId: 'coa-11200', accountCode: '1-1200', accountName: 'Piutang Dagang', debit: 4250000, credit: 0 },
+      { accountId: 'coa-41000', accountCode: '4-1000', accountName: 'Pendapatan Penjualan Produk', debit: 0, credit: 4250000 },
     ],
-    createdAt: '2026-01-01T00:00:00.000Z',
-  },
-  {
-    id: 'je-seed-3',
-    entryNumber: 'JE-2026-0003',
-    date: '2026-01-01T00:00:00.000Z',
-    description: 'Saldo Awal Rekening: Kas Kecil',
-    sourceType: 'OPENING_BALANCE',
-    sourceId: 'ba-3',
-    lines: [
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Kas Kecil)', debit: 5000000, credit: 0 },
-      { accountId: 'coa-31000', accountCode: '3-1000', accountName: 'Modal Disetor', debit: 0, credit: 5000000 },
-    ],
-    createdAt: '2026-01-01T00:00:00.000Z',
+    createdAt: '2026-08-06T09:30:00.000Z',
   },
 
-  // 2. PO Seed Journals
+  // 2. Transactions from July 2026
   {
-    id: 'je-seed-4',
-    entryNumber: 'JE-2026-0004',
-    date: '2026-06-28T09:00:00.000Z',
-    description: 'Penerimaan Bahan Baku Masuk Gudang — PO #PO-2026-001 (UD Kayu Makmur Jaya)',
-    sourceType: 'PO_RECEIVED',
-    sourceId: 'po-1',
+    id: 'je-seed-9',
+    entryNumber: 'JE-2026-0009',
+    date: '2026-07-22T16:00:00.000Z',
+    description: 'Pembayaran Penjualan Hotel Grand Mahakam #INV-2026-001 (Pelunasan)',
+    sourceType: 'INVOICE_PAYMENT',
+    sourceId: 'inv-1',
     lines: [
-      { accountId: 'coa-11300', accountCode: '1-1300', accountName: 'Persediaan Bahan Baku', debit: 24100000, credit: 0 },
-      { accountId: 'coa-21100', accountCode: '2-1100', accountName: 'Hutang Dagang (UD Kayu Makmur Jaya)', debit: 0, credit: 24100000 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 4600000, credit: 0 },
+      { accountId: 'coa-11200', accountCode: '1-1200', accountName: 'Piutang Dagang', debit: 0, credit: 4600000 },
     ],
-    createdAt: '2026-06-28T09:00:00.000Z',
+    createdAt: '2026-07-22T16:00:00.000Z',
   },
-  {
-    id: 'je-seed-5',
-    entryNumber: 'JE-2026-0005',
-    date: '2026-06-28T10:00:00.000Z',
-    description: 'Pelunasan Hutang Supplier — PO #PO-2026-001 (UD Kayu Makmur Jaya)',
-    sourceType: 'PO_PAYMENT',
-    sourceId: 'po-1',
-    lines: [
-      { accountId: 'coa-21100', accountCode: '2-1100', accountName: 'Hutang Dagang (UD Kayu Makmur Jaya)', debit: 24100000, credit: 0 },
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank BCA)', debit: 0, credit: 24100000 },
-    ],
-    createdAt: '2026-06-28T10:00:00.000Z',
-  },
-  {
-    id: 'je-seed-6',
-    entryNumber: 'JE-2026-0006',
-    date: '2026-07-12T10:00:00.000Z',
-    description: 'Penerimaan Bahan Baku Masuk Gudang — PO #PO-2026-002 (PT Oscar Leather Indonesia)',
-    sourceType: 'PO_RECEIVED',
-    sourceId: 'po-2',
-    lines: [
-      { accountId: 'coa-11300', accountCode: '1-1300', accountName: 'Persediaan Bahan Baku', debit: 5450000, credit: 0 },
-      { accountId: 'coa-21100', accountCode: '2-1100', accountName: 'Hutang Dagang (PT Oscar Leather Indonesia)', debit: 0, credit: 5450000 },
-    ],
-    createdAt: '2026-07-12T10:00:00.000Z',
-  },
-
-  // 3. Invoice Seed Journals
   {
     id: 'je-seed-7',
     entryNumber: 'JE-2026-0007',
     date: '2026-07-22T14:30:00.000Z',
-    description: 'Pengakuan Piutang & Pendapatan — Invoice #INV-2026-001 (Hotel Grand Mahakam)',
+    description: 'Penjualan Hotel Grand Mahakam #INV-2026-001',
     sourceType: 'INVOICE_ISSUED',
     sourceId: 'inv-1',
     lines: [
@@ -1144,112 +1121,158 @@ export const initialJournalEntries: JournalEntry[] = [
     createdAt: '2026-07-22T14:30:00.000Z',
   },
   {
+    id: 'je-seed-6',
+    entryNumber: 'JE-2026-0006',
+    date: '2026-07-12T10:00:00.000Z',
+    description: 'Pembelanjaan PT Oscar Leather Indonesia #PO-2026-002',
+    sourceType: 'PO_RECEIVED',
+    sourceId: 'po-2',
+    lines: [
+      { accountId: 'coa-11300', accountCode: '1-1300', accountName: 'Persediaan Bahan Baku', debit: 5450000, credit: 0 },
+      { accountId: 'coa-21100', accountCode: '2-1100', accountName: 'Hutang Dagang', debit: 0, credit: 5450000 },
+    ],
+    createdAt: '2026-07-12T10:00:00.000Z',
+  },
+  {
     id: 'je-seed-8',
     entryNumber: 'JE-2026-0008',
     date: '2026-07-02T14:00:00.000Z',
-    description: 'Penerimaan Kas Piutang — Invoice #INV-2026-001 (Hotel Grand Mahakam) - DP 50%',
+    description: 'Pembayaran Penjualan Hotel Grand Mahakam #INV-2026-001 (DP 50%)',
     sourceType: 'INVOICE_PAYMENT',
     sourceId: 'inv-1',
     lines: [
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank BCA)', debit: 4600000, credit: 0 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 4600000, credit: 0 },
       { accountId: 'coa-11200', accountCode: '1-1200', accountName: 'Piutang Dagang', debit: 0, credit: 4600000 },
     ],
     createdAt: '2026-07-02T14:00:00.000Z',
   },
-  {
-    id: 'je-seed-9',
-    entryNumber: 'JE-2026-0009',
-    date: '2026-07-22T16:00:00.000Z',
-    description: 'Penerimaan Kas Piutang — Invoice #INV-2026-001 (Hotel Grand Mahakam) - Pelunasan',
-    sourceType: 'INVOICE_PAYMENT',
-    sourceId: 'inv-1',
-    lines: [
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank BCA)', debit: 4600000, credit: 0 },
-      { accountId: 'coa-11200', accountCode: '1-1200', accountName: 'Piutang Dagang', debit: 0, credit: 4600000 },
-    ],
-    createdAt: '2026-07-22T16:00:00.000Z',
-  },
-  {
-    id: 'je-seed-10',
-    entryNumber: 'JE-2026-0010',
-    date: '2026-08-06T09:30:00.000Z',
-    description: 'Pengakuan Piutang & Pendapatan — Invoice #INV-2026-002 (Bpk. Hendra Gunawan)',
-    sourceType: 'INVOICE_ISSUED',
-    sourceId: 'inv-2',
-    lines: [
-      { accountId: 'coa-11200', accountCode: '1-1200', accountName: 'Piutang Dagang', debit: 4250000, credit: 0 },
-      { accountId: 'coa-41000', accountCode: '4-1000', accountName: 'Pendapatan Penjualan Produk', debit: 0, credit: 4250000 },
-    ],
-    createdAt: '2026-08-06T09:30:00.000Z',
-  },
-  {
-    id: 'je-seed-11',
-    entryNumber: 'JE-2026-0011',
-    date: '2026-08-06T11:00:00.000Z',
-    description: 'Penerimaan Kas Piutang — Invoice #INV-2026-002 (Bpk. Hendra Gunawan) - DP 50%',
-    sourceType: 'INVOICE_PAYMENT',
-    sourceId: 'inv-2',
-    lines: [
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank Mandiri)', debit: 2125000, credit: 0 },
-      { accountId: 'coa-11200', accountCode: '1-1200', accountName: 'Piutang Dagang', debit: 0, credit: 2125000 },
-    ],
-    createdAt: '2026-08-06T11:00:00.000Z',
-  },
 
-  // 4. Expenses Seed Journals
+  // 3. Transactions from June 2026
   {
-    id: 'je-seed-12',
-    entryNumber: 'JE-2026-0012',
-    date: '2026-05-01T08:00:00.000Z',
-    description: 'Beban Beban Sewa Gudang & Tempat — Sewa ruko pabrik bulanan',
-    sourceType: 'EXPENSE',
-    sourceId: 'exp-1',
+    id: 'je-seed-5',
+    entryNumber: 'JE-2026-0005',
+    date: '2026-06-28T10:00:00.000Z',
+    description: 'Pelunasan Pembelanjaan UD Kayu Makmur Jaya #PO-2026-001',
+    sourceType: 'PO_PAYMENT',
+    sourceId: 'po-1',
     lines: [
-      { accountId: 'coa-63000', accountCode: '6-3000', accountName: 'Beban Sewa Gudang & Tempat', debit: 5000000, credit: 0 },
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank Mandiri)', debit: 0, credit: 5000000 },
+      { accountId: 'coa-21100', accountCode: '2-1100', accountName: 'Hutang Dagang', debit: 24100000, credit: 0 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 0, credit: 24100000 },
     ],
-    createdAt: '2026-05-01T08:00:00.000Z',
+    createdAt: '2026-06-28T10:00:00.000Z',
   },
   {
-    id: 'je-seed-13',
-    entryNumber: 'JE-2026-0013',
-    date: '2026-05-10T10:30:00.000Z',
-    description: 'Beban Beban Listrik, Air & Internet — Tagihan listrik & air pabrik',
-    sourceType: 'EXPENSE',
-    sourceId: 'exp-2',
+    id: 'je-seed-4',
+    entryNumber: 'JE-2026-0004',
+    date: '2026-06-28T09:00:00.000Z',
+    description: 'Pembelanjaan UD Kayu Makmur Jaya #PO-2026-001',
+    sourceType: 'PO_RECEIVED',
+    sourceId: 'po-1',
     lines: [
-      { accountId: 'coa-62000', accountCode: '6-2000', accountName: 'Beban Listrik, Air & Internet', debit: 850000, credit: 0 },
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Kas Kecil)', debit: 0, credit: 850000 },
+      { accountId: 'coa-11300', accountCode: '1-1300', accountName: 'Persediaan Bahan Baku', debit: 24100000, credit: 0 },
+      { accountId: 'coa-21100', accountCode: '2-1100', accountName: 'Hutang Dagang', debit: 0, credit: 24100000 },
     ],
-    createdAt: '2026-05-10T10:30:00.000Z',
-  },
-  {
-    id: 'je-seed-14',
-    entryNumber: 'JE-2026-0014',
-    date: '2026-05-25T17:00:00.000Z',
-    description: 'Beban Beban Gaji Staf & Administrasi — Gaji karyawan admin & operational',
-    sourceType: 'EXPENSE',
-    sourceId: 'exp-3',
-    lines: [
-      { accountId: 'coa-61000', accountCode: '6-1000', accountName: 'Beban Gaji Staf & Administrasi', debit: 15000000, credit: 0 },
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Bank BCA)', debit: 0, credit: 15000000 },
-    ],
-    createdAt: '2026-05-25T17:00:00.000Z',
+    createdAt: '2026-06-28T09:00:00.000Z',
   },
   {
     id: 'je-seed-15',
     entryNumber: 'JE-2026-0015',
     date: '2026-06-02T11:00:00.000Z',
-    description: 'Beban Beban ATK & Perlengkapan Kantor — Beli kertas HVS, pulpen & tinta printer',
+    description: 'Beli kertas HVS, pulpen & tinta printer',
     sourceType: 'EXPENSE',
     sourceId: 'exp-4',
     lines: [
       { accountId: 'coa-65000', accountCode: '6-5000', accountName: 'Beban ATK & Perlengkapan Kantor', debit: 250000, credit: 0 },
-      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank (Kas Kecil)', debit: 0, credit: 250000 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 0, credit: 250000 },
     ],
     createdAt: '2026-06-02T11:00:00.000Z',
   },
+
+  // 4. Transactions from May 2026
+  {
+    id: 'je-seed-14',
+    entryNumber: 'JE-2026-0014',
+    date: '2026-05-25T17:00:00.000Z',
+    description: 'Gaji karyawan admin & operational',
+    sourceType: 'EXPENSE',
+    sourceId: 'exp-3',
+    lines: [
+      { accountId: 'coa-61000', accountCode: '6-1000', accountName: 'Beban Gaji Staf & Administrasi', debit: 15000000, credit: 0 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 0, credit: 15000000 },
+    ],
+    createdAt: '2026-05-25T17:00:00.000Z',
+  },
+  {
+    id: 'je-seed-13',
+    entryNumber: 'JE-2026-0013',
+    date: '2026-05-10T10:30:00.000Z',
+    description: 'Tagihan listrik & air pabrik',
+    sourceType: 'EXPENSE',
+    sourceId: 'exp-2',
+    lines: [
+      { accountId: 'coa-62000', accountCode: '6-2000', accountName: 'Beban Listrik, Air & Internet', debit: 850000, credit: 0 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 0, credit: 850000 },
+    ],
+    createdAt: '2026-05-10T10:30:00.000Z',
+  },
+  {
+    id: 'je-seed-12',
+    entryNumber: 'JE-2026-0012',
+    date: '2026-05-01T08:00:00.000Z',
+    description: 'Sewa ruko pabrik bulanan',
+    sourceType: 'EXPENSE',
+    sourceId: 'exp-1',
+    lines: [
+      { accountId: 'coa-63000', accountCode: '6-3000', accountName: 'Beban Sewa Gudang & Tempat', debit: 5000000, credit: 0 },
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 0, credit: 5000000 },
+    ],
+    createdAt: '2026-05-01T08:00:00.000Z',
+  },
+
+  // 5. Opening Balances from January 2026
+  {
+    id: 'je-seed-3',
+    entryNumber: 'JE-2026-0003',
+    date: '2026-01-01T00:00:00.000Z',
+    description: 'Saldo Awal Kas Kecil',
+    sourceType: 'OPENING_BALANCE',
+    sourceId: 'ba-3',
+    lines: [
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 5000000, credit: 0 },
+      { accountId: 'coa-31000', accountCode: '3-1000', accountName: 'Modal Disetor', debit: 0, credit: 5000000 },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'je-seed-2',
+    entryNumber: 'JE-2026-0002',
+    date: '2026-01-01T00:00:00.000Z',
+    description: 'Saldo Awal Bank Mandiri',
+    sourceType: 'OPENING_BALANCE',
+    sourceId: 'ba-2',
+    lines: [
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 25000000, credit: 0 },
+      { accountId: 'coa-31000', accountCode: '3-1000', accountName: 'Modal Disetor', debit: 0, credit: 25000000 },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'je-seed-1',
+    entryNumber: 'JE-2026-0001',
+    date: '2026-01-01T00:00:00.000Z',
+    description: 'Saldo Awal Bank BCA',
+    sourceType: 'OPENING_BALANCE',
+    sourceId: 'ba-1',
+    lines: [
+      { accountId: 'coa-11100', accountCode: '1-1100', accountName: 'Kas & Bank', debit: 50000000, credit: 0 },
+      { accountId: 'coa-31000', accountCode: '3-1000', accountName: 'Modal Disetor', debit: 0, credit: 50000000 },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
 ];
+
+export const initialCategories: string[] = ['Papan', 'Kayu', 'Busa', 'Kain', 'Aksesoris', 'Lem', 'Hardware', 'Sub-Assembly'];
+export const initialAssetCategories: string[] = ['Kendaraan', 'Mesin & Peralatan', 'Elektronik & IT'];
 
 
 

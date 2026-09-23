@@ -17,6 +17,7 @@ import {
   formatVariantLabel,
   getWhatsAppUrl,
   getOrderStatusColor,
+  getOrderStatusVariant,
   getOrderStatusLabel,
 } from '@/lib/utils';
 import { canApproveOrder, USER_ACCOUNTS } from '@/lib/roles';
@@ -120,18 +121,10 @@ export default function OrderDetailPage() {
         title={
           <div className="flex items-center gap-3 flex-wrap">
             <span>{order.orderNumber}</span>
-            <Badge className={getOrderStatusColor(order.status)}>
+            <Badge variant={getOrderStatusVariant(order.status)}>
               {getOrderStatusLabel(order.status, order.cancelledByRole)}
             </Badge>
           </div>
-        }
-        actions={
-          canApproveOrder(currentUser.role) && order.status === 'PENDING' ? (
-            <Button onClick={handleProcess}>
-              <CheckCircle className="h-4 w-4 mr-1.5" />
-              Proses & Terbitkan SPK
-            </Button>
-          ) : undefined
         }
         actionMenuItems={
           order.status === 'PENDING'
@@ -309,7 +302,7 @@ export default function OrderDetailPage() {
                 href={getWhatsAppUrl(salesPhone, salesWaMsg)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-emerald-600 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-semibold text-xs transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-md border border-emerald-600 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-semibold text-xs transition-colors"
               >
                 <MessageSquare className='w-4 h-4' />
                 <span>Hubungi Sales</span>
@@ -322,13 +315,19 @@ export default function OrderDetailPage() {
                 href={getWhatsAppUrl(order.customer.phone)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors shadow-xs"
+                className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors shadow-xs"
               >
                 <MessageSquare className='w-4 h-4' />
                 <span>Hubungi Pelanggan</span>
               </a>
             )}
           </div>
+          {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
+            <Button onClick={handleProcess} size='lg' className='bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 w-full'>
+              <CheckCircle className="h-4 w-4 mr-1.5" />
+              Proses Pesanan
+            </Button>
+          )}
         </div>
       </div>
 
@@ -338,6 +337,16 @@ export default function OrderDetailPage() {
         onClose={() => setCancelModalOpen(false)}
         title={`Batalkan Sales Order — ${order.orderNumber}`}
         size="md"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setCancelModalOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleConfirmCancel} disabled={!cancelReasonInput.trim()}>
+              Konfirmasi Pembatalan
+            </Button>
+          </>
+        }
       >
         <div className="space-y-4 text-xs">
           <p className="text-slate-600 dark:text-slate-300">
@@ -360,23 +369,6 @@ export default function OrderDetailPage() {
                 {cancelReasonError}
               </span>
             )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCancelModalOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleConfirmCancel}
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold"
-            >
-              Konfirmasi Pembatalan
-            </Button>
           </div>
         </div>
       </Modal>

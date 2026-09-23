@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { formatCurrency, formatDate, getOrderStatusColor, getOrderStatusLabel } from '@/lib/utils';
+import { formatCurrency, formatDate, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel } from '@/lib/utils';
 import {
   ShoppingCart,
   Factory,
@@ -203,9 +203,9 @@ export default function DashboardPage() {
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-900 dark:text-white">{order.orderNumber}</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getOrderStatusColor(order.status)}`}>
+                    <Badge variant={getOrderStatusVariant(order.status)}>
                       {getOrderStatusLabel(order.status, order.cancelledByRole)}
-                    </span>
+                    </Badge>
                   </div>
                   <p className="text-slate-600 dark:text-slate-400">
                     {order.customer.name} • {order.items.length} item ({formatCurrency(order.totalAmount)})

@@ -42,7 +42,7 @@ export interface FormContainer {
   fields: FormField[];
 }
 
-// --- Raw Material ---
+// --- Raw Material & Sub-Assembly ---
 
 export interface RawMaterial {
   id: string;
@@ -53,6 +53,9 @@ export interface RawMaterial {
   unitCost: number;
   stock: number;
   minStock: number;
+  isSubAssembly?: boolean;   // True if this item is a Sub-Assembly / Semi-Finished Good
+  childBom?: BOMItem[];      // Child BOM components required to build this sub-assembly
+  routingId?: string;        // Optional Production Routing ID assigned to build this sub-assembly
 }
 
 // --- BOM (Bill of Materials) Item ---
@@ -60,6 +63,7 @@ export interface RawMaterial {
 export interface BOMItem {
   materialId: string;
   qty: number;
+  itemType?: 'RAW_MATERIAL' | 'SUB_ASSEMBLY';
 }
 
 // --- Attribute Master (Global) ---
@@ -317,6 +321,8 @@ export interface WorkOrder {
   completedAt?: string;
   isCustom: boolean;
   customNotes?: string;
+  isSubAssembly?: boolean;
+  subAssemblyId?: string;
 }
 
 // --- Purchase Order ---
@@ -334,6 +340,11 @@ export interface PurchaseOrder {
   paymentStatus: 'UNPAID' | 'PAID';
   bankAccountId?: string;
   paidAt?: string;
+  purchaseType?: 'PO' | 'DIRECT';
+  additionalCost?: number;
+  cancelReason?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
 }
 
 export interface PurchaseOrderItem {
@@ -341,6 +352,7 @@ export interface PurchaseOrderItem {
   materialName: string;
   qty: number;
   unitCost: number;
+  unit?: string;
 }
 
 // --- Stock Movement ---
@@ -503,10 +515,16 @@ export type JournalSourceType =
   | 'INVOICE_PAYMENT'
   | 'PO_RECEIVED'
   | 'PO_PAYMENT'
+  | 'REVERSAL_PO_RECEIVED'
+  | 'REVERSAL_DIRECT_PURCHASE'
   | 'EXPENSE'
+  | 'CASH_INFLOW'
   | 'BANK_TRANSFER'
   | 'OPENING_BALANCE'
-  | 'MANUAL';
+  | 'MANUAL'
+  | 'MANUAL_JOURNAL'
+  | 'CLOSING_ENTRY'
+  | 'DIVIDEND';
 
 export interface JournalEntry {
   id: string;
@@ -522,6 +540,7 @@ export interface JournalEntry {
 // --- App State ---
 
 export interface AppState {
+  strictSOStockCheck?: boolean; // If true, block SO confirmation if any material/sub-assembly stock < qtyNeeded
   materials: RawMaterial[];
   products: Product[];
   attributes: AttributeMaster[];    // Global attribute master data
@@ -546,6 +565,7 @@ export interface AppState {
   operators: ProductionOperator[];
   bankAccounts: BankAccount[];
   expenses: Expense[];
+  otherIncomes: OtherIncome[];
   chartOfAccounts: AccountCode[];
   journalEntries: JournalEntry[];
   orderFormConfiguration: FormContainer[];
@@ -573,4 +593,12 @@ export interface Expense {
   note?: string;
 }
 
-
+export interface OtherIncome {
+  id: string;
+  accountCode: string;  // CoA account code selected by user (e.g. '4-2000', '2-1300')
+  accountName: string;  // Denormalized name for display
+  amount: number;
+  date: string;
+  bankAccountId: string;
+  note?: string;
+}

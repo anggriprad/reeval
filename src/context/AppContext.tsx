@@ -26,8 +26,10 @@ import type {
   ProductionOperator,
   BankAccount,
   Expense,
+  OtherIncome,
   AccountCode,
   JournalEntry,
+  JournalEntryLine,
   AttributeMaster,
   BOMTemplate,
   BOMTemplateItem,
@@ -62,9 +64,11 @@ import {
   initialBomTemplateItems,
   initialVariantBoms,
   initialProductCategories,
+  initialCategories,
+  initialAssetCategories,
   initialArmadas,
   initialDrivers,
-} from '@/lib/initial-data';
+} from '@/lib/initial-data-empty';
 import { generateVariantsFromRules } from '@/lib/product-resolver';
 import {
   createOpeningBalanceJournal,
@@ -72,13 +76,20 @@ import {
   createInvoicePaymentJournal,
   createPOReceivedJournal,
   createPOPaymentJournal,
+  createDirectPurchaseJournal,
+  createReversalPOReceivedJournal,
+  createReversalDirectPurchaseJournal,
   createExpenseJournal,
   createBankTransferJournal,
+  createCashInflowJournal,
+  createManualJournal,
+  createClosingJournal,
+  createDividendJournal,
 } from '@/lib/accounting';
-import { generateId } from '@/lib/utils';
+import { generateId, calculateSubAssemblyCost } from '@/lib/utils';
 import { DEFAULT_USER_ID, getUserById, USER_ACCOUNTS, UserAccount } from '@/lib/roles';
 
-const STORAGE_KEY = 'reeval-erp-state-v15'; // v15: Standardized phone format +62, salesPhone, updatedAt & updatedBy tracking
+const STORAGE_KEY = 'reeval-erp-state-v16'; // v16: Default to populated initial-data with Sub-Assembly Multi-Level BOM
 
 // ========================================
 // Context Shape
@@ -120,7 +131,9 @@ interface AppContextType extends AppState {
   updateMaterial: (id: string, material: Partial<RawMaterial>) => void;
   deleteMaterial: (id: string) => boolean;
   addMaterialCategory: (category: string) => void;
+  updateMaterialCategory: (oldCategory: string, newCategory: string) => void;
   deleteMaterialCategory: (category: string) => boolean;
+  reorderMaterialCategories: (categories: string[]) => void;
 
   // Product Category CRUD
   addProductCategory: (category: string) => void;
@@ -131,16 +144,19 @@ interface AppContextType extends AppState {
   updateAsset: (id: string, asset: Partial<Omit<CompanyAsset, 'id' | 'monthlyDepreciation' | 'accumulatedServiceCost'>>) => void;
   deleteAsset: (id: string) => boolean;
   addAssetCategory: (category: string) => void;
+  updateAssetCategory: (oldCategory: string, newCategory: string) => void;
   deleteAssetCategory: (category: string) => boolean;
+  reorderAssetCategories: (categories: string[]) => void;
   recordAssetService: (log: Omit<CompanyAssetServiceLog, 'id'>) => void;
   deleteAssetServiceLog: (id: string) => void;
 
 
-  // Inventory / PO
+  // Inventory / PO / Pengadaan
   createPO: (supplier: string, items: PurchaseOrderItem[]) => void;
+  createDirectPurchase: (supplier: string, items: PurchaseOrderItem[], bankAccountId: string, additionalCost?: number) => void;
   receivePO: (poId: string) => void;
   orderPO: (poId: string) => void;
-  rejectPO: (poId: string) => void;
+  rejectPO: (poId: string, reason?: string) => { success: boolean; error?: string };
   deletePO: (poId: string) => boolean;
 
   // Sales & Order Lifecycle
@@ -153,7 +169,8 @@ interface AppContextType extends AppState {
   updateJobCardProgress: (workOrderId: string, jobCardId: string, completedQty: number, picName: string) => void;
   startJobCard: (workOrderId: string, jobCardId: string) => void;
   pauseJobCard: (workOrderId: string, jobCardId: string) => void;
-  completeJobCard: (workOrderId: string, jobCardId: string, completedQty: number, picName: string, actualMinutes?: number, operatorId?: string) => void;
+  completeJobCard: (workOrderId: string, jobCardId: string, completedQty: number, picName: string, actualMinutes?: number, operatorId?: string) => { success: boolean; error?: string };
+  createSubAssemblyWorkOrder: (subAssemblyId: string, targetQty: number) => { success: boolean; error?: string };
   syncWorkOrderRouting: (workOrderId: string) => void;
   addOperation: (op: Omit<ProductionOperation, 'id'>) => void;
   updateOperation: (id: string, op: Partial<Omit<ProductionOperation, 'id'>>) => void;
@@ -164,6 +181,8 @@ interface AppContextType extends AppState {
   addOperator: (op: Omit<ProductionOperator, 'id'>) => void;
   updateOperator: (id: string, op: Partial<Omit<ProductionOperator, 'id'>>) => void;
   deleteOperator: (id: string) => boolean;
+  strictSOStockCheck: boolean;
+  setStrictSOStockCheck: (enabled: boolean) => void;
 
   // Delivery
   createDeliveryOrder: (salesOrderId: string, assignedDriverName: string, vehiclePlate: string, scheduledDate: string) => void;
@@ -172,11 +191,15 @@ interface AppContextType extends AppState {
   // Finance / Invoicing / Payment / Banking
   recordPayment: (invoiceId: string, amount: number, bankAccountId: string, note: string) => void;
   recordExpense: (category: Expense['category'], amount: number, bankAccountId: string, note?: string) => void;
+  recordOtherIncome: (accountCode: string, accountName: string, amount: number, bankAccountId: string, note?: string) => void;
   paySupplierPO: (purchaseOrderId: string, bankAccountId: string) => void;
   addBankAccount: (account: Omit<BankAccount, 'id'>) => void;
   updateBankAccount: (id: string, account: Partial<Omit<BankAccount, 'id'>>) => void;
   deleteBankAccount: (id: string) => boolean;
   transferBankFunds: (fromAccountId: string, toAccountId: string, amount: number, note?: string) => boolean;
+  addManualJournal: (description: string, lines: Omit<JournalEntryLine, 'accountName'>[], date?: string) => void;
+  closePeriod: (totalRevenue: number, totalCOGS: number, totalExpense: number, date?: string) => void;
+  distributeDividend: (amount: number, bankAccountId: string, date?: string) => void;
 
   // Chart of Accounts
   addAccount: (account: Omit<AccountCode, 'id'>) => void;
@@ -212,6 +235,9 @@ interface AppContextType extends AppState {
   getProduct: (productId: string) => Product | undefined;
   getMaterial: (materialId: string) => RawMaterial | undefined;
   resetData: () => void;
+
+  // HPP Projection
+  getPendingOrderEstHPP: (salesOrderId: string) => { estMaterialCost: number; estLaborCost: number; totalEstHPP: number } | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -283,8 +309,8 @@ function getDefaultState(): AppState {
     deliveryOrders: structuredClone(initialDeliveryOrders),
     invoices: structuredClone(initialInvoices),
     currentUserId: DEFAULT_USER_ID,
-    categories: ['Papan', 'Kayu', 'Busa', 'Kain', 'Aksesoris', 'Lem', 'Hardware'],
-    assetCategories: ['Kendaraan', 'Mesin & Peralatan', 'Elektronik & IT'],
+    categories: structuredClone(initialCategories),
+    assetCategories: structuredClone(initialAssetCategories),
     productCategories: structuredClone(initialProductCategories),
     assets: structuredClone(initialAssets),
     assetServiceLogs: structuredClone(initialAssetServiceLogs),
@@ -294,6 +320,7 @@ function getDefaultState(): AppState {
     operators: structuredClone(initialOperators),
     bankAccounts: structuredClone(initialBankAccounts),
     expenses: structuredClone(initialExpenses),
+    otherIncomes: [],
     chartOfAccounts: structuredClone(initialChartOfAccounts),
     journalEntries: structuredClone(initialJournalEntries),
     orderFormConfiguration: structuredClone(initialOrderFormConfiguration),
@@ -318,6 +345,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const saved = loadState();
     if (saved) {
+      const loadedBankAccounts = saved.bankAccounts || structuredClone(initialBankAccounts);
+      const validBankIds = new Set(loadedBankAccounts.map(b => b.id));
+
       setState({
         ...getDefaultState(),
         ...saved,
@@ -328,18 +358,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         products: saved.products?.length ? saved.products : structuredClone(initialProducts),
         materials: saved.materials?.length ? saved.materials : structuredClone(initialMaterials),
         productCategories: saved.productCategories?.length ? saved.productCategories : structuredClone(initialProductCategories),
-        categories: saved.categories?.length ? saved.categories : ['Papan', 'Kayu', 'Busa', 'Kain', 'Aksesoris', 'Lem', 'Hardware'],
-        assetCategories: saved.assetCategories?.length ? saved.assetCategories : ['Kendaraan', 'Mesin & Peralatan', 'Elektronik & IT'],
+        categories: saved.categories !== undefined ? saved.categories : structuredClone(initialCategories),
+        assetCategories: saved.assetCategories !== undefined ? saved.assetCategories : structuredClone(initialAssetCategories),
         salesOrders: saved.salesOrders ? saved.salesOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) : getDefaultState().salesOrders,
         assets: saved.assets || structuredClone(initialAssets),
         assetServiceLogs: saved.assetServiceLogs || structuredClone(initialAssetServiceLogs),
         masterModifierGroups: saved.masterModifierGroups || structuredClone(initialModifierGroups),
-        bankAccounts: saved.bankAccounts || structuredClone(initialBankAccounts),
+        bankAccounts: loadedBankAccounts,
         expenses: saved.expenses || structuredClone(initialExpenses),
+        otherIncomes: saved.otherIncomes || [],
         armadas: saved.armadas || structuredClone(initialArmadas),
         drivers: saved.drivers || structuredClone(initialDrivers),
         shippingRates: saved.shippingRates || [],
-        isShippingRateEnabled: saved.isShippingRateEnabled || false,
+        chartOfAccounts: (saved.chartOfAccounts || structuredClone(initialChartOfAccounts)).map(acc =>
+          acc.code === '1-1100' || acc.id === 'coa-11100' ? { ...acc, isHeader: false } : acc
+        ),
+        journalEntries: (saved.journalEntries?.length ? saved.journalEntries : structuredClone(initialJournalEntries))
+          .filter(j => j.sourceType !== 'OPENING_BALANCE' || !j.sourceId || validBankIds.has(j.sourceId))
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
       });
     }
   }, []);
@@ -887,6 +923,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const updateMaterialCategory = useCallback((oldCategory: string, newCategory: string) => {
+    const trimmed = newCategory.trim();
+    if (!trimmed || (oldCategory.toLowerCase() === trimmed.toLowerCase() && oldCategory === trimmed)) return;
+    setState(prev => {
+      const updatedCategories = prev.categories.map(c => c.toLowerCase() === oldCategory.toLowerCase() ? trimmed : c);
+      const updatedMaterials = prev.materials.map(m => m.category.toLowerCase() === oldCategory.toLowerCase() ? { ...m, category: trimmed } : m);
+      return {
+        ...prev,
+        categories: updatedCategories,
+        materials: updatedMaterials,
+      };
+    });
+  }, []);
+
+  const reorderMaterialCategories = useCallback((newCategories: string[]) => {
+    setState(prev => ({
+      ...prev,
+      categories: newCategories,
+    }));
+  }, []);
+
   const deleteMaterialCategory = useCallback((category: string): boolean => {
     let success = true;
     setState(prev => {
@@ -933,6 +990,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (prev.assetCategories.find(c => c.toLowerCase() === category.trim().toLowerCase())) return prev;
       return { ...prev, assetCategories: [...prev.assetCategories, category.trim()] };
     });
+  }, []);
+
+  const updateAssetCategory = useCallback((oldCategory: string, newCategory: string) => {
+    const trimmed = newCategory.trim();
+    if (!trimmed || (oldCategory.toLowerCase() === trimmed.toLowerCase() && oldCategory === trimmed)) return;
+    setState(prev => {
+      const updatedCategories = prev.assetCategories.map(c => c.toLowerCase() === oldCategory.toLowerCase() ? trimmed : c);
+      const updatedAssets = prev.assets.map(a => a.category.toLowerCase() === oldCategory.toLowerCase() ? { ...a, category: trimmed } : a);
+      return {
+        ...prev,
+        assetCategories: updatedCategories,
+        assets: updatedAssets,
+      };
+    });
+  }, []);
+
+  const reorderAssetCategories = useCallback((newCategories: string[]) => {
+    setState(prev => ({
+      ...prev,
+      assetCategories: newCategories,
+    }));
   }, []);
 
   const deleteAssetCategory = useCallback((category: string): boolean => {
@@ -1051,6 +1129,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, purchaseOrders: [...prev.purchaseOrders, po] }));
   }, [nextPONumber, currentUser.name]);
 
+  const createDirectPurchase = useCallback((
+    supplier: string,
+    items: PurchaseOrderItem[],
+    bankAccountId: string,
+    additionalCost: number = 0
+  ) => {
+    setState(prev => {
+      const bankAccount = prev.bankAccounts.find(b => b.id === bankAccountId);
+      if (!bankAccount) return prev;
+
+      const itemsTotal = items.reduce((sum, i) => sum + i.qty * i.unitCost, 0);
+      const grandTotal = itemsTotal + (additionalCost || 0);
+
+      const now = new Date().toISOString();
+      const poNumber = nextPONumber();
+
+      const po: PurchaseOrder = {
+        id: generateId(),
+        poNumber,
+        supplier,
+        createdBy: currentUser.name,
+        items,
+        status: 'RECEIVED',
+        paymentStatus: 'PAID',
+        totalAmount: grandTotal,
+        bankAccountId,
+        createdAt: now,
+        receivedAt: now,
+        paidAt: now,
+        purchaseType: 'DIRECT',
+        additionalCost: additionalCost || 0,
+      };
+
+      // 1. Immediately update raw material stocks
+      const newMaterials = prev.materials.map(m => {
+        const poItem = items.find(i => i.materialId === m.id);
+        if (poItem) {
+          return { ...m, stock: parseFloat((m.stock + poItem.qty).toFixed(4)) };
+        }
+        return m;
+      });
+
+      // 2. Immediately create stock movements
+      const newMovements: StockMovement[] = items.map(item => ({
+        id: generateId(),
+        materialId: item.materialId,
+        materialName: item.materialName,
+        type: 'IN' as const,
+        qty: item.qty,
+        reference: `${poNumber} (Pembelian Langsung)`,
+        date: now,
+      }));
+
+      // 3. Immediately deduct selected bank account balance
+      const updatedBankAccounts = prev.bankAccounts.map(ba =>
+        ba.id === bankAccountId
+          ? { ...ba, balance: ba.balance - grandTotal }
+          : ba
+      );
+
+      // 4. Create direct purchase journal
+      const directJournal = createDirectPurchaseJournal(
+        po,
+        bankAccount.name,
+        prev.journalEntries.length,
+        now,
+        prev.chartOfAccounts
+      );
+
+      return {
+        ...prev,
+        materials: newMaterials,
+        purchaseOrders: [...prev.purchaseOrders, po],
+        stockMovements: [...prev.stockMovements, ...newMovements],
+        bankAccounts: updatedBankAccounts,
+        journalEntries: [directJournal, ...prev.journalEntries],
+      };
+    });
+  }, [nextPONumber, currentUser.name]);
+
   const orderPO = useCallback((poId: string) => {
     setState(prev => ({
       ...prev,
@@ -1060,13 +1218,108 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const rejectPO = useCallback((poId: string) => {
-    setState(prev => ({
-      ...prev,
-      purchaseOrders: prev.purchaseOrders.map(p =>
-        p.id === poId ? { ...p, status: 'REJECTED' as const } : p
-      ),
-    }));
+  const rejectPO = useCallback((poId: string, reason?: string): { success: boolean; error?: string } => {
+    let result: { success: boolean; error?: string } = { success: true };
+    setState(prev => {
+      const po = prev.purchaseOrders.find(p => p.id === poId);
+      if (!po || po.status === 'REJECTED') {
+        result = { success: false, error: 'Pengadaan tidak ditemukan atau sudah dibatalkan.' };
+        return prev;
+      }
+
+      const wasReceived = po.status === 'RECEIVED' || po.purchaseType === 'DIRECT';
+      const now = new Date().toISOString();
+
+      let updatedMaterials = prev.materials;
+      let updatedMovements = prev.stockMovements;
+      let updatedBankAccounts = prev.bankAccounts;
+      let newJournals: JournalEntry[] = [];
+
+      if (wasReceived) {
+        // Stock Safety Check: Check if any material stock is less than poItem.qty
+        const insufficientMat = po.items.find(poItem => {
+          const mat = prev.materials.find(m => m.id === poItem.materialId);
+          return !mat || mat.stock < poItem.qty;
+        });
+
+        if (insufficientMat) {
+          const matObj = prev.materials.find(m => m.id === insufficientMat.materialId);
+          const currentQty = matObj ? matObj.stock : 0;
+          result = {
+            success: false,
+            error: `Gagal membatalkan. Stok "${insufficientMat.materialName}" saat ini tersisa ${currentQty} ${insufficientMat.unit || 'unit'}, kurang dari ${insufficientMat.qty} unit pada PO. Bahan baku ini sebagian telah dikonsumsi oleh SPK produksi.`,
+          };
+          return prev;
+        }
+
+        // Deduct material stock that was previously added
+        updatedMaterials = prev.materials.map(m => {
+          const poItem = po.items.find(i => i.materialId === m.id);
+          if (poItem) {
+            return { ...m, stock: Math.max(0, parseFloat((m.stock - poItem.qty).toFixed(4))) };
+          }
+          return m;
+        });
+
+        // Add cancellation stock movement
+        const cancelMovements: StockMovement[] = po.items.map(item => ({
+          id: generateId(),
+          materialId: item.materialId,
+          materialName: item.materialName,
+          type: 'OUT' as const,
+          qty: item.qty,
+          reference: `Batal ${po.poNumber}`,
+          date: now,
+        }));
+        updatedMovements = [...cancelMovements, ...prev.stockMovements];
+
+        // Refund cash if it was direct purchase & create reversal journal
+        if (po.purchaseType === 'DIRECT' && po.bankAccountId) {
+          updatedBankAccounts = prev.bankAccounts.map(b =>
+            b.id === po.bankAccountId ? { ...b, balance: b.balance + po.totalAmount } : b
+          );
+          const revJournal = createReversalDirectPurchaseJournal(
+            po,
+            prev.journalEntries.length,
+            reason,
+            now,
+            prev.chartOfAccounts
+          );
+          newJournals.push(revJournal);
+        } else {
+          const revJournal = createReversalPOReceivedJournal(
+            po,
+            prev.journalEntries.length,
+            reason,
+            now,
+            prev.chartOfAccounts
+          );
+          newJournals.push(revJournal);
+        }
+      }
+
+      const currentUser = getUserById(prev.currentUserId || DEFAULT_USER_ID);
+
+      return {
+        ...prev,
+        materials: updatedMaterials,
+        stockMovements: updatedMovements,
+        bankAccounts: updatedBankAccounts,
+        journalEntries: [...newJournals, ...prev.journalEntries],
+        purchaseOrders: prev.purchaseOrders.map(p =>
+          p.id === poId
+            ? {
+              ...p,
+              status: 'REJECTED' as const,
+              cancelReason: reason?.trim() || undefined,
+              cancelledBy: currentUser.name,
+              cancelledAt: now,
+            }
+            : p
+        ),
+      };
+    });
+    return result;
   }, []);
 
   const deletePO = useCallback((poId: string): boolean => {
@@ -1183,13 +1436,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       salesOrders: prev.salesOrders.map(o =>
         o.id === orderId
           ? {
-              ...o,
-              status: 'CANCELED' as const,
-              cancelReason,
-              cancelledByRole: roleLabel,
-              updatedAt: now,
-              updatedBy: user.name,
-            }
+            ...o,
+            status: 'CANCELED' as const,
+            cancelReason,
+            cancelledByRole: roleLabel,
+            updatedAt: now,
+            updatedBy: user.name,
+          }
           : o
       ),
     }));
@@ -1225,11 +1478,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Verify stock
+    // Calculate active reserved demand for Sub-Assemblies from active uncompleted Product WOs
+    const activeReservedSubAssemblyMap = new Map<string, number>();
+    state.workOrders
+      .filter(w => w.status !== 'COMPLETED' && !w.isSubAssembly)
+      .forEach(w => {
+        w.materialsConsumed.forEach(b => {
+          const mat = state.materials.find(m => m.id === b.materialId);
+          if (mat?.isSubAssembly) {
+            activeReservedSubAssemblyMap.set(b.materialId, (activeReservedSubAssemblyMap.get(b.materialId) || 0) + b.qty);
+          }
+        });
+      });
+
+    // Verify stock (with MRP Sub-Assembly auto-expansion or strict mode check)
     for (const [matId, qtyNeeded] of allMaterialsNeeded.entries()) {
       const mat = state.materials.find(m => m.id === matId);
-      if (!mat || mat.stock < qtyNeeded) {
-        return { success: false, error: `Stok bahan baku tidak mencukupi: ${mat?.name || matId}. Butuh ${qtyNeeded}, tersedia ${mat?.stock || 0}.` };
+      if (!mat) {
+        return { success: false, error: `Bahan baku tidak ditemukan: ${matId}.` };
+      }
+
+      if (state.strictSOStockCheck) {
+        if (mat.stock < qtyNeeded) {
+          return {
+            success: false,
+            error: `Stok ${mat.isSubAssembly ? 'barang setengah jadi' : 'bahan baku'} "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+          };
+        }
+      } else {
+        if (mat.isSubAssembly) {
+          const reservedQty = activeReservedSubAssemblyMap.get(matId) || 0;
+          const availableEffective = Math.max(0, (mat.stock || 0) - reservedQty);
+          const deficit = qtyNeeded - availableEffective;
+
+          if (deficit > 0) {
+            // Check child BOM raw materials for the deficit quantity
+            if (!mat.childBom || mat.childBom.length === 0) {
+              return {
+                success: false,
+                error: `Stok barang setengah jadi "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+              };
+            }
+
+            for (const child of mat.childBom) {
+              const childQtyNeeded = child.qty * deficit;
+              const childMat = state.materials.find(m => m.id === child.materialId);
+              if (!childMat || childMat.stock < childQtyNeeded) {
+                return {
+                  success: false,
+                  error: `Stok bahan baku "${childMat?.name || child.materialId}" tidak mencukupi. Stok tersedia: ${childMat?.stock || 0} ${childMat?.unit || ''}, kebutuhan: ${childQtyNeeded} ${childMat?.unit || ''}.`,
+                };
+              }
+            }
+          }
+        } else {
+          if (mat.stock < qtyNeeded) {
+            return {
+              success: false,
+              error: `Stok bahan baku "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+            };
+          }
+        }
       }
     }
 
@@ -1238,23 +1547,141 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(prev => {
       const newWorkOrders: WorkOrder[] = [];
       const newMovements: StockMovement[] = [];
+      const subAssemblyDemands: { subMat: RawMaterial; deficit: number }[] = [];
 
-      const newMaterials = prev.materials.map(m => {
-        const qtyNeeded = allMaterialsNeeded.get(m.id);
-        if (qtyNeeded) {
+      const updatedMaterialsMap = new Map<string, RawMaterial>(prev.materials.map(m => [m.id, { ...m }]));
+
+      for (const [matId, qtyNeeded] of allMaterialsNeeded.entries()) {
+        const mat = updatedMaterialsMap.get(matId);
+        if (!mat) continue;
+
+        if (prev.strictSOStockCheck) {
           newMovements.push({
             id: generateId(),
-            materialId: m.id,
-            materialName: m.name,
+            materialId: mat.id,
+            materialName: mat.name,
             type: 'OUT',
             qty: qtyNeeded,
             date: now,
-            reference: `MO-${order.id}`
+            reference: `SO-${order.orderNumber}`,
           });
-          return { ...m, stock: m.stock - qtyNeeded };
+          mat.stock = parseFloat((mat.stock - qtyNeeded).toFixed(4));
+        } else if (mat.isSubAssembly) {
+          const reservedQty = activeReservedSubAssemblyMap.get(matId) || 0;
+          const availableEffective = Math.max(0, mat.stock - reservedQty);
+          const deficit = Math.max(0, qtyNeeded - availableEffective);
+          if (deficit > 0) {
+            subAssemblyDemands.push({ subMat: mat, deficit });
+          }
+        } else {
+          newMovements.push({
+            id: generateId(),
+            materialId: mat.id,
+            materialName: mat.name,
+            type: 'OUT',
+            qty: qtyNeeded,
+            date: now,
+            reference: `SO-${order.orderNumber}`,
+          });
+          mat.stock = parseFloat((mat.stock - qtyNeeded).toFixed(4));
         }
-        return m;
+      }
+
+      // Process subAssemblyDemands: deduct child raw materials & create Sub-Assembly Work Orders
+      subAssemblyDemands.forEach(({ subMat, deficit }) => {
+        const childBom = subMat.childBom || [];
+
+        childBom.forEach(child => {
+          const childQtyNeeded = child.qty * deficit;
+          const childMat = updatedMaterialsMap.get(child.materialId);
+          if (childMat) {
+            childMat.stock = parseFloat((childMat.stock - childQtyNeeded).toFixed(4));
+            newMovements.push({
+              id: generateId(),
+              materialId: childMat.id,
+              materialName: childMat.name,
+              type: 'OUT',
+              qty: childQtyNeeded,
+              date: now,
+              reference: `SO-${order.orderNumber} (Child BOM ${subMat.code})`,
+            });
+          }
+        });
+
+        const woId = `wo-sa-${generateId()}`;
+        const spkNumber = `SPK-SA-${String(prev.workOrders.length + newWorkOrders.length + 1).padStart(4, '0')}`;
+        const materialsConsumed = childBom.map(b => ({
+          materialId: b.materialId,
+          qty: b.qty * deficit,
+        }));
+
+        const assignedRouting = subMat.routingId
+          ? prev.routings.find(r => r.id === subMat.routingId)
+          : prev.routings[0];
+
+        const jobCards: JobCard[] = assignedRouting
+          ? assignedRouting.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
+              const op = prev.operations.find(o => o.id === step.operationId);
+              return {
+                id: `jc-${generateId()}`,
+                workOrderId: woId,
+                operationId: step.operationId,
+                operationName: op?.name || 'Operasi',
+                sequence: step.sequence,
+                targetQty: deficit,
+                completedQty: 0,
+                picName: '',
+                plannedMinutes: (op?.durationMinutes || 30) * deficit,
+                status: 'PENDING' as const,
+              };
+            })
+          : [
+              {
+                id: `jc-${generateId()}`,
+                workOrderId: woId,
+                operationId: 'op-sa-default',
+                operationName: 'Pembuatan & Perakitan Sub-Assembly',
+                sequence: 1,
+                targetQty: deficit,
+                completedQty: 0,
+                picName: '',
+                plannedMinutes: 60 * deficit,
+                status: 'PENDING' as const,
+              },
+            ];
+
+        const plannedLaborCost = jobCards.reduce((acc, jc) => {
+          const op = prev.operations.find(o => o.id === jc.operationId);
+          if (!op) return acc;
+          if (op.costingMethod === 'fixed') {
+            return acc + ((op.fixedLaborCost || 0) * deficit);
+          }
+          const hrs = (jc.plannedMinutes || 30) / 60;
+          return acc + (hrs * (op.laborCostPerHour || 0));
+        }, 0);
+
+        const materialCost = calculateSubAssemblyCost(childBom, Array.from(updatedMaterialsMap.values()), subMat.routingId, prev.routings, prev.operations) * deficit;
+
+        newWorkOrders.push({
+          id: woId,
+          spkNumber,
+          salesOrderId: order.id,
+          salesOrderNumber: order.orderNumber,
+          productName: subMat.name,
+          variantName: `${deficit} ${subMat.unit} (Sub-Assembly Otomatis SO-${order.orderNumber})`,
+          status: 'PENDING',
+          jobCards,
+          materialsConsumed,
+          materialCost,
+          plannedLaborCost,
+          actualLaborCost: plannedLaborCost,
+          issuedAt: now,
+          isCustom: false,
+          isSubAssembly: true,
+          subAssemblyId: subMat.id,
+        });
       });
+
       let spkCounter = 1;
       order.items.forEach((item, idx) => {
         const product = prev.products.find(p => p.id === item.productId);
@@ -1264,11 +1691,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const variantCombination = item.variantLabel ? item.variantLabel : Object.values(variant.combination).join(' • ');
         const routing = variant.routingId ? prev.routings.find(r => r.id === variant.routingId) : null;
 
-        // Loop unit from 1 to item.qty -> Create 1 individual SPK (qty: 1) per unit
         for (let unit = 1; unit <= item.qty; unit++) {
           const woId = `wo-${generateId()}`;
 
-          // Generate Job Cards from Routing for 1 unit
           const jobCards: JobCard[] = routing ? routing.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
             const op = prev.operations.find(o => o.id === step.operationId);
             return {
@@ -1277,7 +1702,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               operationId: step.operationId,
               operationName: op?.name || 'Operasi',
               sequence: step.sequence,
-              targetQty: 1, // 1 unit per SPK
+              targetQty: 1,
               status: 'PENDING' as const,
               completedQty: 0,
               picName: '',
@@ -1285,7 +1710,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             };
           }) : [];
 
-          // Calculate planned production costs for 1 unit
           let plannedLaborCost = 0;
           if (routing) {
             routing.steps.forEach(step => {
@@ -1304,7 +1728,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const materialsConsumed: { materialId: string; qty: number }[] = [];
 
           variant.bom.forEach(b => {
-            const mat = prev.materials.find(m => m.id === b.materialId);
+            const mat = updatedMaterialsMap.get(b.materialId);
             materialsConsumed.push({ materialId: b.materialId, qty: b.qty });
             materialCost += (mat?.unitCost || 0) * b.qty;
           });
@@ -1313,7 +1737,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             item.selectedModifiers.forEach(g => {
               g.selectedOptions.forEach(opt => {
                 opt.bom.forEach(b => {
-                  const mat = prev.materials.find(m => m.id === b.materialId);
+                  const mat = updatedMaterialsMap.get(b.materialId);
                   materialsConsumed.push({ materialId: b.materialId, qty: b.qty });
                   materialCost += (mat?.unitCost || 0) * b.qty;
                 });
@@ -1337,7 +1761,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             materialsConsumed,
             materialCost,
             plannedLaborCost,
-            actualLaborCost: 0,
+            actualLaborCost: plannedLaborCost,
             issuedAt: now,
             isCustom: item.isCustom || false,
             customNotes: item.customNotes,
@@ -1347,20 +1771,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return {
         ...prev,
-        materials: newMaterials,
+        materials: Array.from(updatedMaterialsMap.values()),
+        workOrders: [...newWorkOrders, ...prev.workOrders],
         stockMovements: [...prev.stockMovements, ...newMovements],
         salesOrders: prev.salesOrders.map(o =>
           o.id === orderId
             ? {
-                ...o,
-                status: 'PROCESSING' as const,
-                spkIssuedAt: now,
-                updatedAt: now,
-                updatedBy: currentUser.name,
-              }
+              ...o,
+              status: 'PROCESSING' as const,
+              spkIssuedAt: now,
+              updatedAt: now,
+              updatedBy: currentUser.name,
+            }
             : o
         ),
-        workOrders: [...prev.workOrders, ...newWorkOrders],
       };
     });
 
@@ -1369,41 +1793,235 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ---- Production ----
 
-  // Helper: recalculate actual costs for a work order based on job card actuals
-  const recalcActualCosts = (wo: WorkOrder, operations: ProductionOperation[]): { actualLaborCost: number } => {
-    let actualLaborCost = 0;
-    wo.jobCards.forEach(jc => {
-      if (jc.actualMinutes && jc.actualMinutes > 0) {
-        const op = operations.find(o => o.id === jc.operationId);
-        if (op) {
-          const hours = jc.actualMinutes / 60;
-          if (op.costingMethod === 'fixed') {
-            actualLaborCost += (op.fixedLaborCost || 0) * jc.targetQty;
-          } else {
-            actualLaborCost += hours * (op.laborCostPerHour || 0);
-          }
-        }
-      }
-    });
-    return { actualLaborCost };
-  };
-
-  // Helper: update WO status and check SO completion
+  // Helper: update WO status and check SO completion / Sub-Assembly stock mutation
   const updateWOStatusAndSO = (prev: AppState, workOrderId: string, updatedWOs: WorkOrder[]): AppState => {
     let updatedSOs = prev.salesOrders;
+    let updatedMaterials = prev.materials;
+    let updatedMovements = prev.stockMovements;
+    const now = new Date().toISOString();
+
     const targetWO = updatedWOs.find(w => w.id === workOrderId);
-    if (targetWO) {
-      const soId = targetWO.salesOrderId;
-      const allRelatedWOs = updatedWOs.filter(w => w.salesOrderId === soId);
-      const isSOReady = allRelatedWOs.every(w => w.status === 'COMPLETED');
-      if (isSOReady) {
-        updatedSOs = prev.salesOrders.map(so =>
-          so.id === soId ? { ...so, status: 'READY' as const } : so
-        );
+    if (targetWO && targetWO.status === 'COMPLETED') {
+      const prevWO = prev.workOrders.find(w => w.id === workOrderId);
+
+      // 1. Sub-Assembly WO completion: Add produced Sub-Assembly stock (Stock IN)
+      if (targetWO.isSubAssembly && targetWO.subAssemblyId && prevWO && prevWO.status !== 'COMPLETED') {
+        const producedQty = targetWO.jobCards[0]?.targetQty || 1;
+        const subMat = prev.materials.find(m => m.id === targetWO.subAssemblyId);
+
+        if (subMat) {
+          updatedMaterials = updatedMaterials.map(m => {
+            if (m.id === targetWO.subAssemblyId) {
+              return { ...m, stock: parseFloat((m.stock + producedQty).toFixed(4)) };
+            }
+            return m;
+          });
+
+          const newMovements: StockMovement[] = [{
+            id: generateId(),
+            materialId: subMat.id,
+            materialName: subMat.name,
+            type: 'IN',
+            qty: producedQty,
+            reference: targetWO.spkNumber,
+            date: now,
+          }];
+
+          // If manual internal Sub-Assembly WO, deduct Child BOM raw materials
+          if (targetWO.salesOrderId === 'INTERNAL-SA') {
+            const consumedMap = new Map<string, number>();
+            targetWO.materialsConsumed.forEach(b => {
+              consumedMap.set(b.materialId, (consumedMap.get(b.materialId) || 0) + b.qty);
+            });
+
+            updatedMaterials = updatedMaterials.map(m => {
+              const consumedQty = consumedMap.get(m.id);
+              if (consumedQty) {
+                return { ...m, stock: parseFloat((m.stock - consumedQty).toFixed(4)) };
+              }
+              return m;
+            });
+
+            targetWO.materialsConsumed.forEach(b => {
+              const raw = prev.materials.find(m => m.id === b.materialId);
+              newMovements.push({
+                id: generateId(),
+                materialId: b.materialId,
+                materialName: raw?.name || b.materialId,
+                type: 'OUT',
+                qty: b.qty,
+                reference: targetWO.spkNumber,
+                date: now,
+              });
+            });
+          }
+
+          updatedMovements = [...newMovements, ...updatedMovements];
+        }
+      }
+      // 2. Product WO completion: Deduct consumed Sub-Assembly stock (Stock OUT) & update SO status
+      else if (!targetWO.isSubAssembly && prevWO && prevWO.status !== 'COMPLETED') {
+        const saMaterialsMap = new Map<string, number>();
+        targetWO.materialsConsumed.forEach(b => {
+          const mat = prev.materials.find(m => m.id === b.materialId);
+          if (mat?.isSubAssembly) {
+            saMaterialsMap.set(b.materialId, (saMaterialsMap.get(b.materialId) || 0) + b.qty);
+          }
+        });
+
+        if (saMaterialsMap.size > 0) {
+          const newMovements: StockMovement[] = [];
+          updatedMaterials = updatedMaterials.map(m => {
+            const consumedQty = saMaterialsMap.get(m.id);
+            if (consumedQty) {
+              return { ...m, stock: parseFloat((m.stock - consumedQty).toFixed(4)) };
+            }
+            return m;
+          });
+
+          saMaterialsMap.forEach((qty, matId) => {
+            const saMat = prev.materials.find(m => m.id === matId);
+            newMovements.push({
+              id: generateId(),
+              materialId: matId,
+              materialName: saMat?.name || matId,
+              type: 'OUT',
+              qty,
+              reference: `${targetWO.spkNumber} (Penggunaan Sub-Assembly)`,
+              date: now,
+            });
+          });
+
+          updatedMovements = [...newMovements, ...updatedMovements];
+        }
+
+        const soId = targetWO.salesOrderId;
+        const allRelatedWOs = updatedWOs.filter(w => w.salesOrderId === soId);
+        const isSOReady = allRelatedWOs.every(w => w.status === 'COMPLETED');
+        if (isSOReady) {
+          updatedSOs = prev.salesOrders.map(so =>
+            so.id === soId ? { ...so, status: 'READY' as const } : so
+          );
+        }
       }
     }
-    return { ...prev, workOrders: updatedWOs, salesOrders: updatedSOs };
+    return {
+      ...prev,
+      materials: updatedMaterials,
+      stockMovements: updatedMovements,
+      workOrders: updatedWOs,
+      salesOrders: updatedSOs,
+    };
   };
+
+  const createSubAssemblyWorkOrder = useCallback((subAssemblyId: string, targetQty: number) => {
+    let result = { success: true, error: '' };
+    const now = new Date().toISOString();
+
+    setState(prev => {
+      const subMat = prev.materials.find(m => m.id === subAssemblyId && m.isSubAssembly);
+      if (!subMat || !subMat.childBom || subMat.childBom.length === 0) {
+        result = { success: false, error: 'Item Sub-Assembly tidak valid atau belum memiliki Child BOM.' };
+        return prev;
+      }
+      if (targetQty <= 0) {
+        result = { success: false, error: 'Jumlah rencana produksi harus lebih dari 0.' };
+        return prev;
+      }
+
+      // Check stock availability
+      for (const item of subMat.childBom) {
+        const reqQty = item.qty * targetQty;
+        const rawMat = prev.materials.find(m => m.id === item.materialId);
+        if (!rawMat || rawMat.stock < reqQty) {
+          result = {
+            success: false,
+            error: `Stok bahan mentah "${rawMat?.name || item.materialId}" kurang! Butuh ${reqQty} ${rawMat?.unit || ''}, tersedia ${rawMat?.stock || 0}.`,
+          };
+          return prev;
+        }
+      }
+
+      const woId = `wo-sa-${generateId()}`;
+      const spkNumber = `SPK-SA-${String(prev.workOrders.length + 1).padStart(4, '0')}`;
+      const materialsConsumed = subMat.childBom.map(b => ({
+        materialId: b.materialId,
+        qty: b.qty * targetQty,
+      }));
+      const materialCost = calculateSubAssemblyCost(subMat.childBom, prev.materials, subMat.routingId, prev.routings, prev.operations) * targetQty;
+
+      const assignedRouting = subMat.routingId
+        ? prev.routings.find(r => r.id === subMat.routingId)
+        : prev.routings[0];
+
+      const jobCards: JobCard[] = assignedRouting
+        ? assignedRouting.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
+            const op = prev.operations.find(o => o.id === step.operationId);
+            return {
+              id: `jc-${generateId()}`,
+              workOrderId: woId,
+              operationId: step.operationId,
+              operationName: op?.name || 'Operasi',
+              sequence: step.sequence,
+              targetQty,
+              completedQty: 0,
+              picName: '',
+              plannedMinutes: (op?.durationMinutes || 30) * targetQty,
+              status: 'PENDING' as const,
+            };
+          })
+        : [
+            {
+              id: `jc-${generateId()}`,
+              workOrderId: woId,
+              operationId: 'op-sa-default',
+              operationName: 'Pembuatan & Perakitan Sub-Assembly',
+              sequence: 1,
+              targetQty,
+              completedQty: 0,
+              picName: '',
+              plannedMinutes: 60 * targetQty,
+              status: 'PENDING' as const,
+            },
+          ];
+
+      const plannedLaborCost = jobCards.reduce((acc, jc) => {
+        const op = prev.operations.find(o => o.id === jc.operationId);
+        if (!op) return acc;
+        if (op.costingMethod === 'fixed') {
+          return acc + ((op.fixedLaborCost || 0) * targetQty);
+        }
+        const hrs = (jc.plannedMinutes || 30) / 60;
+        return acc + (hrs * (op.laborCostPerHour || 0));
+      }, 0);
+
+      const newWO: WorkOrder = {
+        id: woId,
+        spkNumber,
+        salesOrderId: 'INTERNAL-SA',
+        salesOrderNumber: 'SPK Internal Sub-Assembly',
+        productName: subMat.name,
+        variantName: `${targetQty} ${subMat.unit} (Sub-Assembly)`,
+        status: 'PENDING',
+        jobCards,
+        materialsConsumed,
+        materialCost,
+        plannedLaborCost,
+        actualLaborCost: 0,
+        issuedAt: now,
+        isCustom: false,
+        isSubAssembly: true,
+        subAssemblyId: subMat.id,
+      };
+
+      return {
+        ...prev,
+        workOrders: [newWO, ...prev.workOrders],
+      };
+    });
+
+    return result;
+  }, []);
 
   const updateJobCardProgress = useCallback((workOrderId: string, jobCardId: string, completedQty: number, picName: string) => {
     setState(prev => {
@@ -1421,8 +2039,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const anyJcStarted = updatedJobCards.some(jc => jc.status === 'IN_PROGRESS' || jc.status === 'COMPLETED');
           const status: SPKStatus = allJcComplete ? 'COMPLETED' : (anyJcStarted ? 'PROCESSING' : 'PENDING');
           const updatedWO = { ...wo, jobCards: updatedJobCards, status, completedAt: allJcComplete ? new Date().toISOString() : wo.completedAt };
-          const costs = recalcActualCosts(updatedWO, prev.operations);
-          return { ...updatedWO, actualLaborCost: costs.actualLaborCost, };
+          return updatedWO;
         }
         return wo;
       });
@@ -1467,7 +2084,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const completeJobCard = useCallback((workOrderId: string, jobCardId: string, completedQty: number, picName: string, actualMinutes?: number, operatorId?: string) => {
+    let result = { success: true, error: '' };
     setState(prev => {
+      const targetWO = prev.workOrders.find(w => w.id === workOrderId);
+      if (!targetWO) return prev;
+
+      // Check if completing this job card will make ALL job cards of this WO completed
+      const willBeAllJcComplete = targetWO.jobCards.every(jc => jc.id === jobCardId || jc.status === 'COMPLETED');
+
+      if (willBeAllJcComplete && !targetWO.isSubAssembly) {
+        // Find if there are any pending Sub-Assembly WOs for the same sales order
+        const pendingSA = prev.workOrders.find(w => w.salesOrderId === targetWO.salesOrderId && w.isSubAssembly && w.status !== 'COMPLETED');
+        if (pendingSA) {
+          result = {
+            success: false,
+            error: `SPK Sub-Assembly ${pendingSA.spkNumber} belum selesai.`,
+          };
+          return prev;
+        }
+      }
+
       const now = new Date().toISOString();
       const updatedWOs = prev.workOrders.map(wo => {
         if (wo.id === workOrderId) {
@@ -1491,13 +2127,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const allJcComplete = updatedJobCards.length > 0 && updatedJobCards.every(jc => jc.status === 'COMPLETED');
           const status: SPKStatus = allJcComplete ? 'COMPLETED' : 'PROCESSING';
           const updatedWO = { ...wo, jobCards: updatedJobCards, status, completedAt: allJcComplete ? now : wo.completedAt };
-          const costs = recalcActualCosts(updatedWO, prev.operations);
-          return { ...updatedWO, actualLaborCost: costs.actualLaborCost, };
+          return updatedWO;
         }
         return wo;
       });
       return updateWOStatusAndSO(prev, workOrderId, updatedWOs);
     });
+    return result;
   }, []);
 
   const addOperator = useCallback((op: Omit<ProductionOperator, 'id'>) => {
@@ -1779,6 +2415,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const recordOtherIncome = useCallback((accountCode: string, accountName: string, amount: number, bankAccountId: string, note?: string) => {
+    setState(prev => {
+      const bankAccount = prev.bankAccounts.find(ba => ba.id === bankAccountId);
+      if (!bankAccount) return prev;
+
+      const now = new Date().toISOString();
+      const newIncome: OtherIncome = {
+        id: generateId(),
+        accountCode,
+        accountName,
+        amount,
+        date: now,
+        bankAccountId,
+        note,
+      };
+
+      const updatedBankAccounts = prev.bankAccounts.map(ba =>
+        ba.id === bankAccountId
+          ? { ...ba, balance: ba.balance + amount }
+          : ba
+      );
+
+      const inflowJournal = createCashInflowJournal(
+        newIncome,
+        bankAccount.name,
+        prev.journalEntries.length,
+        now,
+        prev.chartOfAccounts
+      );
+
+      return {
+        ...prev,
+        otherIncomes: [newIncome, ...prev.otherIncomes],
+        bankAccounts: updatedBankAccounts,
+        journalEntries: [inflowJournal, ...prev.journalEntries],
+      };
+    });
+  }, []);
+
   const paySupplierPO = useCallback((purchaseOrderId: string, bankAccountId: string) => {
     setState(prev => {
       const po = prev.purchaseOrders.find(p => p.id === purchaseOrderId);
@@ -1813,6 +2488,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
         purchaseOrders: updatedPOs,
         bankAccounts: updatedBankAccounts,
         journalEntries: [poPayJournal, ...prev.journalEntries],
+      };
+    });
+  }, []);
+
+  const addManualJournal = useCallback((description: string, lines: Omit<JournalEntryLine, 'accountName'>[], date?: string) => {
+    setState(prev => {
+      const now = date || new Date().toISOString();
+      const journal = createManualJournal(description, lines, prev.journalEntries.length, now, prev.chartOfAccounts);
+      return {
+        ...prev,
+        journalEntries: [journal, ...prev.journalEntries],
+      };
+    });
+  }, []);
+
+  const closePeriod = useCallback((totalRevenue: number, totalCOGS: number, totalExpense: number, date?: string) => {
+    setState(prev => {
+      const now = date || new Date().toISOString();
+      const journal = createClosingJournal(totalRevenue, totalCOGS, totalExpense, prev.journalEntries.length, now, prev.chartOfAccounts);
+      return {
+        ...prev,
+        journalEntries: [journal, ...prev.journalEntries],
+      };
+    });
+  }, []);
+
+  const distributeDividend = useCallback((amount: number, bankAccountId: string, date?: string) => {
+    setState(prev => {
+      const bankAccount = prev.bankAccounts.find(ba => ba.id === bankAccountId);
+      if (!bankAccount) return prev;
+
+      const now = date || new Date().toISOString();
+
+      const updatedBankAccounts = prev.bankAccounts.map(ba =>
+        ba.id === bankAccountId
+          ? { ...ba, balance: ba.balance - amount }
+          : ba
+      );
+
+      const dividendJournal = createDividendJournal(amount, bankAccountId, prev.journalEntries.length, now, prev.chartOfAccounts);
+
+      return {
+        ...prev,
+        bankAccounts: updatedBankAccounts,
+        journalEntries: [dividendJournal, ...prev.journalEntries],
       };
     });
   }, []);
@@ -1933,8 +2653,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const isUsedInExpenses = prev.expenses.some(exp => exp.bankAccountId === id);
       // 3. Purchase Orders
       const isUsedInPOs = prev.purchaseOrders.some(po => po.bankAccountId === id);
+      // 4. Other Incomes
+      const isUsedInOtherIncomes = prev.otherIncomes?.some(inc => inc.bankAccountId === id);
+      // 5. Bank Transfers
+      const isUsedInTransfers = prev.journalEntries.some(j =>
+        j.sourceType === 'BANK_TRANSFER' && j.sourceId && j.sourceId.split('-').includes(id)
+      );
+      // 6. Dividends
+      const isUsedInDividends = prev.journalEntries.some(j =>
+        j.sourceType === 'DIVIDEND' && j.sourceId === id
+      );
 
-      if (isUsedInInvoices || isUsedInExpenses || isUsedInPOs) {
+      if (isUsedInInvoices || isUsedInExpenses || isUsedInPOs || isUsedInOtherIncomes || isUsedInTransfers || isUsedInDividends) {
         success = false;
         return prev;
       }
@@ -1942,6 +2672,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...prev,
         bankAccounts: prev.bankAccounts.filter(b => b.id !== id),
+        journalEntries: prev.journalEntries.filter(j => !(j.sourceType === 'OPENING_BALANCE' && j.sourceId === id)),
       };
     });
     return success;
@@ -2003,6 +2734,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // ---- HPP Projection for Pending Orders ----
+  const getPendingOrderEstHPP = useCallback((salesOrderId: string): { estMaterialCost: number; estLaborCost: number; totalEstHPP: number } | null => {
+    const order = state.salesOrders.find(o => o.id === salesOrderId);
+    if (!order || order.status !== 'PENDING') return null;
+
+    let estMaterialCost = 0;
+    let estLaborCost = 0;
+
+    order.items.forEach(item => {
+      const product = state.products.find(p => p.id === item.productId);
+      if (!product) return;
+      const variant = item.variantId
+        ? product.variants.find(v => v.id === item.variantId)
+        : product.variants[0];
+      if (!variant) return;
+
+      // Estimate material cost from variant BOM
+      variant.bom.forEach(b => {
+        const mat = state.materials.find(m => m.id === b.materialId);
+        estMaterialCost += (mat?.unitCost || 0) * b.qty * item.qty;
+      });
+
+      // Estimate material cost from selected modifiers BOM
+      if (item.selectedModifiers) {
+        item.selectedModifiers.forEach(group => {
+          group.selectedOptions.forEach(opt => {
+            opt.bom.forEach(b => {
+              const mat = state.materials.find(m => m.id === b.materialId);
+              estMaterialCost += (mat?.unitCost || 0) * b.qty * item.qty;
+            });
+          });
+        });
+      }
+
+      // Estimate labor cost from routing (per unit x qty)
+      const routing = variant.routingId ? state.routings.find(r => r.id === variant.routingId) : null;
+      if (routing) {
+        let laborPerUnit = 0;
+        routing.steps.forEach(step => {
+          const op = state.operations.find(o => o.id === step.operationId);
+          if (!op) return;
+          if (op.costingMethod === 'fixed') {
+            laborPerUnit += op.fixedLaborCost || 0;
+          } else {
+            const hours = (op.durationMinutes || 0) / 60;
+            laborPerUnit += hours * (op.laborCostPerHour || 0);
+          }
+        });
+        estLaborCost += laborPerUnit * item.qty;
+      }
+    });
+
+    return { estMaterialCost, estLaborCost, totalEstHPP: estMaterialCost + estLaborCost };
+  }, [state.salesOrders, state.products, state.materials, state.routings, state.operations]);
+
   const addBomTemplate = useCallback((template: Omit<BOMTemplate, 'id'>, items: { materialId: string; defaultQty: number }[]) => {
     setState(prev => {
       const templateId = `tmpl-${generateId()}`;
@@ -2057,6 +2843,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const setStrictSOStockCheck = useCallback((enabled: boolean) => {
+    setState(prev => ({
+      ...prev,
+      strictSOStockCheck: enabled,
+    }));
+  }, []);
+
   const contextValue: AppContextType = {
     ...state,
     currentUser,
@@ -2085,11 +2878,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateMaterial,
     deleteMaterial,
     addMaterialCategory,
+    updateMaterialCategory,
     deleteMaterialCategory,
+    reorderMaterialCategories,
     addProductCategory,
     deleteProductCategory,
     addAssetCategory,
+    updateAssetCategory,
     deleteAssetCategory,
+    reorderAssetCategories,
     addAsset,
     updateAsset,
     deleteAsset,
@@ -2097,6 +2894,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteAssetServiceLog,
 
     createPO,
+    createDirectPurchase,
     receivePO,
     orderPO,
     rejectPO,
@@ -2109,6 +2907,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     startJobCard,
     pauseJobCard,
     completeJobCard,
+    createSubAssemblyWorkOrder,
     syncWorkOrderRouting,
     addOperation,
     updateOperation,
@@ -2123,11 +2922,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     confirmDelivery,
     recordPayment,
     recordExpense,
+    recordOtherIncome,
     paySupplierPO,
     addBankAccount,
     updateBankAccount,
     deleteBankAccount,
     transferBankFunds,
+    addManualJournal,
+    closePeriod,
+    distributeDividend,
 
     addAccount,
     updateAccount,
@@ -2154,9 +2957,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateOrderFormConfiguration,
     showAllOrdersTab: state.showAllOrdersTab ?? false,
     setShowAllOrdersTab,
+    strictSOStockCheck: state.strictSOStockCheck ?? false,
+    setStrictSOStockCheck,
     isCustomOrderFormEnabled: state.isCustomOrderFormEnabled ?? false,
     setIsCustomOrderFormEnabled,
     resetData,
+    getPendingOrderEstHPP,
   };
 
   return (

@@ -16,7 +16,7 @@ import { formatCurrency } from '@/lib/utils';
 import type { Product, ProductVariantSKU, VariantType, BOMItem, ProductModifierGroup, ProductModifierOption, ProductionOperation } from '@/lib/types';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronUp,
-  Tag, X, AlertTriangle, BedDouble, Layers, Box, Grip, FileSpreadsheet, Copy, Clock,
+  Tag, X, AlertTriangle, BedDouble, Layers, Box, Grip, FileSpreadsheet, Copy, Clock, Settings,
 } from 'lucide-react';
 import { canManageInventory } from '@/lib/roles';
 
@@ -680,21 +680,22 @@ function ProductsContent() {
             <Button><Plus className="h-4 w-4" /> Tambah Produk</Button>
           </Link>
         )}
-        {canManage && activeTab === 'attributes' && (
-          <Button onClick={openAddAttribute}><Plus className="h-4 w-4" /> Tambah Atribut</Button>
-        )}
         {canManage && activeTab === 'modifiers' && (
           <Button onClick={openAddModifier}><Plus className="h-4 w-4" /> Tambah Modifier</Button>
         )}
-        {canManage && activeTab === 'bom_templates' && (
-          <Button onClick={openAddBomTemplate}><Plus className="h-4 w-4" /> Tambah Preset BOM</Button>
+        {canManage && (
+          <Link href="/products/config">
+            <Button variant="outline">
+              <Settings className="h-4 w-4" /> Konfigurasi
+            </Button>
+          </Link>
         )}
       </PageHeader>
 
       {/* Reusable Segmented Control */}
       {(() => {
         let filterOptions: { value: string; label: string }[] = [];
-        let filterPlaceholder = "Filter Atribut";
+        let filterPlaceholder = "Filter";
 
         if (activeTab === 'products') {
           filterPlaceholder = "Semua Kategori Produk";
@@ -705,27 +706,19 @@ function ProductsContent() {
             { value: 'SINGLE', label: 'Pilihan Tunggal (Radio)' },
             { value: 'MULTI', label: 'Pilihan Berganda (Checkbox)' },
           ];
-        } else if (activeTab === 'bom_templates') {
-          filterPlaceholder = "Status Komponen BOM";
-          filterOptions = [
-            { value: 'HAS_ITEMS', label: 'Memiliki Material' },
-            { value: 'EMPTY', label: 'Tanpa Material' },
-          ];
         }
 
         return (
           <SegmentedControl
             value={activeTab}
             onChange={(tab) => {
-              setActiveTab(tab as 'products' | 'modifiers' | 'bom_templates' | 'attributes');
+              setActiveTab(tab as 'products' | 'modifiers');
               setSearchTerm('');
               setProductFilter('');
             }}
             options={[
               { key: 'products', label: 'Produk', icon: Layers },
               { key: 'modifiers', label: 'Add-on', icon: Grip },
-              { key: 'bom_templates', label: 'Preset BOM', icon: FileSpreadsheet },
-              { key: 'attributes', label: 'Atribut Varian', icon: Tag },
             ]}
             filterValue={productFilter}
             onFilterChange={setProductFilter}
@@ -736,11 +729,7 @@ function ProductsContent() {
             searchPlaceholder={
               activeTab === 'products'
                 ? "Cari produk..."
-                : activeTab === 'attributes'
-                  ? "Cari atribut master..."
-                  : activeTab === 'modifiers'
-                    ? "Cari modifier add-on..."
-                    : "Cari preset BOM..."
+                : "Cari modifier add-on..."
             }
           />
         );
@@ -1234,7 +1223,20 @@ function ProductsContent() {
       ) : null}
 
       {/* CRUD Master Attribute Modal */}
-      <Modal isOpen={showAttributeModal} onClose={() => setShowAttributeModal(false)} title={editAttributeId ? 'Edit Master Atribut' : 'Tambah Master Atribut Varian'} size="md">
+      <Modal
+        isOpen={showAttributeModal}
+        onClose={() => setShowAttributeModal(false)}
+        title={editAttributeId ? 'Edit Master Atribut' : 'Tambah Master Atribut Varian'}
+        size="md"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setShowAttributeModal(false)}>Batal</Button>
+            <Button onClick={handleSaveAttribute}>
+              {editAttributeId ? 'Simpan Perubahan' : 'Tambah Atribut'}
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-4">
           {attributeModalError && (
             <div className="rounded-lg bg-red-50 p-3 text-xs font-semibold text-red-600 dark:bg-red-950/20 dark:text-red-400 flex items-center gap-2">
@@ -1264,20 +1266,26 @@ function ProductsContent() {
             />
             <p className="text-[10px] text-slate-400">Pisahkan setiap opsi dengan tanda koma ( , ).</p>
           </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="outline" onClick={() => setShowAttributeModal(false)}>Batal</Button>
-            <Button onClick={handleSaveAttribute}>
-              {editAttributeId ? 'Simpan Perubahan' : 'Tambah Atribut'}
-            </Button>
-          </div>
         </div>
       </Modal>
 
 
 
       {/* CRUD Modifier Modal */}
-      <Modal isOpen={showModifierModal} onClose={() => setShowModifierModal(false)} title={editModifierGroupId ? 'Edit Modifier Master' : 'Tambah Modifier Master'} size="xl">
+      <Modal
+        isOpen={showModifierModal}
+        onClose={() => setShowModifierModal(false)}
+        title={editModifierGroupId ? 'Edit Modifier Master' : 'Tambah Modifier Master'}
+        size="xl"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setShowModifierModal(false)}>Batal</Button>
+            <Button onClick={handleSaveModifier}>
+              {editModifierGroupId ? 'Simpan Perubahan' : 'Tambah Modifier'}
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-5">
           {modifierModalError && (
             <div className="rounded-lg bg-red-50 p-3 text-xs font-semibold text-red-600 dark:bg-red-950/20 dark:text-red-400 flex items-center gap-2">
@@ -1305,18 +1313,24 @@ function ProductsContent() {
               }
             }}
           />
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="outline" onClick={() => setShowModifierModal(false)}>Batal</Button>
-            <Button onClick={handleSaveModifier}>
-              {editModifierGroupId ? 'Simpan Perubahan' : 'Tambah Modifier'}
-            </Button>
-          </div>
         </div>
       </Modal>
 
       {/* CRUD Master Preset BOM Modal */}
-      <Modal isOpen={showBomTemplateModal} onClose={() => setShowBomTemplateModal(false)} title={editBomTemplateId ? 'Edit Master Preset BOM' : 'Tambah Master Preset BOM'} size="lg">
+      <Modal
+        isOpen={showBomTemplateModal}
+        onClose={() => setShowBomTemplateModal(false)}
+        title={editBomTemplateId ? 'Edit Master Preset BOM' : 'Tambah Master Preset BOM'}
+        size="lg"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setShowBomTemplateModal(false)}>Batal</Button>
+            <Button onClick={handleSaveBomTemplate}>
+              {editBomTemplateId ? 'Simpan Perubahan' : 'Tambah Preset BOM'}
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-4">
           {bomTemplateModalError && (
             <div className="rounded-lg bg-red-50 p-3 text-xs font-semibold text-red-600 dark:bg-red-950/20 dark:text-red-400 flex items-center gap-2">
@@ -1535,13 +1549,6 @@ function ProductsContent() {
                 )}
               </>
             )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button variant="outline" onClick={() => setShowBomTemplateModal(false)}>Batal</Button>
-            <Button onClick={handleSaveBomTemplate}>
-              {editBomTemplateId ? 'Simpan Perubahan' : 'Tambah Preset BOM'}
-            </Button>
           </div>
         </div>
       </Modal>

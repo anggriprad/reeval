@@ -17,6 +17,7 @@ import {
   Sun,
   RotateCcw,
   LogOut,
+  TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/context/AppContext';
@@ -107,11 +108,14 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       {/* Navigation Links */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {visibleNavItems.map(item => {
-          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+          const isActive = pathname === item.href || (
+            item.href !== '/' && pathname.startsWith(item.href)
+          );
           return (
             <Link
               key={item.href}
               href={item.href}
+              title={collapsed ? item.label : undefined}
               className={cn(
                 'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
                 isActive
@@ -139,7 +143,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
             type="button"
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="flex items-center gap-3 w-full px-2.5 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 transition-colors text-left group"
-            title="Klik profil untuk melihat detail & Logout"
+            title={collapsed ? `${currentUser.name} (${currentUser.roleLabel})` : undefined}
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white shadow-xs">
               {currentUser.initials}
@@ -202,6 +206,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         <div className="space-y-1 pt-1">
           <button
             onClick={toggleDark}
+            title={collapsed ? (darkMode ? 'Mode Terang' : 'Mode Gelap') : undefined}
             className="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white w-full text-left"
           >
             {darkMode ? <Sun className="h-4.5 w-4.5 text-amber-500" /> : <Moon className="h-4.5 w-4.5 text-indigo-500" />}
@@ -218,9 +223,10 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               });
               if (isOk) {
                 resetData();
-                toast.success('Data Direset', 'Seluruh data aplikasi telah dikembalikan ke kondisi awal.');
+                toast.success('Data Direset', 'Berhasil mereset data demo.');
               }
             }}
+            title={collapsed ? 'Reset Demo' : undefined}
             className="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/30 dark:hover:text-red-400 w-full text-left"
           >
             <RotateCcw className="h-4.5 w-4.5" />
