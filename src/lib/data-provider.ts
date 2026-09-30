@@ -17,6 +17,7 @@ import type {
   POStatus,
   StockMovementType,
   DeliveryStatus,
+  DeliveryOrderItem,
   Customer,
   SalesOrderItem,
   BOMItem,
@@ -628,37 +629,71 @@ export function getDeliveryOrderById(id: string): DeliveryOrder | undefined {
 }
 
 export function createDeliveryOrder(deliveryData: {
-  salesOrderId: string;
+  salesOrderId?: string;
+  salesOrderIds?: string[];
+  selectedItems?: DeliveryOrderItem[];
   assignedDriverName: string;
+  driverId?: string;
+  driverPhone?: string;
+  armadaId?: string;
+  armadaName?: string;
   vehiclePlate: string;
   scheduledDate: string;
+  notes?: string;
 }): DeliveryOrder {
   const store = getStore();
-  const order = store.salesOrders.find(so => so.id === deliveryData.salesOrderId);
-  if (!order) {
-    throw new Error(`Sales Order dengan ID ${deliveryData.salesOrderId} tidak ditemukan`);
+  const targetIds = deliveryData.salesOrderIds && deliveryData.salesOrderIds.length > 0
+    ? deliveryData.salesOrderIds
+    : (deliveryData.salesOrderId ? [deliveryData.salesOrderId] : []);
+
+  if (targetIds.length === 0) {
+    throw new Error('Minimal satu Sales Order harus dipilih');
   }
 
+  const orders = store.salesOrders.filter(so => targetIds.includes(so.id));
+  if (orders.length === 0) {
+    throw new Error(`Sales Order dengan ID ${targetIds.join(', ')} tidak ditemukan`);
+  }
+
+  const primaryOrder = orders[0];
   const count = store.deliveryOrders.length + 1;
   const doNumber = `DO-${new Date().getFullYear()}-${String(count).padStart(3, '0')}`;
   const now = new Date().toISOString();
 
-  const itemSummaries = order.items.map(
-    i => `${i.productName} (${i.variantLabel || 'Standar'}) x${i.qty}`
-  );
+  let itemSummaries: string[] = [];
+  if (deliveryData.selectedItems && deliveryData.selectedItems.length > 0) {
+    itemSummaries = deliveryData.selectedItems.map(
+      i => `${i.productName}${i.variantLabel ? ` (${i.variantLabel})` : ''} x${i.qty}`
+    );
+  } else {
+    itemSummaries = orders.flatMap(order =>
+      order.items.map(i => `${i.productName} (${i.variantLabel || 'Standar'}) x${i.qty}`)
+    );
+  }
+
+  const distinctCustomers = Array.from(new Set(orders.map(o => o.customer.name)));
+  const customerName = distinctCustomers.length === 1 ? primaryOrder.customer.name : distinctCustomers.join(', ');
 
   const newDO: DeliveryOrder = {
     id: `do-${generateId()}`,
     doNumber,
-    salesOrderId: order.id,
-    salesOrderNumber: order.orderNumber,
-    customerName: order.customer.name,
-    customerAddress: order.customer.address,
+    salesOrderId: primaryOrder.id,
+    salesOrderNumber: orders.map(o => o.orderNumber).join(', '),
+    salesOrderIds: targetIds,
+    salesOrderNumbers: orders.map(o => o.orderNumber),
+    customerName,
+    customerAddress: primaryOrder.customer.address,
     items: itemSummaries,
+    orderItems: deliveryData.selectedItems,
+    driverId: deliveryData.driverId,
     assignedDriverName: deliveryData.assignedDriverName,
+    driverPhone: deliveryData.driverPhone,
+    armadaId: deliveryData.armadaId,
+    armadaName: deliveryData.armadaName,
     vehiclePlate: deliveryData.vehiclePlate,
     scheduledDate: deliveryData.scheduledDate,
-    status: 'PENDING',
+    status: 'READY_TO_SHIP',
+    notes: deliveryData.notes,
     createdAt: now,
   };
 
@@ -669,7 +704,12 @@ export function createDeliveryOrder(deliveryData: {
 export function updateDeliveryStatus(
   id: string,
   status: DeliveryStatus,
-  deliveryProofNote?: string
+  options?: {
+    deliveryProofNote?: string;
+    deliveryProofPhoto?: string;
+    receiverName?: string;
+    driverName?: string;
+  } | string
 ): DeliveryOrder | null {
   const store = getStore();
   const doOrder = store.deliveryOrders.find(d => d.id === id);
@@ -678,13 +718,33 @@ export function updateDeliveryStatus(
   const now = new Date().toISOString();
   doOrder.status = status;
 
+  if (status === 'IN_TRANSIT') {
+    doOrder.loadedAt = now;
+    if (typeof options === 'object' && options.driverName) {
+      doOrder.loadedBy = options.driverName;
+    }
+  }
+
   if (status === 'DELIVERED') {
     doOrder.deliveredAt = now;
-    if (deliveryProofNote) doOrder.deliveryProofNote = deliveryProofNote;
+    if (typeof options === 'string') {
+      doOrder.deliveryProofNote = options;
+      doOrder.receiverName = 'Penerima di Lokasi';
+    } else if (options) {
+      if (options.receiverName) doOrder.receiverName = options.receiverName;
+      if (options.deliveryProofNote) doOrder.deliveryProofNote = options.deliveryProofNote;
+      if (options.deliveryProofPhoto) doOrder.deliveryProofPhoto = options.deliveryProofPhoto;
+    }
 
-    // Update Sales Order status to SENT and issue invoice automatically
-    updateSalesOrderStatus(doOrder.salesOrderId, 'SENT');
-    createInvoice(doOrder.salesOrderId);
+    // Update all associated Sales Orders status to SENT and issue invoices
+    const targetSOIds = doOrder.salesOrderIds && doOrder.salesOrderIds.length > 0
+      ? doOrder.salesOrderIds
+      : [doOrder.salesOrderId];
+
+    for (const soId of targetSOIds) {
+      updateSalesOrderStatus(soId, 'SENT');
+      createInvoice(soId);
+    }
   }
 
   return doOrder;

@@ -570,18 +570,21 @@ function FinanceContent() {
         const matchedBank = bankAccounts.find(
           b => b.name.toLowerCase() === pay.method.toLowerCase() || b.id === pay.method
         );
+        const isRefund = pay.amount < 0;
         list.push({
           id: `ar-${pay.id || `${inv.id}-${pay.date}`}`,
           date: pay.date,
           bankAccountId: matchedBank?.id || '',
           bankName: matchedBank?.name || pay.method || 'Kas & Bank',
-          type: 'INFLOW',
-          amount: pay.amount,
-          description: `Pelunasan Faktur ${inv.invoiceNumber} — ${inv.customerName}`,
-          categoryOrMemo: pay.note || 'Penerimaan Piutang Usaha',
+          type: isRefund ? 'OUTFLOW' : 'INFLOW',
+          amount: Math.abs(pay.amount),
+          description: isRefund
+            ? `Pengembalian Dana (Refund) Faktur ${inv.invoiceNumber} — ${inv.customerName}`
+            : `Pelunasan Faktur ${inv.invoiceNumber} — ${inv.customerName}`,
+          categoryOrMemo: pay.note || (isRefund ? 'Pengembalian Dana Pelanggan' : 'Penerimaan Piutang Usaha'),
           sourceType: 'AR_PAYMENT',
-          sourceBadgeLabel: 'Pelunasan AR',
-          sourceBadgeVariant: 'info',
+          sourceBadgeLabel: isRefund ? 'Refund Pelanggan' : 'Pelunasan AR',
+          sourceBadgeVariant: isRefund ? 'danger' : 'info',
           refType: 'INVOICE',
           refId: inv.id,
           refNumber: inv.invoiceNumber,
@@ -3191,11 +3194,14 @@ function FinanceContent() {
           invoices.forEach(inv => {
             inv.payments.forEach(pay => {
               if (pay.method === bank.name) {
+                const isRefund = pay.amount < 0;
                 txs.push({
                   date: pay.date,
-                  type: 'INFLOW',
-                  description: `Penerimaan Piutang — ${inv.invoiceNumber} (${inv.customerName})`,
-                  amount: pay.amount,
+                  type: isRefund ? 'OUTFLOW' : 'INFLOW',
+                  description: isRefund
+                    ? `Pengembalian Dana (Refund) — ${inv.invoiceNumber} (${inv.customerName})`
+                    : `Penerimaan Piutang — ${inv.invoiceNumber} (${inv.customerName})`,
+                  amount: Math.abs(pay.amount),
                 });
               }
             });

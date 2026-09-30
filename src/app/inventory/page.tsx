@@ -15,9 +15,11 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Table } from '@/components/ui/Table';
-import { formatCurrency, formatDateTime, getStockLevel, getStockLevelColor, getStockLevelTextColor, calculateSubAssemblyCost } from '@/lib/utils';
-import { canCreatePO, canManageInventory } from '@/lib/roles';
-import type { PurchaseOrderItem, RawMaterial, CompanyAsset, CompanyAssetServiceLog, PurchaseOrder, BOMItem } from '@/lib/types';
+import { Toggle } from '@/components/ui/Toggle';
+import { ActionMenu, type ActionMenuItem } from '@/components/ui/ActionMenu';
+import { formatCurrency, formatDateTime, getStockLevel, getStockLevelColor, getStockLevelTextColor, calculateSubAssemblyCost, formatVariantLabel } from '@/lib/utils';
+import { canCreatePO, canManageInventory, canRequestPO, canManageProduction } from '@/lib/roles';
+import type { RawMaterial, CompanyAsset, CompanyAssetServiceLog, BOMItem, FinishedGoodStock, PurchaseOrder, ReturnedGood, ReturnedGoodAction, ReturnedGoodStatus } from '@/lib/types';
 import Link from 'next/link';
 import {
   Plus,
@@ -26,6 +28,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Warehouse,
+  ShoppingCart,
   FileText,
   Edit2,
   Trash2,
@@ -48,6 +51,7 @@ import {
   X,
   Box,
   Layers,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function InventoryPage() {
@@ -62,7 +66,6 @@ export function InventoryContent() {
   const { toast, confirm } = useToast();
   const {
     materials,
-    purchaseOrders,
     stockMovements,
     currentUser,
     categories,
@@ -71,12 +74,6 @@ export function InventoryContent() {
     deleteMaterial,
     addMaterialCategory,
     deleteMaterialCategory,
-    createPO,
-    createDirectPurchase,
-    receivePO,
-    orderPO,
-    rejectPO,
-    deletePO,
     assets,
     addAsset,
     updateAsset,
@@ -90,12 +87,53 @@ export function InventoryContent() {
     bankAccounts,
     routings = [],
     operations = [],
+    finishedGoods,
+    addFinishedGood,
+    updateFinishedGood,
+    deleteFinishedGood,
+    adjustFinishedGoodStock,
+    products,
+    productCategories,
+    purchaseOrders,
+    createPO,
+    createDirectPurchase,
+    orderPO,
+    receivePO,
+    rejectPO,
+    deletePO,
+    createSubAssemblyWorkOrder,
+    salesOrders = [],
+    returnedGoods = [],
+    processReturnedGoodAction,
   } = useApp();
-
 
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryFilter, setInventoryFilter] = useState('');
-  const [activeTab, setActiveTab] = useUrlTab(['stock', 'finished', 'po', 'movements', 'assets'] as const, 'stock');
+  const [activeTab, setActiveTab] = useUrlTab(['raw', 'finished', 'returns', 'movements', 'procurement', 'assets'] as const, 'raw');
+
+  // Modal SPK Bahan Setengah Jadi (WIP)
+  const [showSaModal, setShowSaModal] = useState(false);
+  const [saMaterialId, setSaMaterialId] = useState('');
+  const [saTargetQty, setSaTargetQty] = useState('1');
+  const [saError, setSaError] = useState('');
+
+  // Pengadaan (PO & Pembelian Langsung) state
+  const [showPOModal, setShowPOModal] = useState(false);
+  const [selectedProcurementDetail, setSelectedProcurementDetail] = useState<PurchaseOrder | null>(null);
+  const [purchaseType, setPurchaseType] = useState<'PO' | 'DIRECT'>('PO');
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState('');
+  const [additionalCost, setAdditionalCost] = useState(0);
+  const [procurementError, setProcurementError] = useState('');
+  const [poItems, setPOItems] = useState<any[]>([]);
+  const [selectedMat, setSelectedMat] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [selectedQty, setSelectedQty] = useState(0);
+  const [showAddItemRow, setShowAddItemRow] = useState(false);
+
+  // Cancellation PO modal state
+  const [showCancelPOModal, setShowCancelPOModal] = useState(false);
+  const [cancelPOReason, setCancelPOReason] = useState('');
+  const [cancelPOError, setCancelPOError] = useState('');
 
   // Master Material / Barang Jadi CRUD state
   const [showMaterialModal, setShowMaterialModal] = useState(false);
@@ -113,6 +151,22 @@ export function InventoryContent() {
   const [childMatId, setChildMatId] = useState('');
   const [childMatQty, setChildMatQty] = useState<string>('');
   const [crudError, setCrudError] = useState('');
+
+  // Finished Goods CRUD state
+  const [showFGModal, setShowFGModal] = useState(false);
+  const [editFGId, setEditFGId] = useState<string | null>(null);
+  const [fgProductId, setFGProductId] = useState('');
+  const [fgVariantId, setFGVariantId] = useState('');
+  const [fgStock, setFGStock] = useState<string>('0');
+  const [fgMinStock, setFGMinStock] = useState(0);
+  const [fgUnit, setFGUnit] = useState('unit');
+  const [fgError, setFGError] = useState('');
+  const [showEmptyStock, setShowEmptyStock] = useState(false);
+
+  // Barang Retur Action state
+  const [selectedReturnItem, setSelectedReturnItem] = useState<ReturnedGood | null>(null);
+  const [returnAction, setReturnAction] = useState<ReturnedGoodAction>('RESTOCK');
+  const [returnActionNotes, setReturnActionNotes] = useState('');
 
   // Master Asset CRUD state
   const [showAssetModal, setShowAssetModal] = useState(false);
@@ -143,24 +197,6 @@ export function InventoryContent() {
   const [showManageAssetCats, setShowManageAssetCats] = useState(false);
   const [newAssetCatInput, setNewAssetCatInput] = useState('');
   const [assetCatError, setAssetCatError] = useState('');
-
-  // Pengadaan (PO & Pembelian Langsung) form state
-  const [showPOModal, setShowPOModal] = useState(false);
-  const [selectedProcurementDetail, setSelectedProcurementDetail] = useState<PurchaseOrder | null>(null);
-  const [purchaseType, setPurchaseType] = useState<'PO' | 'DIRECT'>('PO');
-  const [selectedBankAccountId, setSelectedBankAccountId] = useState('');
-  const [additionalCost, setAdditionalCost] = useState(0);
-  const [procurementError, setProcurementError] = useState('');
-  const [poItems, setPOItems] = useState<any[]>([]);
-  const [selectedMat, setSelectedMat] = useState('');
-  const [selectedSupplier, setSelectedSupplier] = useState('');
-  const [selectedQty, setSelectedQty] = useState(0);
-  const [showAddItemRow, setShowAddItemRow] = useState(false);
-
-  // Cancellation PO modal state
-  const [showCancelPOModal, setShowCancelPOModal] = useState(false);
-  const [cancelPOReason, setCancelPOReason] = useState('');
-  const [cancelPOError, setCancelPOError] = useState('');
 
   const filteredMaterials = materials.filter(m => {
     const matchesFilter = !inventoryFilter || m.category === inventoryFilter;
@@ -448,123 +484,9 @@ export function InventoryContent() {
     }
   };
 
-  const addPOItem = () => {
-    const mat = materials.find(m => m.id === selectedMat);
-    if (!mat || selectedQty <= 0) return;
-    setPOItems(prev => [...prev, {
-      materialId: mat.id,
-      materialName: mat.name,
-      qty: selectedQty,
-      unitCost: mat.unitCost,
-      unit: mat.unit || 'unit',
-    }]);
-    setSelectedMat('');
-    setSelectedQty(0);
-    setShowAddItemRow(false);
-  };
-
-  const removePOItem = (idx: number) => {
-    setPOItems(prev => {
-      const updated = prev.filter((_, i) => i !== idx);
-      if (updated.length === 0) {
-        setShowAddItemRow(true);
-      }
-      return updated;
-    });
-  };
-
-  const openAddProcurement = () => {
-    if (materials.length === 0) {
-      toast.warning('Bahan Baku Kosong', 'Belum ada bahan baku yang terdaftar. Silakan register bahan baku terlebih dahulu di tab Stok Bahan Baku.');
-      return;
-    }
-    setPurchaseType('PO');
-    setSelectedBankAccountId(bankAccounts[0]?.id || '');
-    setAdditionalCost(0);
-    setProcurementError('');
-    setPOItems([]);
-    setSelectedMat('');
-    setSelectedSupplier('');
-    setSelectedQty(0);
-    setShowAddItemRow(true);
-    setShowPOModal(true);
-  };
-
-  const submitProcurement = () => {
-    setProcurementError('');
-    const supplierName = selectedSupplier.trim();
-    if (!supplierName) {
-      setProcurementError('Nama Vendor wajib diisi.');
-      return;
-    }
-
-    if (poItems.length === 0) {
-      setProcurementError('Daftar item pengadaan masih kosong. Silakan tambah minimal 1 item.');
-      return;
-    }
-
-    if (purchaseType === 'DIRECT') {
-      if (!selectedBankAccountId) {
-        setProcurementError('Kas / Rekening Pembayaran wajib dipilih untuk Pembelian Langsung.');
-        return;
-      }
-      const selectedBank = bankAccounts.find(b => b.id === selectedBankAccountId);
-      if (!selectedBank) {
-        setProcurementError('Kas / Rekening Pembayaran tidak valid.');
-        return;
-      }
-
-      createDirectPurchase(supplierName, poItems, selectedBankAccountId, additionalCost);
-
-      setPOItems([]);
-      setSelectedSupplier('');
-      setSelectedBankAccountId('');
-      setAdditionalCost(0);
-      setShowPOModal(false);
-      toast.success(
-        'Pembelian Langsung Berhasil',
-        'Stok bahan baku otomatis bertambah dan saldo kas langsung berkurang.'
-      );
-    } else {
-      createPO(supplierName, poItems);
-
-      setPOItems([]);
-      setSelectedSupplier('');
-      setShowPOModal(false);
-      toast.success('PO Berhasil Dibuat', 'Purchase Order baru telah terbit.');
-    }
-  };
-
-  const handleDeletePO = async (id: string, poNumber: string) => {
-    const isOk = await confirm({
-      title: 'Hapus Purchase Order',
-      message: `Apakah Anda yakin ingin menghapus PO ${poNumber}?`,
-      confirmText: 'Hapus PO',
-      variant: 'danger',
-    });
-    if (isOk) {
-      const success = deletePO(id);
-      if (!success) {
-        toast.error('Gagal Menghapus PO', 'PO yang sudah diterima atau lunas tidak bisa dihapus.');
-      } else {
-        toast.success('PO Dihapus', `Purchase Order ${poNumber} berhasil dihapus.`);
-      }
-    }
-  };
-
   const sortedMovements = [...stockMovements].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
-
-  const filteredPOs = purchaseOrders.filter(po => {
-    const matchesFilter = !inventoryFilter || po.status === inventoryFilter;
-    const matchesSearch = !searchTerm ||
-      po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      po.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (po.createdBy && po.createdBy.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      po.items.some(i => i.materialName.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchesFilter && matchesSearch;
-  });
 
   const filteredMovements = sortedMovements.filter(mv => {
     const matchesFilter = !inventoryFilter || mv.type === inventoryFilter;
@@ -583,12 +505,292 @@ export function InventoryContent() {
     return matchesFilter && matchesSearch;
   });
 
+  const filteredPOs = purchaseOrders.filter(po => {
+    const matchesFilter = !inventoryFilter || po.status === inventoryFilter;
+    const matchesSearch = !searchTerm ||
+      po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      po.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (po.createdBy && po.createdBy.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      po.items.some(i => i.materialName.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesFilter && matchesSearch;
+  });
+
+  const filteredFinishedGoods = finishedGoods.filter(fg => {
+    const p = products.find(prod => prod.id === fg.productId);
+    const matchesCategory = !inventoryFilter || (p && p.category === inventoryFilter);
+    const q = searchTerm.toLowerCase();
+    const matchesSearch = !searchTerm ||
+      (p && p.name.toLowerCase().includes(q)) ||
+      (p && p.category.toLowerCase().includes(q)) ||
+      (fg.productName && fg.productName.toLowerCase().includes(q)) ||
+      (fg.variantLabel && fg.variantLabel.toLowerCase().includes(q));
+
+    // Default: hanya tampilkan barang yang memiliki stok (stok > 0).
+    // Jika toggle aktif (showEmptyStock = true), barang dengan stok 0 juga ditampilkan.
+    const matchesStock = showEmptyStock ? true : fg.stock > 0;
+
+    return matchesCategory && matchesSearch && matchesStock;
+  });
+
+  const filteredReturnedGoods = (returnedGoods || []).filter(rg => {
+    const matchesStatus = !inventoryFilter || rg.status === inventoryFilter;
+    const q = searchTerm.toLowerCase();
+    const matchesSearch = !searchTerm ||
+      rg.productName.toLowerCase().includes(q) ||
+      rg.customerName.toLowerCase().includes(q) ||
+      rg.salesOrderNumber.toLowerCase().includes(q) ||
+      rg.complaintId.toLowerCase().includes(q) ||
+      (rg.conditionReason && rg.conditionReason.toLowerCase().includes(q));
+    return matchesStatus && matchesSearch;
+  });
+
+  const openReturnActionModal = (item: ReturnedGood) => {
+    setSelectedReturnItem(item);
+    setReturnAction('RESTOCK');
+    setReturnActionNotes('');
+  };
+
+  const handleConfirmReturnAction = () => {
+    if (!selectedReturnItem) return;
+    processReturnedGoodAction(selectedReturnItem.id, returnAction, returnActionNotes.trim());
+    toast.success('Tindakan Berhasil Diproses', `Barang retur telah diproses.`);
+    setSelectedReturnItem(null);
+  };
+
+  // Finished Goods handlers
+  const openAddFinishedGood = () => {
+    setEditFGId(null);
+    setFGProductId('');
+    setFGVariantId('');
+    setFGStock('0');
+    setFGMinStock(0);
+    setFGUnit('unit');
+    setFGError('');
+    setShowFGModal(true);
+  };
+
+  const openEditFinishedGood = (fg: FinishedGoodStock) => {
+    setEditFGId(fg.id);
+    setFGProductId(fg.productId);
+    setFGVariantId(fg.variantId || '');
+    setFGStock(fg.stock.toString());
+    setFGMinStock(fg.minStock);
+    setFGUnit(fg.unit || 'unit');
+    setFGError('');
+    setShowFGModal(true);
+  };
+
+  const handleSaveFinishedGood = () => {
+    if (!fgProductId) {
+      setFGError('Produk wajib dipilih.');
+      return;
+    }
+    const stockNum = Number(fgStock) || 0;
+    const minStockNum = Number(fgMinStock) || 0;
+
+    const prod = products.find(p => p.id === fgProductId);
+    const variant = prod?.variants?.find(v => v.id === fgVariantId);
+    const variantLabel = variant ? (Object.values(variant.combination || {}).join(' • ') || variant.sku) : undefined;
+    const productName = prod?.name || 'Produk';
+
+    if (editFGId) {
+      updateFinishedGood(editFGId, {
+        productId: fgProductId,
+        variantId: fgVariantId || undefined,
+        productName,
+        variantLabel,
+        stock: stockNum,
+        minStock: minStockNum,
+        unit: fgUnit,
+      });
+    } else {
+      addFinishedGood({
+        productId: fgProductId,
+        variantId: fgVariantId || undefined,
+        productName,
+        variantLabel,
+        stock: stockNum,
+        minStock: minStockNum,
+        unit: fgUnit,
+      });
+    }
+    setShowFGModal(false);
+  };
+
+  const handleDeleteFinishedGood = async (id: string, name: string) => {
+    const targetFG = finishedGoods.find(item => item.id === id);
+    const isCatalog = targetFG ? products.some(p => p.id === targetFG.productId) : false;
+
+    const isOk = await confirm({
+      title: isCatalog ? 'Reset Stok Barang Jadi' : 'Hapus Barang Jadi',
+      message: isCatalog
+        ? `Barang "${name}" terdaftar pada katalog produk. Apakah Anda yakin ingin mereset jumlah stoknya menjadi 0?`
+        : `Apakah Anda yakin ingin menghapus stok barang jadi "${name}"?`,
+      confirmText: isCatalog ? 'Reset ke 0' : 'Hapus',
+      variant: 'danger',
+    });
+    if (isOk) {
+      deleteFinishedGood(id);
+      toast.success(
+        isCatalog ? 'Stok Direset' : 'Berhasil Dihapus',
+        isCatalog ? `Stok ${name} berhasil direset menjadi 0.` : `Stok barang jadi ${name} berhasil dihapus.`
+      );
+    }
+  };
+
+  // ---- Pengadaan Handlers ----
+  const addPOItem = () => {
+    const mat = materials.find(m => m.id === selectedMat);
+    if (!mat || selectedQty <= 0) return;
+    setPOItems(prev => [...prev, {
+      materialId: mat.id,
+      materialName: mat.name,
+      qty: selectedQty,
+      unitCost: mat.unitCost,
+      unit: mat.unit || 'unit',
+    }]);
+    setSelectedMat('');
+    setSelectedQty(0);
+    setShowAddItemRow(false);
+  };
+
+  const removePOItem = (idx: number) => {
+    setPOItems(prev => {
+      const updated = prev.filter((_, i) => i !== idx);
+      if (updated.length === 0) setShowAddItemRow(true);
+      return updated;
+    });
+  };
+
+  const openAddProcurement = (targetMatId?: string) => {
+    if (materials.length === 0) {
+      toast.warning('Bahan Baku Kosong', 'Belum ada bahan baku yang terdaftar.');
+      return;
+    }
+    setPurchaseType('PO');
+    setSelectedBankAccountId(bankAccounts[0]?.id || '');
+    setAdditionalCost(0);
+    setProcurementError('');
+    setSelectedSupplier('');
+
+    const targetMat = targetMatId ? materials.find(m => m.id === targetMatId) : null;
+    if (targetMat) {
+      setPOItems([{
+        materialId: targetMat.id,
+        materialName: targetMat.name,
+        qty: 1,
+        unitCost: targetMat.unitCost,
+        unit: targetMat.unit || 'unit',
+      }]);
+      setSelectedMat('');
+      setSelectedQty(0);
+      setShowAddItemRow(false);
+    } else {
+      setPOItems([]);
+      setSelectedMat('');
+      setSelectedQty(0);
+      setShowAddItemRow(true);
+    }
+
+    setShowPOModal(true);
+  };
+
+  const submitProcurement = () => {
+    setProcurementError('');
+    const supplierName = selectedSupplier.trim();
+    if (!supplierName) {
+      setProcurementError('Nama Vendor wajib diisi.');
+      return;
+    }
+
+    if (poItems.length === 0) {
+      setProcurementError('Daftar item pengadaan masih kosong. Silakan tambah minimal 1 item.');
+      return;
+    }
+
+    if (poItems.some(i => !i.qty || Number(i.qty) <= 0)) {
+      setProcurementError('Kuantitas setiap item pengadaan harus lebih besar dari 0.');
+      return;
+    }
+
+    if (purchaseType === 'DIRECT') {
+      if (!selectedBankAccountId) {
+        setProcurementError('Kas / Rekening Pembayaran wajib dipilih untuk Pembelian Langsung.');
+        return;
+      }
+      createDirectPurchase(supplierName, poItems, selectedBankAccountId, additionalCost);
+      setPOItems([]);
+      setSelectedSupplier('');
+      setSelectedBankAccountId('');
+      setAdditionalCost(0);
+      setShowPOModal(false);
+      toast.success('Pembelian Langsung Berhasil Dibuat');
+    } else {
+      createPO(supplierName, poItems);
+      setPOItems([]);
+      setSelectedSupplier('');
+      setShowPOModal(false);
+      toast.success('Pengadaan Berhasil Dibuat');
+    }
+  };
+
+  const handleDeletePO = async (id: string, poNumber: string) => {
+    const isOk = await confirm({
+      title: 'Hapus Purchase Order',
+      message: `Apakah Anda yakin ingin menghapus PO ${poNumber}?`,
+      confirmText: 'Hapus PO',
+      variant: 'danger',
+    });
+    if (isOk) {
+      const success = deletePO(id);
+      if (!success) {
+        toast.error('Gagal Menghapus PO', 'PO yang sudah diterima atau lunas tidak bisa dihapus.');
+      } else {
+        toast.success('PO Berhasil Dihapus');
+      }
+    }
+  };
+
+  // ---- SPK Bahan Setengah Jadi (WIP) Handlers ----
+  const openCreateSaWorkOrder = (materialId?: string) => {
+    setSaMaterialId(materialId || '');
+    setSaTargetQty('1');
+    setSaError('');
+    setShowSaModal(true);
+  };
+
+  const handleCreateSaWorkOrder = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSaError('');
+
+    if (!saMaterialId) {
+      setSaError('Pilih bahan setengah jadi.');
+      return;
+    }
+
+    const qty = parseFloat(saTargetQty.replace(',', '.'));
+    if (isNaN(qty) || qty <= 0) {
+      setSaError('Kuantitas produksi harus lebih besar dari 0.');
+      return;
+    }
+
+    const res = createSubAssemblyWorkOrder(saMaterialId, qty);
+    if (!res.success) {
+      setSaError(res.error || 'Gagal menerbitkan SPK.');
+      return;
+    }
+
+    const targetMat = materials.find(m => m.id === saMaterialId);
+    toast.success('SPK Berhasil Dibuat', `SPK untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name}" berhasil diterbitkan.`);
+    setShowSaModal(false);
+  };
+
 
 
   return (
     <div className='space-y-3'>
       <PageHeader
-        title="Inventaris & Pengadaan"
+        title="Inventaris"
       >
         <div className="flex gap-2">
           {canManageInventory(currentUser.role) && (
@@ -599,51 +801,68 @@ export function InventoryContent() {
               </Button>
             </Link>
           )}
-          {canManageInventory(currentUser.role) && (activeTab === 'stock' || activeTab === 'finished') && (
+          {activeTab === 'raw' && canManageInventory(currentUser.role) && (
             <Button onClick={openAddMaterial}>
-              <Plus className="h-4 w-4" />
-              {activeTab === 'finished' ? 'Register Barang Jadi' : 'Register Bahan Baku'}
+              <Plus className="h-4 w-4 mr-1.5" />
+              Register Bahan
             </Button>
           )}
-          {canManageInventory(currentUser.role) && activeTab === 'assets' && (
+          {activeTab === 'finished' && canManageInventory(currentUser.role) && (
+            <Button onClick={openAddFinishedGood}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Tambah Barang Jadi
+            </Button>
+          )}
+          {activeTab === 'procurement' && canRequestPO(currentUser.role) && (
+            <Button onClick={() => openAddProcurement()}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Buat Pengadaan
+            </Button>
+          )}
+          {activeTab === 'assets' && canManageInventory(currentUser.role) && (
             <Button onClick={openAddAsset}>
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 mr-1.5" />
               Register Aset Baru
-            </Button>
-          )}
-          {canCreatePO(currentUser.role) && activeTab === 'po' && (
-            <Button onClick={openAddProcurement}>
-              <Plus className="h-4 w-4" />
-              Buat Pengadaan Baru
             </Button>
           )}
         </div>
       </PageHeader>
 
-      {/* Reusable Segmented Control */}
+      {/* Reusable Segmented Control: 5 Tab */}
       {(() => {
-        const activePOsCount = purchaseOrders.filter(p => p.status !== 'RECEIVED' && p.status !== 'REJECTED').length;
-
         let filterOptions: { value: string; label: string }[] = [];
         let filterPlaceholder = "Filter Atribut";
 
-        if (activeTab === 'stock' || activeTab === 'finished') {
+        if (activeTab === 'raw') {
           filterPlaceholder = "Semua Kategori";
           filterOptions = categories.map(c => ({ value: c, label: c }));
+        } else if (activeTab === 'finished') {
+          filterPlaceholder = "Semua Kategori Produk";
+          filterOptions = productCategories.map(c => ({ value: c, label: c }));
+        } else if (activeTab === 'returns') {
+          filterPlaceholder = "Semua Status Retur";
+          filterOptions = [
+            { value: '', label: 'Semua Status' },
+            { value: 'PENDING', label: 'Menunggu Tindakan' },
+            { value: 'RESTOCKED', label: 'Masuk Barang Jadi' },
+            { value: 'REPAIR', label: 'Diperbaiki' },
+            { value: 'DISASSEMBLED', label: 'Dibongkar' },
+            { value: 'SCRAPPED', label: 'Dibuang / Sampah' },
+          ];
+        } else if (activeTab === 'procurement') {
+          filterPlaceholder = "Semua Status";
+          filterOptions = [
+            { value: '', label: 'Semua Status' },
+            { value: 'DRAFT', label: 'Pengajuan' },
+            { value: 'ORDERED', label: 'Dipesan' },
+            { value: 'RECEIVED', label: 'Diterima' },
+            { value: 'REJECTED', label: 'Dibatalkan' },
+          ];
         } else if (activeTab === 'movements') {
           filterPlaceholder = "Semua Tipe Mutasi";
           filterOptions = [
             { value: 'IN', label: 'Masuk (PO / Pembelian)' },
             { value: 'OUT', label: 'Keluar (SPK / Konsumsi)' },
-          ];
-        } else if (activeTab === 'po') {
-          filterPlaceholder = "Semua Status Pengadaan";
-          filterOptions = [
-            { value: '', label: 'Semua Status' },
-            { value: 'DRAFT', label: 'Dibuat' },
-            { value: 'ORDERED', label: 'Dipesan' },
-            { value: 'RECEIVED', label: 'Diterima' },
-            { value: 'REJECTED', label: 'Dibatalkan' },
           ];
         } else if (activeTab === 'assets') {
           filterPlaceholder = "Semua Kategori Aset";
@@ -654,13 +873,15 @@ export function InventoryContent() {
           <SegmentedControl
             value={activeTab}
             onChange={(tab) => {
-              setActiveTab(tab as 'stock' | 'po' | 'movements' | 'assets');
+              setActiveTab(tab as 'raw' | 'finished' | 'returns' | 'movements' | 'procurement' | 'assets');
               setInventoryFilter('');
             }}
             options={[
-              { key: 'stock', label: 'Stok Bahan Baku', icon: Warehouse },
+              { key: 'raw', label: 'Stok Bahan Baku', icon: Warehouse },
+              { key: 'finished', label: 'Stok Barang Jadi', icon: PackageCheck },
+              { key: 'returns', label: 'Barang Retur', icon: RotateCcw },
               { key: 'movements', label: 'Mutasi Stok', icon: ArrowDownCircle },
-              { key: 'po', label: 'Pengadaan', count: activePOsCount, icon: FileText },
+              { key: 'procurement', label: 'Pengadaan', icon: ShoppingCart },
               { key: 'assets', label: 'Aset & Alat Kerja', icon: Wrench },
             ]}
             filterValue={inventoryFilter}
@@ -670,12 +891,27 @@ export function InventoryContent() {
             searchValue={searchTerm}
             onSearchChange={setSearchTerm}
             searchPlaceholder="Cari bahan baku, barang jadi, pengadaan, mutasi, atau aset..."
+            extraControls={
+              activeTab === 'finished' ? (
+                <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
+                  <Toggle
+                    size="sm"
+                    checked={showEmptyStock}
+                    onChange={setShowEmptyStock}
+                    label="Tampilkan barang dengan stok kosong"
+                    labelPosition="right"
+                    labelClassName="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none"
+                    color="indigo"
+                  />
+                </div>
+              ) : undefined
+            }
           />
         );
       })()}
 
       {/* Raw Materials Stock Table */}
-      {activeTab === 'stock' && (
+      {activeTab === 'raw' && (
         <Card>
           {filteredRawMaterials.length === 0 ? (
             <EmptyState
@@ -700,8 +936,8 @@ export function InventoryContent() {
                     <th className="pb-3 pr-3 text-right font-medium text-slate-500">Total Nilai</th>
                     <th className="pb-3 pr-3 text-center font-medium text-slate-500">Batas Min</th>
                     <th className="pb-3 pr-3 text-center font-medium text-slate-500">Status</th>
-                    {canManageInventory(currentUser.role) && (
-                      <th className="pb-3 text-center font-medium text-slate-500">Aksi</th>
+                    {(canManageInventory(currentUser.role) || canRequestPO(currentUser.role)) && (
+                      <th className="pb-3 text-center font-medium text-slate-500 w-[180px] whitespace-nowrap">Aksi</th>
                     )}
                   </tr>
                 </thead>
@@ -715,7 +951,7 @@ export function InventoryContent() {
                           <div className="flex items-center gap-2">
                             <span className="font-semibold">{mat.name}</span>
                             {mat.isSubAssembly && (
-                              <Badge variant="purple" className="text-[10px]">SUB-ASSEMBLY</Badge>
+                              <Badge variant="purple">WIP</Badge>
                             )}
                           </div>
                         </td>
@@ -730,19 +966,50 @@ export function InventoryContent() {
                         <td className={`py-3.5 pr-3 text-center text-xs font-semibold ${getStockLevelTextColor(level)}`}>
                           {level}
                         </td>
-                        {canManageInventory(currentUser.role) && (
-                          <td className="py-3.5 text-center">
-                            <div className="flex justify-center gap-1">
-                              <Button size="sm" variant="ghost" onClick={() => openEditMaterial(mat)} title="Edit Master">
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </Button>
-                              <button
-                                onClick={() => handleDeleteMaterial(mat.id, mat.name)}
-                                className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg dark:hover:bg-red-950/20"
-                                title="Hapus Bahan"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                        {(canManageInventory(currentUser.role) || canRequestPO(currentUser.role)) && (
+                          <td className="py-3.5 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {!mat.isSubAssembly ? (
+                                canRequestPO(currentUser.role) && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => openAddProcurement(mat.id)}
+                                    title={`Buat pengadaan untuk ${mat.name}`}
+                                  >
+                                    Buat Pengadaan
+                                  </Button>
+                                )
+                              ) : (
+                                (canManageProduction(currentUser.role) || canManageInventory(currentUser.role)) && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => openCreateSaWorkOrder(mat.id)}
+                                    title={`Buat SPK untuk ${mat.name}`}
+                                  >
+                                    Buat SPK
+                                  </Button>
+                                )
+                              )}
+
+                              {canManageInventory(currentUser.role) && (
+                                <ActionMenu
+                                  items={[
+                                    {
+                                      label: 'Edit',
+                                      icon: <Edit2 className="h-3.5 w-3.5" />,
+                                      onClick: () => openEditMaterial(mat),
+                                    },
+                                    {
+                                      label: 'Delete',
+                                      icon: <Trash2 className="h-3.5 w-3.5" />,
+                                      variant: 'danger',
+                                      onClick: () => handleDeleteMaterial(mat.id, mat.name),
+                                    },
+                                  ]}
+                                />
+                              )}
                             </div>
                           </td>
                         )}
@@ -756,126 +1023,170 @@ export function InventoryContent() {
         </Card>
       )}
 
-
-
-      {/* Purchase Orders / Pengadaan */}
-      {activeTab === 'po' && (
-        <Table
-          data={[...filteredPOs].reverse()}
-          emptyTitle="Belum ada riwayat pengadaan"
-          emptyDescription={searchTerm ? "Tidak ada pengadaan yang cocok dengan pencarian." : "Buat pengadaan baru untuk memesan atau membeli bahan baku"}
-          onRowClick={(po) => setSelectedProcurementDetail(po)}
-          columns={[
-            {
-              key: 'poNumber',
-              header: 'No. Pengadaan',
-              cell: (po) => (
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
-                    {po.poNumber}
-                  </span>
-                  {po.purchaseType === 'DIRECT' ? (
-                    <Badge variant="purple">Cash</Badge>
-                  ) : (
-                    <Badge variant="info">PO</Badge>
-                  )}
-                </div>
-              ),
-            },
-            {
-              key: 'supplier',
-              header: 'Vendor',
-              cell: (po) => <span className="text-sm font-normal text-slate-700 dark:text-slate-300">{po.supplier}</span>,
-            },
-            {
-              key: 'itemsSummary',
-              header: 'Item Material',
-              cell: (po) => {
-                if (!po.items || po.items.length === 0) return <span className="text-slate-400 text-xs">-</span>;
-                const firstItem = po.items[0];
-                const extraCount = po.items.length - 1;
-                return (
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                      {firstItem.materialName}
-                    </span>
-                    {extraCount > 0 && (
-                      <span className="text-indigo-600 dark:text-indigo-400 font-semibold text-xs">
-                        +{extraCount} lainnya
-                      </span>
+      {/* Finished Goods Table */}
+      {activeTab === 'finished' && (
+        <Card>
+          {filteredFinishedGoods.length === 0 ? (
+            <EmptyState
+              title="Belum ada barang jadi"
+              description={
+                searchTerm || inventoryFilter || !showEmptyStock
+                  ? (!showEmptyStock && finishedGoods.length > 0
+                      ? 'Tidak ada barang jadi dengan stok tersedia. Aktifkan toggle "Tampilkan barang dengan stok kosong" untuk menampilkan produk dengan stok 0.'
+                      : 'Tidak ada barang jadi yang cocok dengan pencarian atau filter.')
+                  : 'Tambahkan stok barang jadi untuk mencatat hasil produksi.'
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Produk</th>
+                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Stok</th>
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Satuan</th>
+                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Min Stok</th>
+                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Status</th>
+                    {canManageInventory(currentUser.role) && (
+                      <th className="pb-3 text-center font-medium text-slate-500 w-[140px] whitespace-nowrap">Aksi</th>
                     )}
-                  </div>
-                );
-              },
-            },
-            {
-              key: 'quantitySummary',
-              header: 'Kuantitas',
-              cell: (po) => {
-                if (!po.items || po.items.length === 0) return <span className="text-slate-400 text-xs">-</span>;
-                const firstItem = po.items[0];
-                const matUnit = firstItem.unit || materials.find(m => m.id === firstItem.materialId)?.unit || 'unit';
-                return (
-                  <span className="text-sm font-normal text-slate-700 dark:text-slate-300">
-                    {firstItem.qty} {matUnit}
-                  </span>
-                );
-              },
-            },
-            {
-              key: 'totalAmount',
-              header: 'Total Transaksi',
-              align: 'right',
-              cell: (po) => (
-                <span className="font-mono font-bold text-slate-900 dark:text-white">
-                  {formatCurrency(po.totalAmount)}
-                </span>
-              ),
-            },
-            {
-              key: 'status',
-              header: 'Status',
-              align: 'left',
-              cell: (po) => (
-                po.status === 'REJECTED' ? (
-                  <Badge variant="danger">Dibatalkan</Badge>
-                ) : po.purchaseType === 'DIRECT' || po.status === 'RECEIVED' ? (
-                  <Badge variant="success">Diterima</Badge>
-                ) : po.status === 'ORDERED' ? (
-                  <Badge variant="info">Dipesan</Badge>
-                ) : (
-                  <Badge variant="warning">Dibuat</Badge>
-                )
-              ),
-            },
-            {
-              key: 'actions',
-              header: 'Aksi',
-              align: 'left',
-              cell: (po) => (
-                <div className="flex items-center justify-start gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  {po.purchaseType !== 'DIRECT' && po.status === 'ORDERED' && canManageInventory(currentUser.role) && (
-                    <Button size="sm" variant="success" className="h-8 px-3 text-xs font-semibold whitespace-nowrap" onClick={() => receivePO(po.id)}>
-                      Terima Barang
-                    </Button>
-                  )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredFinishedGoods.map(fg => {
+                    const prod = products.find(p => p.id === fg.productId);
+                    const variant = prod?.variants?.find(v => v.id === fg.variantId);
+                    const level = getStockLevel(fg.stock, fg.minStock);
+                    const variantText = variant ? (Object.values(variant.combination || {}).join(' • ') || variant.sku) : '';
+                    const displayName = fg.productName ? `${fg.productName}${fg.variantLabel ? ` (${fg.variantLabel})` : ''}` : (prod ? (variantText ? `${prod.name} (${variantText})` : prod.name) : 'Produk Tidak Ditemukan');
+                    return (
+                      <tr key={fg.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
+                          <span className="font-semibold">{displayName}</span>
+                        </td>
+                        <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{fg.stock}</td>
+                        <td className="py-3.5 pr-3 text-slate-500 dark:text-slate-400 text-xs">{fg.unit}</td>
+                        <td className="py-3.5 pr-3 text-center text-slate-500">{fg.minStock}</td>
+                        <td className={`py-3.5 pr-3 text-center text-xs font-semibold ${getStockLevelTextColor(level)}`}>
+                          {level}
+                        </td>
+                        {canManageInventory(currentUser.role) && (
+                          <td className="py-3.5 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <ActionMenu
+                                items={[
+                                  {
+                                    label: 'Edit',
+                                    icon: <Edit2 className="h-3.5 w-3.5" />,
+                                    onClick: () => openEditFinishedGood(fg),
+                                  },
+                                  {
+                                    label: 'Delete',
+                                    icon: <Trash2 className="h-3.5 w-3.5" />,
+                                    variant: 'danger',
+                                    onClick: () => handleDeleteFinishedGood(fg.id, displayName),
+                                  },
+                                ]}
+                              />
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
-                  {po.purchaseType !== 'DIRECT' && po.status === 'DRAFT' && canManageInventory(currentUser.role) && (
-                    <Button size="sm" variant="primary" className="h-8 px-3 text-xs font-semibold whitespace-nowrap" onClick={() => orderPO(po.id)}>
-                      Pesan Barang
-                    </Button>
-                  )}
+      {/* Barang Retur Table */}
+      {activeTab === 'returns' && (
+        <Card>
+          {filteredReturnedGoods.length === 0 ? (
+            <EmptyState
+              icon={<RotateCcw className="h-7 w-7" />}
+              title="Tidak ada barang retur"
+              description={
+                searchTerm || inventoryFilter
+                  ? "Tidak ada data barang retur yang sesuai dengan pencarian atau filter."
+                  : "Barang retur dari komplain refund / pembatalan pesanan akan otomatis tercatat di sini."
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Produk</th>
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Ref</th>
+                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Qty</th>
+                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Alasan Retur</th>
+                    {canManageInventory(currentUser.role) && (
+                      <th className="pb-3 text-center font-medium text-slate-500 w-[140px] whitespace-nowrap">Action</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredReturnedGoods.map(rg => {
+                    const soItem = salesOrders
+                      .find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber)
+                      ?.items.find(i => i.productId === rg.productId && (!rg.variantId || i.variantId === rg.variantId));
+                    const orderItemNotes = rg.customNotes || soItem?.customNotes;
 
-                  {(po.purchaseType === 'DIRECT' || po.status === 'RECEIVED' || po.status === 'REJECTED' || !canManageInventory(currentUser.role)) && (
-                    <span className="text-xs text-slate-400 font-medium hover:text-slate-600 transition-colors whitespace-nowrap">
-                      Lihat Detail
-                    </span>
-                  )}
-                </div>
-              ),
-            },
-          ]}
-        />
+                    return (
+                      <tr key={rg.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
+                          <div className="font-semibold text-xs text-slate-900 dark:text-white">{rg.productName}</div>
+                          {rg.variantLabel && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {formatVariantLabel(rg.variantLabel)}
+                            </div>
+                          )}
+                          {orderItemNotes && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                              Catatan: {orderItemNotes}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 pr-3 whitespace-nowrap">
+                          <Link
+                            href={`/order/complaint/${rg.complaintId}`}
+                            className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                          >
+                            {rg.complaintId}
+                          </Link>
+                        </td>
+                        <td className="py-3.5 pr-3 text-right font-mono text-xs font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                          {rg.qty}
+                        </td>
+                        <td className="py-3.5 pr-3 text-xs text-slate-600 dark:text-slate-400 max-w-xs truncate" title={rg.conditionReason}>
+                          {rg.conditionReason}
+                        </td>
+                        {canManageInventory(currentUser.role) && (
+                          <td className="py-3.5 text-center whitespace-nowrap w-[140px]">
+                            {rg.status === 'PENDING' ? (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => openReturnActionModal(rg)}
+                              >
+                                Tindak Lanjuti
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">-</span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       )}
 
       {/* Stock Movements */}
@@ -918,6 +1229,191 @@ export function InventoryContent() {
                 </tbody>
               </table>
             </div>
+          )}
+        </Card>
+      )}
+
+      {/* Procurement (Pengadaan) Table */}
+      {activeTab === 'procurement' && (
+        <Card>
+          {filteredPOs.length === 0 ? (
+            <EmptyState
+              title="Belum ada pengadaan"
+              description={
+                searchTerm || inventoryFilter
+                  ? "Tidak ada data pengadaan yang sesuai dengan pencarian atau filter."
+                  : "Buat pengadaan baru untuk memesan bahan baku ke vendor."
+              }
+            />
+          ) : (
+            <Table
+              data={[...filteredPOs].reverse()}
+              onRowClick={(po) => setSelectedProcurementDetail(po)}
+              columns={[
+                {
+                  key: 'poNumber',
+                  header: 'No. Pengadaan',
+                  cell: (po) => (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
+                        {po.poNumber}
+                      </span>
+                      {po.purchaseType === 'DIRECT' ? (
+                        <Badge variant="purple">Cash</Badge>
+                      ) : (
+                        <Badge variant="info">PO</Badge>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  key: 'supplier',
+                  header: 'Vendor',
+                  cell: (po) => <span className="text-sm font-normal text-slate-700 dark:text-slate-300">{po.supplier}</span>,
+                },
+                {
+                  key: 'itemsSummary',
+                  header: 'Item Material',
+                  cell: (po) => {
+                    if (!po.items || po.items.length === 0) return <span className="text-slate-400 text-xs">-</span>;
+                    const firstItem = po.items[0];
+                    const extraCount = po.items.length - 1;
+                    return (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                          {firstItem.materialName}
+                        </span>
+                        {extraCount > 0 && (
+                          <span className="text-indigo-600 dark:text-indigo-400 font-semibold text-xs">
+                            +{extraCount} lainnya
+                          </span>
+                        )}
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: 'quantitySummary',
+                  header: 'Kuantitas',
+                  cell: (po) => {
+                    if (!po.items || po.items.length === 0) return <span className="text-slate-400 text-xs">-</span>;
+                    const firstItem = po.items[0];
+                    const matUnit = firstItem.unit || materials.find(m => m.id === firstItem.materialId)?.unit || 'unit';
+                    return (
+                      <span className="text-sm font-normal text-slate-700 dark:text-slate-300">
+                        {firstItem.qty} {matUnit}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: 'totalAmount',
+                  header: 'Total Transaksi',
+                  align: 'right',
+                  cell: (po) => (
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      {formatCurrency(po.totalAmount)}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  align: 'left',
+                  cell: (po) => (
+                    po.status === 'REJECTED' ? (
+                      <Badge variant="danger">Dibatalkan</Badge>
+                    ) : po.purchaseType === 'DIRECT' || po.status === 'RECEIVED' ? (
+                      <Badge variant="success">Diterima</Badge>
+                    ) : po.status === 'ORDERED' ? (
+                      <Badge variant="info">Dipesan</Badge>
+                    ) : (
+                      <Badge variant="warning">Pengajuan</Badge>
+                    )
+                  ),
+                },
+                {
+                  key: 'actions',
+                  header: 'Aksi',
+                  align: 'center',
+                  cell: (po) => {
+                    const isPurchasing = canCreatePO(currentUser.role);
+                    const isInventory = canManageInventory(currentUser.role);
+
+                    const items: ActionMenuItem[] = [
+                      {
+                        label: 'Lihat Detail',
+                        icon: <Eye className="h-4 w-4" />,
+                        onClick: () => setSelectedProcurementDetail(po),
+                      },
+                    ];
+
+                    if (po.status === 'DRAFT') {
+                      if (isPurchasing) {
+                        items.push({
+                          label: 'Setujui & Pesan',
+                          icon: <Check className="h-4 w-4" />,
+                          onClick: () => orderPO(po.id),
+                        });
+                        items.push({
+                          label: 'Tolak',
+                          icon: <X className="h-4 w-4" />,
+                          variant: 'danger',
+                          onClick: () => {
+                            setSelectedProcurementDetail(po);
+                            setCancelPOReason('');
+                            setCancelPOError('');
+                            setShowCancelPOModal(true);
+                          },
+                        });
+                        items.push({
+                          label: 'Hapus',
+                          icon: <Trash2 className="h-4 w-4" />,
+                          variant: 'danger',
+                          onClick: () => handleDeletePO(po.id, po.poNumber),
+                        });
+                      }
+                    } else if (po.status === 'ORDERED') {
+                      if (isInventory) {
+                        items.push({
+                          label: 'Terima Barang',
+                          icon: <PackageCheck className="h-4 w-4" />,
+                          onClick: () => receivePO(po.id),
+                        });
+                      }
+                      if (isPurchasing) {
+                        items.push({
+                          label: 'Batalkan',
+                          icon: <X className="h-4 w-4" />,
+                          variant: 'danger',
+                          onClick: () => {
+                            setSelectedProcurementDetail(po);
+                            setCancelPOReason('');
+                            setCancelPOError('');
+                            setShowCancelPOModal(true);
+                          },
+                        });
+                      }
+                    } else if (po.status === 'REJECTED') {
+                      if (isPurchasing) {
+                        items.push({
+                          label: 'Hapus',
+                          icon: <Trash2 className="h-4 w-4" />,
+                          variant: 'danger',
+                          onClick: () => handleDeletePO(po.id, po.poNumber),
+                        });
+                      }
+                    }
+
+                    return (
+                      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                        <ActionMenu menuWidth="w-max min-w-[108px]" items={items} />
+                      </div>
+                    );
+                  },
+                },
+              ]}
+            />
           )}
         </Card>
       )}
@@ -1090,7 +1586,7 @@ export function InventoryContent() {
             />
           </div>
 
-          {/* Sub-Assembly Checkbox & Child BOM Builder */}
+          {/* Bahan Setengah Jadi Checkbox & Child BOM Builder */}
           <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -1106,7 +1602,7 @@ export function InventoryContent() {
                 className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
               <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                Item ini adalah Barang Setengah Jadi (Sub-Assembly / Memiliki Child BOM)
+                Item ini adalah Bahan Setengah Jadi (Memiliki Child BOM)
               </span>
             </label>
 
@@ -1115,17 +1611,17 @@ export function InventoryContent() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
                     <Layers className="h-3.5 w-3.5 text-indigo-600" />
-                    Child BOM Builder & Routing Sub-Assembly
+                    Child BOM Builder & Routing Bahan Setengah Jadi
                   </span>
                   <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                    Total HPP Sub-Assembly: {formatCurrency(calculateSubAssemblyCost(matChildBom, materials, matRoutingId, routings, operations))}
+                    Total HPP Bahan Setengah Jadi: {formatCurrency(calculateSubAssemblyCost(matChildBom, materials, matRoutingId, routings, operations))}
                   </span>
                 </div>
 
                 {/* Routing Selector */}
                 <div className="space-y-1">
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                    Pilih Alur Routing Produksi Sub-Assembly <span className="text-red-500">*</span>
+                    Pilih Alur Routing Produksi Bahan Setengah Jadi <span className="text-red-500">*</span>
                   </label>
                   <Select
                     value={matRoutingId}
@@ -1141,7 +1637,7 @@ export function InventoryContent() {
                     inputSize="sm"
                   />
                   <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                    Biaya upah dari alur routing ini akan otomatis ditambahkan ke HPP Sub-Assembly dan teralokasi saat SPK dibuat.
+                    Biaya upah dari alur routing ini akan otomatis ditambahkan ke HPP Bahan Setengah Jadi dan teralokasi saat SPK dibuat.
                   </p>
                 </div>
 
@@ -1368,254 +1864,7 @@ export function InventoryContent() {
       </Modal>
 
 
-      {/* Modal: Form Pengadaan */}
-      <Modal
-        isOpen={showPOModal}
-        onClose={() => setShowPOModal(false)}
-        title="Form Pengadaan Bahan Baku"
-        size="lg"
-        actions={
-          <>
-            <Button variant="ghost" onClick={() => setShowPOModal(false)}>Batal</Button>
-            <Button onClick={submitProcurement} disabled={poItems.length === 0}>
-              <Plus className="h-4 w-4 mr-1" />
-              Buat Pengadaan
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          {procurementError && (
-            <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{procurementError}</span>
-            </div>
-          )}
 
-          {/* Separate card containers for each Purchase Type radio option */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div
-              onClick={() => setPurchaseType('PO')}
-              className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
-                purchaseType === 'PO'
-                  ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
-                  : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <input
-                  type="radio"
-                  name="purchaseType"
-                  value="PO"
-                  checked={purchaseType === 'PO'}
-                  onChange={() => setPurchaseType('PO')}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                />
-                <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Purchase Order (PO)
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
-                Alur pemesanan standar dengan persetujuan dan penerimaan barang.
-              </p>
-            </div>
-
-            <div
-              onClick={() => setPurchaseType('DIRECT')}
-              className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
-                purchaseType === 'DIRECT'
-                  ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
-                  : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <input
-                  type="radio"
-                  name="purchaseType"
-                  value="DIRECT"
-                  checked={purchaseType === 'DIRECT'}
-                  onChange={() => setPurchaseType('DIRECT')}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                />
-                <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Pembelian Langsung
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
-                Stok otomatis bertambah dan saldo kas langsung berkurang.
-              </p>
-            </div>
-          </div>
-
-          {/* Vendor Name */}
-          <div className="pt-1">
-            <Input
-              label="Nama Vendor"
-              required
-              placeholder="Contoh: UD Kayu Makmur Jaya"
-              value={selectedSupplier}
-              onChange={(e) => setSelectedSupplier(e.target.value)}
-            />
-          </div>
-
-          {/* Extra fields for Direct Purchase placed before item selection */}
-          {purchaseType === 'DIRECT' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <Select
-                label="Pilih Rekening Pembayaran"
-                required
-                value={selectedBankAccountId}
-                onChange={(e) => setSelectedBankAccountId(e.target.value)}
-                options={bankAccounts.map((b) => ({
-                  value: b.id,
-                  label: `${b.name} (Saldo: ${formatCurrency(b.balance)})`,
-                }))}
-              />
-              <CurrencyInput
-                label="Biaya Tambahan (Opsional)"
-                value={additionalCost}
-                onChange={(val) => setAdditionalCost(typeof val === 'number' ? val : 0)}
-              />
-            </div>
-          )}
-
-          {/* List of Saved Items & Add Item Section */}
-          <div className="space-y-3 pt-1">
-            {/* Render Saved Items List */}
-            {poItems.length > 0 && (
-              <div className="space-y-1.5">
-                {poItems.map((item: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between gap-4 px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 text-xs"
-                  >
-                    <div className="font-medium text-slate-900 dark:text-white truncate flex-1 min-w-0">
-                      {item.materialName}
-                    </div>
-
-                    <div className="text-slate-500 dark:text-slate-400 text-center min-w-[140px] px-2 shrink-0 font-medium">
-                      {item.qty} {item.unit || 'unit'}
-                    </div>
-
-                    <div className="font-mono font-semibold text-slate-900 dark:text-white text-right min-w-[110px] shrink-0">
-                      {formatCurrency(item.qty * item.unitCost)}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => removePOItem(idx)}
-                      className="p-1 text-slate-400 hover:text-red-500 rounded transition-colors shrink-0"
-                      title="Hapus Item"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Flat Row Input Form (Langsung Siap Diiisi) */}
-            {showAddItemRow && (
-              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 py-1">
-                <div className="flex-1 min-w-[180px]">
-                  <Select
-                    placeholder="Pilih Bahan Baku..."
-                    value={selectedMat}
-                    onChange={(e) => setSelectedMat(e.target.value)}
-                    options={materials.map((m) => ({
-                      value: m.id,
-                      label: `${m.name} (${formatCurrency(m.unitCost)} / ${m.unit})`,
-                    }))}
-                  />
-                </div>
-
-                <div className="w-14 shrink-0">
-                  <Input
-                    type="number"
-                    min="1"
-                    placeholder="Qty"
-                    value={selectedQty || ''}
-                    onChange={(e) => setSelectedQty(Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="shrink-0 text-right min-w-[130px] px-2">
-                  <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                    {(() => {
-                      const m = materials.find((mat) => mat.id === selectedMat);
-                      return m && selectedQty > 0 ? formatCurrency(m.unitCost * selectedQty) : 'Rp 0';
-                    })()}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="success"
-                    onClick={addPOItem}
-                    disabled={!selectedMat || selectedQty <= 0}
-                    className="h-9 w-9 p-0"
-                    title="Simpan Item"
-                  >
-                    <Check className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedMat('');
-                      setSelectedQty(0);
-                      if (poItems.length > 0) {
-                        setShowAddItemRow(false);
-                      }
-                    }}
-                    className="h-9 w-9 p-0"
-                    title="Batal"
-                  >
-                    <X className="h-4 w-4 text-slate-500" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Bottom Action Bar: Tombol Tambah Item (Kiri) & Subtotal (Kanan) */}
-            {poItems.length > 0 && (
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <div>
-                  {!showAddItemRow && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setShowAddItemRow(true);
-                        setSelectedMat('');
-                        setSelectedQty(0);
-                      }}
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Tambah Item
-                    </Button>
-                  )}
-                </div>
-
-                <div className="text-right text-xs">
-                  <span className="text-slate-500 dark:text-slate-400 mr-2">
-                    Subtotal ({poItems.length} item):
-                  </span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                    {formatCurrency(
-                      poItems.reduce((s: number, i: any) => s + i.qty * i.unitCost, 0) +
-                      (purchaseType === 'DIRECT' ? (additionalCost || 0) : 0)
-                    )}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </Modal>
 
       {/* Modal: Service History */}
       <Modal
@@ -1736,61 +1985,403 @@ export function InventoryContent() {
           </div>
         </div>
       </Modal>
+      {/* Modal: Form Barang Jadi */}
+      <Modal
+        isOpen={showFGModal}
+        onClose={() => setShowFGModal(false)}
+        title={editFGId ? 'Edit Stok Barang Jadi' : 'Tambah Stok Barang Jadi'}
+        size="md"
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setShowFGModal(false)}>Batal</Button>
+            <Button onClick={handleSaveFinishedGood}>
+              <Check className="h-4 w-4 mr-1.5" />
+              Simpan
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 pb-2">
+          {fgError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{fgError}</span>
+            </div>
+          )}
 
-      {/* Modal: Detail Pengadaan (PO & Pembelian Langsung) */}
+          <div className="space-y-3">
+            <Select
+              label="Pilih Produk Utama"
+              required
+              value={fgProductId}
+              onChange={e => {
+                setFGProductId(e.target.value);
+                setFGVariantId('');
+              }}
+              options={[
+                { value: '', label: '-- Pilih Produk --' },
+                ...products.map(p => ({ value: p.id, label: p.name })),
+              ]}
+              disabled={!!editFGId}
+            />
+
+            {(() => {
+              const selectedProd = products.find(p => p.id === fgProductId);
+              if (!selectedProd || !selectedProd.variants || selectedProd.variants.length === 0) return null;
+              return (
+                <Select
+                  label="Pilih Varian (Opsional)"
+                  value={fgVariantId}
+                  onChange={e => setFGVariantId(e.target.value)}
+                  options={[
+                    { value: '', label: '-- Tanpa Varian --' },
+                    ...selectedProd.variants.map(v => ({ value: v.id, label: Object.values(v.combination || {}).join(' • ') || v.sku })),
+                  ]}
+                  disabled={!!editFGId}
+                />
+              );
+            })()}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Stok"
+                required
+                type="number"
+                value={fgStock}
+                onChange={e => setFGStock(e.target.value)}
+              />
+              <Input
+                label="Batas Min Stok"
+                required
+                type="number"
+                value={fgMinStock}
+                onChange={e => setFGMinStock(Number(e.target.value))}
+              />
+            </div>
+            
+            <Input
+              label="Satuan"
+              required
+              type="text"
+              value={fgUnit}
+              onChange={e => setFGUnit(e.target.value)}
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Form Pengadaan Bahan Baku (PO & Pembelian Langsung) */}
+      <Modal
+        isOpen={showPOModal}
+        onClose={() => setShowPOModal(false)}
+        title="Form Pengadaan Bahan Baku"
+        size="lg"
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setShowPOModal(false)}>Batal</Button>
+            <Button onClick={submitProcurement} disabled={poItems.length === 0}>
+              <Plus className="h-4 w-4 mr-1" />
+              Buat Pengadaan
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {procurementError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{procurementError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div
+              onClick={() => setPurchaseType('PO')}
+              className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                purchaseType === 'PO'
+                  ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
+                  : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="radio"
+                  name="invPurchaseType"
+                  value="PO"
+                  checked={purchaseType === 'PO'}
+                  onChange={() => setPurchaseType('PO')}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Purchase Order (PO)
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                Alur pemesanan standar dengan persetujuan dan penerimaan barang.
+              </p>
+            </div>
+
+            <div
+              onClick={() => setPurchaseType('DIRECT')}
+              className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                purchaseType === 'DIRECT'
+                  ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
+                  : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="radio"
+                  name="invPurchaseType"
+                  value="DIRECT"
+                  checked={purchaseType === 'DIRECT'}
+                  onChange={() => setPurchaseType('DIRECT')}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Pembelian Langsung (Tunai)
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                Bayar kas langsung & stok otomatis masuk tanpa alur pemesanan.
+              </p>
+            </div>
+          </div>
+
+          <Input
+            label="Nama Vendor / Toko"
+            required
+            placeholder="Contoh: Toko Kayu Sejahtera / PT Multi Surya"
+            value={selectedSupplier}
+            onChange={e => setSelectedSupplier(e.target.value)}
+          />
+
+          {purchaseType === 'DIRECT' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Kas / Rekening Pembayaran <span className="text-red-500 font-bold">*</span>
+                </label>
+                <Select
+                  value={selectedBankAccountId}
+                  onChange={e => setSelectedBankAccountId(e.target.value)}
+                  options={bankAccounts.map(b => ({
+                    value: b.id,
+                    label: `${b.name} (${formatCurrency(b.balance)})`,
+                  }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Biaya Ekspedisi / Ongkir Tambahan (Opsional)
+                </label>
+                <CurrencyInput
+                  value={additionalCost}
+                  onChange={val => setAdditionalCost(typeof val === 'number' ? val : 0)}
+                  placeholder="Rp 0"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Daftar Item Bahan Baku <span className="text-red-500 font-bold">*</span>
+            </label>
+
+            {poItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500 dark:border-slate-800">
+                Belum ada bahan baku yang ditambahkan ke daftar pengadaan.
+              </div>
+            ) : (
+              <div className="space-y-2 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                {poItems.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-3 pt-2 first:pt-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        {item.materialName}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {formatCurrency(item.unitCost)} / {item.unit}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="w-24">
+                        <Input
+                          type="number"
+                          min="1"
+                          value={item.qty}
+                          onChange={e => {
+                            const newQty = Number(e.target.value);
+                            setPOItems(prev => prev.map((it, i) => i === idx ? { ...it, qty: newQty } : it));
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-slate-500 w-10 truncate">{item.unit}</span>
+                      <div className="font-mono text-xs font-semibold text-right min-w-[90px] text-slate-900 dark:text-white">
+                        {formatCurrency(item.qty * item.unitCost)}
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removePOItem(idx)}
+                        className="text-slate-400 hover:text-red-500 p-1 h-8 w-8"
+                        title="Hapus Item"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showAddItemRow ? (
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-2">
+                <div className="flex-1 min-w-[200px]">
+                  <Select
+                    placeholder="Pilih Bahan Baku..."
+                    value={selectedMat}
+                    onChange={e => setSelectedMat(e.target.value)}
+                    options={materials.filter(m => !m.isSubAssembly).map(m => ({
+                      value: m.id,
+                      label: `${m.name} (${formatCurrency(m.unitCost)} / ${m.unit})`,
+                    }))}
+                  />
+                </div>
+                <div className="w-24 shrink-0">
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    value={selectedQty || ''}
+                    onChange={e => setSelectedQty(Number(e.target.value))}
+                  />
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="primary"
+                    onClick={addPOItem}
+                    disabled={!selectedMat || selectedQty <= 0}
+                    className="h-9 w-9 p-0"
+                    title="Tambah"
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSelectedMat('');
+                      setSelectedQty(0);
+                      if (poItems.length > 0) setShowAddItemRow(false);
+                    }}
+                    className="h-9 w-9 p-0"
+                    title="Batal"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="pt-2 flex justify-between items-center">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowAddItemRow(true)}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Tambah Item Lain
+                </Button>
+                <div className="text-right text-xs">
+                  <span className="text-slate-500 mr-2">Total Estimasi:</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                    {formatCurrency(poItems.reduce((acc, i) => acc + i.qty * i.unitCost, 0) + (purchaseType === 'DIRECT' ? additionalCost : 0))}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Detail Pengadaan */}
       <Modal
         isOpen={!!selectedProcurementDetail}
         onClose={() => setSelectedProcurementDetail(null)}
         title="Detail Pengadaan"
         size="lg"
         actions={(() => {
-          if (!selectedProcurementDetail || !canManageInventory(currentUser.role)) return undefined;
+          if (!selectedProcurementDetail) return undefined;
 
-          const canCancel = selectedProcurementDetail.status !== 'REJECTED';
-          const canOrder = selectedProcurementDetail.purchaseType !== 'DIRECT' && selectedProcurementDetail.status === 'DRAFT';
-          const canReceive = selectedProcurementDetail.purchaseType !== 'DIRECT' && selectedProcurementDetail.status === 'ORDERED';
+          const isDraft = selectedProcurementDetail.status === 'DRAFT';
+          const isOrdered = selectedProcurementDetail.status === 'ORDERED';
+          const isPurchasing = canCreatePO(currentUser.role);
+          const isInventory = canManageInventory(currentUser.role);
 
-          if (!canCancel && !canOrder && !canReceive) return undefined;
+          if (!isDraft && !isOrdered) return undefined;
 
           return (
             <div className="flex justify-end items-center gap-2">
-              {canCancel && (
-                <Button
-                  variant="danger"
-                  onClick={() => {
-                    setCancelPOReason('');
-                    setCancelPOError('');
-                    setShowCancelPOModal(true);
-                  }}
-                >
-                  Batalkan Pengadaan
-                </Button>
+              {isDraft && isPurchasing && (
+                <>
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      setCancelPOReason('');
+                      setCancelPOError('');
+                      setShowCancelPOModal(true);
+                    }}
+                  >
+                    Tolak Pengajuan
+                  </Button>
+                  <Button
+                    variant="primary"
+                    className="whitespace-nowrap font-medium"
+                    onClick={() => {
+                      orderPO(selectedProcurementDetail.id);
+                      setSelectedProcurementDetail(null);
+                    }}
+                  >
+                    Setujui & Pesan
+                  </Button>
+                </>
               )}
 
-              {canOrder && (
-                <Button
-                  variant="primary"
-                  className="whitespace-nowrap font-medium"
-                  onClick={() => {
-                    orderPO(selectedProcurementDetail.id);
-                    setSelectedProcurementDetail(null);
-                  }}
-                >
-                  Pesan Barang
-                </Button>
-              )}
-
-              {canReceive && (
-                <Button
-                  variant="success"
-                  className="whitespace-nowrap font-medium"
-                  onClick={() => {
-                    receivePO(selectedProcurementDetail.id);
-                    setSelectedProcurementDetail(null);
-                  }}
-                >
-                  Terima Barang
-                </Button>
+              {isOrdered && (
+                <>
+                  {isPurchasing && (
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        setCancelPOReason('');
+                        setCancelPOError('');
+                        setShowCancelPOModal(true);
+                      }}
+                    >
+                      Batalkan Pesanan
+                    </Button>
+                  )}
+                  {isInventory && (
+                    <Button
+                      variant="success"
+                      className="whitespace-nowrap font-medium"
+                      onClick={() => {
+                        receivePO(selectedProcurementDetail.id);
+                        setSelectedProcurementDetail(null);
+                      }}
+                    >
+                      Terima Barang
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           );
@@ -1798,15 +2389,14 @@ export function InventoryContent() {
       >
         {selectedProcurementDetail && (
           <div className="space-y-5 py-1">
-            {/* Cancellation Callout Info */}
             {selectedProcurementDetail.status === 'REJECTED' && (
               <div className="rounded-xl border border-red-200 bg-red-50/70 p-4 text-xs dark:border-red-900/50 dark:bg-red-950/30 space-y-1">
                 <div className="flex items-center gap-2 text-red-800 dark:text-red-300 font-bold">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>Pengadaan Ini Telah Dibatalkan</span>
+                  <span>Pengadaan Dibatalkan / Ditolak</span>
                 </div>
                 <p className="text-slate-600 dark:text-slate-300">
-                  Dibatalkan pada <strong className="font-semibold">{selectedProcurementDetail.cancelledAt ? formatDateTime(selectedProcurementDetail.cancelledAt) : '-'}</strong> oleh <strong className="font-semibold">{selectedProcurementDetail.cancelledBy || 'Admin'}</strong>.
+                  Diproses pada <strong className="font-semibold">{selectedProcurementDetail.cancelledAt ? formatDateTime(selectedProcurementDetail.cancelledAt) : '-'}</strong> oleh <strong className="font-semibold">{selectedProcurementDetail.cancelledBy || 'Admin'}</strong>.
                 </p>
                 {selectedProcurementDetail.cancelReason && (
                   <p className="text-slate-700 dark:text-slate-200 font-medium italic pt-1 border-t border-red-200/60 dark:border-red-900/40">
@@ -1816,14 +2406,12 @@ export function InventoryContent() {
               </div>
             )}
 
-            {/* Header metadata line */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-base font-bold text-slate-900 dark:text-white">
                     {selectedProcurementDetail.poNumber}
                   </span>
-
                   <Badge
                     variant={
                       selectedProcurementDetail.status === 'REJECTED'
@@ -1841,7 +2429,7 @@ export function InventoryContent() {
                       ? 'Diterima'
                       : selectedProcurementDetail.status === 'ORDERED'
                       ? 'Dipesan'
-                      : 'Dibuat'}
+                      : 'Pengajuan'}
                   </Badge>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1857,7 +2445,6 @@ export function InventoryContent() {
               </div>
             </div>
 
-            {/* Clean Key-Value Grid: Tipe, Vendor, Diterima Pada */}
             <div className="grid grid-cols-3 gap-4 text-xs">
               <div>
                 <span className="text-slate-400 block text-[11px] mb-0.5">Tipe</span>
@@ -1865,12 +2452,10 @@ export function InventoryContent() {
                   {selectedProcurementDetail.purchaseType === 'DIRECT' ? 'Pembelian Langsung' : 'Purchase Order'}
                 </span>
               </div>
-
               <div>
                 <span className="text-slate-400 block text-[11px] mb-0.5">Vendor</span>
                 <span className="font-semibold text-slate-900 dark:text-white">{selectedProcurementDetail.supplier}</span>
               </div>
-
               <div>
                 <span className="text-slate-400 block text-[11px] mb-0.5">Diterima Pada</span>
                 <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -1879,7 +2464,6 @@ export function InventoryContent() {
               </div>
             </div>
 
-            {/* Item Table */}
             <div className="pt-2">
               <Table
                 dense
@@ -1900,7 +2484,7 @@ export function InventoryContent() {
                     key: 'unitCost',
                     header: 'Harga Satuan',
                     align: 'right',
-                    cell: (item) => <span className="font-mono text-slate-600 dark:text-slate-400">{formatCurrency(item.unitCost)}</span>,
+                    cell: (item) => <span className="font-mono text-slate-800 dark:text-slate-200">{formatCurrency(item.unitCost)}</span>,
                   },
                   {
                     key: 'subtotal',
@@ -1915,11 +2499,11 @@ export function InventoryContent() {
         )}
       </Modal>
 
-      {/* Modal: Form Pembatalan Pengadaan */}
+      {/* Modal: Form Pembatalan / Penolakan Pengadaan */}
       <Modal
         isOpen={showCancelPOModal}
         onClose={() => setShowCancelPOModal(false)}
-        title={`Batalkan Pengadaan ${selectedProcurementDetail?.poNumber || ''}`}
+        title={selectedProcurementDetail?.status === 'DRAFT' ? `Tolak Pengajuan ${selectedProcurementDetail?.poNumber || ''}` : `Batalkan Pesanan ${selectedProcurementDetail?.poNumber || ''}`}
         size="md"
         actions={
           <>
@@ -1929,20 +2513,21 @@ export function InventoryContent() {
               onClick={() => {
                 if (!selectedProcurementDetail) return;
                 if (!cancelPOReason.trim()) {
-                  setCancelPOError('Alasan pembatalan wajib diisi.');
+                  setCancelPOError('Alasan wajib diisi.');
                   return;
                 }
+                const isDraft = selectedProcurementDetail.status === 'DRAFT';
                 const res = rejectPO(selectedProcurementDetail.id, cancelPOReason.trim());
                 if (!res.success) {
-                  setCancelPOError(res.error || 'Gagal membatalkan pengadaan.');
+                  setCancelPOError(res.error || (isDraft ? 'Gagal menolak pengajuan.' : 'Gagal membatalkan pesanan.'));
                 } else {
-                  toast.success('Pengadaan Dibatalkan', `Pengadaan ${selectedProcurementDetail.poNumber} berhasil dibatalkan.`);
+                  toast.success(isDraft ? 'Pengajuan Ditolak' : 'Pesanan Dibatalkan');
                   setShowCancelPOModal(false);
                   setSelectedProcurementDetail(null);
                 }
               }}
             >
-              Konfirmasi Pembatalan
+              {selectedProcurementDetail?.status === 'DRAFT' ? 'Tolak Pengajuan' : 'Batalkan Pesanan'}
             </Button>
           </>
         }
@@ -1955,25 +2540,262 @@ export function InventoryContent() {
             </div>
           )}
 
-          {selectedProcurementDetail?.status === 'RECEIVED' || selectedProcurementDetail?.purchaseType === 'DIRECT' ? (
-            <div className="rounded-xl bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-              ⚠️ Pengadaan ini <strong>sudah diterima</strong>. Pembatalan akan otomatis <strong>mengurangi stok persediaan</strong> dan <strong>menerbitkan Jurnal Reversal Akuntansi</strong>. Pastikan fisik bahan belum terpakai oleh SPK produksi.
-            </div>
-          ) : null}
-
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Alasan Pembatalan Pengadaan <span className="text-red-500 font-bold">*</span>
+              {selectedProcurementDetail?.status === 'DRAFT' ? 'Alasan Penolakan Pengajuan' : 'Alasan Pembatalan Pesanan'} <span className="text-red-500 font-bold">*</span>
             </label>
             <textarea
               rows={3}
               value={cancelPOReason}
               onChange={e => setCancelPOReason(e.target.value)}
-              placeholder="Contoh: Vendor kehabisan stok / Barang retur karena tidak sesuai spesifikasi..."
+              placeholder={selectedProcurementDetail?.status === 'DRAFT' ? 'Contoh: Stok di gudang masih mencukupi...' : 'Contoh: Vendor kehabisan stok...'}
               className="w-full rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
         </div>
+      </Modal>
+
+      {/* MODAL: BUAT SPK BAHAN SETENGAH JADI (WIP) */}
+      <Modal
+        isOpen={showSaModal}
+        onClose={() => setShowSaModal(false)}
+        title="Buat SPK Bahan Setengah Jadi (WIP)"
+        size="lg"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setShowSaModal(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => handleCreateSaWorkOrder()}
+              disabled={!saMaterialId}
+            >
+              <Layers className="h-4 w-4 mr-1.5" /> Terbitkan SPK
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={handleCreateSaWorkOrder} className="space-y-4 text-xs">
+          {saError && (
+            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{saError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2 space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Pilih Bahan Setengah Jadi <span className="text-red-500">*</span>
+              </label>
+              <Select
+                value={saMaterialId}
+                onChange={e => {
+                  setSaMaterialId(e.target.value);
+                  setSaError('');
+                }}
+                inputSize="sm"
+              >
+                <option value="">-- Pilih Bahan Setengah Jadi --</option>
+                {materials.filter(m => m.isSubAssembly).map(m => (
+                  <option key={m.id} value={m.id}>
+                    [{m.code}] {m.name} — Stok Saat Ini: {m.stock} {m.unit}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Kuantitas Rencana SPK <span className="text-red-500">*</span>
+              </label>
+              <Input
+                type="text"
+                value={saTargetQty}
+                onChange={e => setSaTargetQty(e.target.value)}
+                placeholder="0"
+                inputSize="sm"
+                className="font-bold text-right"
+              />
+            </div>
+          </div>
+
+          {/* Child BOM Requirement & Stock Preview */}
+          {saMaterialId && (() => {
+            const targetMat = materials.find(m => m.id === saMaterialId);
+            const targetQtyNum = parseFloat(saTargetQty.replace(',', '.')) || 0;
+            const childBom = targetMat?.childBom || [];
+
+            let hasInsufficientStock = false;
+
+            return (
+              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-indigo-500" />
+                    Kebutuhan Bahan Baku Penyusun (Child BOM)
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Untuk Produksi: <strong className="text-indigo-600 dark:text-indigo-400">{targetQtyNum} {targetMat?.unit || 'unit'}</strong>
+                  </span>
+                </div>
+
+                {childBom.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-amber-200 bg-amber-50/50 text-amber-800 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
+                    <p className="font-semibold text-xs">Item bahan setengah jadi ini belum memiliki Child BOM yang terdaftar di Inventory.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                          <th className="px-3 py-2">Bahan Baku Penyusun</th>
+                          <th className="px-3 py-2 text-center">BOM / Unit</th>
+                          <th className="px-3 py-2 text-center">Dibutuhkan</th>
+                          <th className="px-3 py-2 text-center">Stok Gudang</th>
+                          <th className="px-3 py-2 text-center">Status Stok</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {childBom.map((child, idx) => {
+                          const childMat = materials.find(m => m.id === child.materialId);
+                          const requiredQty = child.qty * targetQtyNum;
+                          const currentStock = childMat?.stock || 0;
+                          const isOk = currentStock >= requiredQty;
+                          if (!isOk) hasInsufficientStock = true;
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
+                              <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
+                                {childMat?.name || child.materialId}
+                                <div className="text-[10px] text-slate-400 font-normal">{childMat?.code} • {childMat?.category}</div>
+                              </td>
+                              <td className="px-3 py-2 text-center font-mono">{child.qty} {childMat?.unit}</td>
+                              <td className="px-3 py-2 text-center font-mono font-bold text-slate-900 dark:text-white">
+                                {requiredQty} {childMat?.unit}
+                              </td>
+                              <td className="px-3 py-2 text-center font-mono">
+                                {currentStock} {childMat?.unit}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {isOk ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    Stok Cukup
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+                                    Stok Kurang ({requiredQty - currentStock})
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {hasInsufficientStock && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-900/50 dark:text-amber-300 text-xs flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="font-semibold">Peringatan Stok Kurang:</strong> Beberapa bahan baku penyusun memiliki stok di bawah kuantitas kebutuhan produksi. Penerbitan SPK tetap dapat diproses namun disarankan melakukan pengadaan bahan baku terlebih dahulu.
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </form>
+      </Modal>
+
+      {/* Modal Tindak Lanjut Barang Retur */}
+      <Modal
+        isOpen={!!selectedReturnItem}
+        onClose={() => setSelectedReturnItem(null)}
+        title="Tindak Lanjut Barang Retur"
+        size="md"
+        actions={
+          <div className="flex items-center justify-end gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedReturnItem(null)}
+            >
+              Batal
+            </Button>
+            <Button
+              variant={returnAction === 'SCRAP' ? 'danger' : 'primary'}
+              size="sm"
+              onClick={handleConfirmReturnAction}
+            >
+              Simpan Tindakan
+            </Button>
+          </div>
+        }
+      >
+        {selectedReturnItem && (
+          <div className="space-y-4 text-xs text-slate-700 dark:text-slate-300">
+            {/* Ringkasan Item */}
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3.5 space-y-2 border border-slate-200/80 dark:border-slate-700/80">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400">Produk</span>
+                <span className="font-semibold text-slate-900 dark:text-white text-right">
+                  {selectedReturnItem.productName}
+                  {selectedReturnItem.variantLabel ? ` (${formatVariantLabel(selectedReturnItem.variantLabel)})` : ''}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400">Jumlah Retur</span>
+                <span className="font-bold text-slate-900 dark:text-white">
+                  {selectedReturnItem.qty} unit
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400">Referensi</span>
+                <span className="font-mono text-slate-700 dark:text-slate-300">
+                  {selectedReturnItem.complaintId} • {selectedReturnItem.salesOrderNumber} ({selectedReturnItem.customerName})
+                </span>
+              </div>
+              {selectedReturnItem.conditionReason && (
+                <div className="flex justify-between items-start pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0 mr-2">Alasan Retur</span>
+                  <span className="text-right text-slate-700 dark:text-slate-300">
+                    {selectedReturnItem.conditionReason}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Pilihan Tindakan Alokasi */}
+            <div>
+              <Select
+                label="Pilih Tindakan Alokasi"
+                required
+                value={returnAction}
+                onChange={(e) => setReturnAction(e.target.value as ReturnedGoodAction)}
+                options={[
+                  { value: 'RESTOCK', label: 'Masuk ke Stok Barang Jadi (Restock)' },
+                  { value: 'REPAIR', label: 'Perbaiki Ulang / Reparasi (Rework)' },
+                  { value: 'DISASSEMBLE', label: 'Bongkar ke Bahan Baku (Disassemble)' },
+                  { value: 'SCRAP', label: 'Afkir / Dibuang ke Sampah (Scrap)' },
+                ]}
+              />
+            </div>
+
+            {/* Input Catatan Tindakan */}
+            <div>
+              <Input
+                label="Catatan Tindakan (Opsional)"
+                placeholder="Tambahkan catatan atau instruksi..."
+                value={returnActionNotes}
+                onChange={(e) => setReturnActionNotes(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
       </Modal>
 
     </div>

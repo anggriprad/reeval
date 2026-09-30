@@ -8,6 +8,7 @@ export interface SegmentOption<T extends string = string> {
   label: string;
   count?: number;
   icon?: React.ComponentType<{ className?: string }>;
+  countColor?: string;
 }
 
 export interface FilterSelectOption {
@@ -40,6 +41,8 @@ export interface SegmentedControlProps<T extends string = string> {
   filterPlaceholder?: string;
   // Multiple filter dropdowns prop
   filters?: FilterConfig[];
+  // Extra controls (e.g. toggle, checkbox, buttons) in filter row
+  extraControls?: React.ReactNode;
 }
 
 export function SegmentedControl<T extends string = string>({
@@ -55,6 +58,7 @@ export function SegmentedControl<T extends string = string>({
   filterOptions,
   filterPlaceholder = 'Semua Filter',
   filters,
+  extraControls,
 }: SegmentedControlProps<T>) {
   const allFilters: FilterConfig[] = React.useMemo(() => {
     const list: FilterConfig[] = [];
@@ -73,7 +77,7 @@ export function SegmentedControl<T extends string = string>({
 
   const hasSearch = onSearchChange !== undefined && searchValue !== undefined;
   const hasFilters = allFilters.length > 0;
-  const hasControlsRow = hasSearch || hasFilters;
+  const hasControlsRow = hasSearch || hasFilters || !!extraControls;
 
   const itemRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -117,10 +121,13 @@ export function SegmentedControl<T extends string = string>({
               <span className="whitespace-nowrap">{option.label}</span>
               {typeof option.count === 'number' && option.count > 0 && (
                 <span
-                  className={`ml-1 rounded-full px-2 py-0.5 text-xs font-bold transition-colors shrink-0 ${isActive
-                    ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white shadow-xs'
-                    : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                    }`}
+                  className={`ml-1 rounded-full px-2 py-0.5 text-xs font-bold transition-colors shrink-0 ${
+                    option.countColor
+                      ? `${option.countColor} text-white shadow-xs`
+                      : isActive
+                        ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white shadow-xs'
+                        : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                  }`}
                 >
                   {option.count}
                 </span>
@@ -156,17 +163,33 @@ export function SegmentedControl<T extends string = string>({
           )}
 
           {/* Dropdown Filters (After Search Input) */}
-          {allFilters.map((f, i) => (
-            <div key={f.id || i} className="w-full sm:max-w-48 shrink-0">
-              <Select
-                inputSize="md"
-                value={f.value}
-                onChange={(e) => f.onChange(e.target.value)}
-                placeholder={f.placeholder || 'Semua Filter'}
-                options={f.options}
-              />
+          {allFilters.map((f, i) => {
+            const hasAllOption = f.options.some(
+              (opt) => String(opt.value) === '' || String(opt.value).toUpperCase() === 'ALL'
+            );
+            const resolvedOptions = hasAllOption
+              ? f.options
+              : [{ value: '', label: f.placeholder || 'Semua Filter' }, ...f.options];
+
+            return (
+              <div key={f.id || i} className="w-full sm:max-w-48 shrink-0">
+                <Select
+                  inputSize="md"
+                  value={f.value}
+                  onChange={(e) => f.onChange(e.target.value)}
+                  placeholder={f.placeholder || 'Semua Filter'}
+                  options={resolvedOptions}
+                />
+              </div>
+            );
+          })}
+
+          {/* Extra Controls */}
+          {extraControls && (
+            <div className="flex items-center shrink-0 sm:ml-auto">
+              {extraControls}
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

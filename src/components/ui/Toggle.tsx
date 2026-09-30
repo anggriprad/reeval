@@ -6,12 +6,14 @@ export interface ToggleProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: string;
+  labelPosition?: 'left' | 'right';
   description?: string;
   showStatusBadge?: boolean;
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
   color?: 'indigo' | 'emerald';
   className?: string;
+  labelClassName?: string;
   id?: string;
   title?: string;
 }
@@ -20,12 +22,14 @@ export const Toggle: React.FC<ToggleProps> = ({
   checked,
   onChange,
   label,
+  labelPosition = 'left',
   description,
   showStatusBadge = false,
   size = 'md',
   disabled = false,
   color = 'indigo',
   className = '',
+  labelClassName = '',
   id,
   title,
 }) => {
@@ -50,22 +54,30 @@ export const Toggle: React.FC<ToggleProps> = ({
   const activeBg = color === 'emerald' ? 'bg-emerald-600' : 'bg-indigo-600';
   const focusRing = color === 'emerald' ? 'focus:ring-emerald-500' : 'focus:ring-indigo-500';
 
-  return (
-    <div className={`inline-flex items-center gap-3 ${className}`}>
-      {(label || description) && (
-        <div className="flex flex-col">
-          {label && (
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              {label}
-            </span>
-          )}
-          {description && (
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              {description}
-            </span>
-          )}
-        </div>
+  const labelNode = (label || description) ? (
+    <div
+      className={`flex flex-col ${!disabled ? 'cursor-pointer select-none' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!disabled) onChange(!checked);
+      }}
+    >
+      {label && (
+        <span className={labelClassName || "text-sm font-semibold text-slate-900 dark:text-slate-100"}>
+          {label}
+        </span>
       )}
+      {description && (
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          {description}
+        </span>
+      )}
+    </div>
+  ) : null;
+
+  return (
+    <div className={`inline-flex items-center gap-2.5 ${className}`}>
+      {labelPosition === 'left' && labelNode}
 
       <button
         id={id}
@@ -88,6 +100,8 @@ export const Toggle: React.FC<ToggleProps> = ({
           }`}
         />
       </button>
+
+      {labelPosition === 'right' && labelNode}
 
       {showStatusBadge && (
         <span

@@ -5,13 +5,15 @@
 // --- Enums ---
 
 export type OrderStatus =
-  | 'PENDING'    // Menunggu (Order masuk)
-  | 'PROCESSING' // Diproses (Admin memproses & SPK dibuat)
-  | 'READY'      // Siap Kirim (Semua SPK selesai)
-  | 'SENT'       // Terkirim (Delivery selesai, invoice terbentuk)
-  | 'CANCELED';  // Dibatalkan
+  | 'PENDING'            // Menunggu (Order masuk)
+  | 'PROCESSING'         // Diproses (SPK terbit, produksi berjalan)
+  | 'PARTIALLY_READY'    // Sebagian item selesai produksi, bisa mulai kirim
+  | 'READY'              // Semua item selesai produksi
+  | 'PARTIALLY_SHIPPED'  // Sebagian item sudah dikirim
+  | 'SENT'               // Semua item diterima pelanggan
+  | 'CANCELED';          // Dibatalkan
 
-export type SPKStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED';
+export type SPKStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELED';
 
 export type InvoiceStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 
@@ -19,7 +21,7 @@ export type POStatus = 'DRAFT' | 'ORDERED' | 'RECEIVED' | 'REJECTED';
 
 export type StockMovementType = 'IN' | 'OUT';
 
-export type DeliveryStatus = 'PENDING' | 'DELIVERED';
+export type DeliveryStatus = 'READY_TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'PENDING';
 
 // --- Dynamic Form Builder Types ---
 
@@ -42,7 +44,7 @@ export interface FormContainer {
   fields: FormField[];
 }
 
-// --- Raw Material & Sub-Assembly ---
+// --- Raw Material & Bahan Setengah Jadi ---
 
 export interface RawMaterial {
   id: string;
@@ -53,9 +55,9 @@ export interface RawMaterial {
   unitCost: number;
   stock: number;
   minStock: number;
-  isSubAssembly?: boolean;   // True if this item is a Sub-Assembly / Semi-Finished Good
-  childBom?: BOMItem[];      // Child BOM components required to build this sub-assembly
-  routingId?: string;        // Optional Production Routing ID assigned to build this sub-assembly
+  isSubAssembly?: boolean;   // True if this item is a Bahan Setengah Jadi (Semi-Finished Good)
+  childBom?: BOMItem[];      // Child BOM components required to build this bahan setengah jadi
+  routingId?: string;        // Optional Production Routing ID assigned to build this bahan setengah jadi
 }
 
 // --- BOM (Bill of Materials) Item ---
@@ -258,6 +260,40 @@ export interface SalesOrderItem {
   selectedModifiers?: SelectedModifierGroup[];
   isCustom: boolean;
   customNotes?: string;
+  // Fulfillment tracking counters
+  producedQty?: number;      // Jumlah unit yang sudah selesai produksi
+  shippedQty?: number;       // Jumlah unit yang sudah masuk Surat Jalan
+  deliveredQty?: number;     // Jumlah unit yang sudah diterima pelanggan
+}export type OrderComplaintStatus = 'DIAJUKAN' | 'DITANGANI' | 'SELESAI';
+
+export interface OrderComplaintItem {
+  productId: string;
+  variantId?: string;
+  productName: string;
+  variantLabel?: string;
+  qty: number;
+  unitPrice: number;
+}
+
+export interface ComplaintAttachment {
+  id: string;
+  name: string;
+  type: 'image' | 'video';
+  url: string; // Base64 data URL
+  size?: number;
+}
+
+export interface OrderComplaint {
+  id: string;
+  category: 'Barang tidak sesuai' | 'Barang rusak / cacat' | 'Barang kurang' | 'Lainnya';
+  description: string;
+  status: OrderComplaintStatus;
+  items: OrderComplaintItem[];
+  attachments?: ComplaintAttachment[];
+  resolution?: 'Batalkan Pesanan (Refund)' | 'Kirim Barang Pengganti' | 'Perbaikan';
+  resolutionNotes?: string;
+  createdAt: string;
+  resolvedAt?: string;
 }
 
 // --- Sales Order ---
@@ -284,6 +320,7 @@ export interface SalesOrder {
   deliveredAt?: string;
   paidAt?: string;
   adminNotes?: string;      // Admin notes on review
+  complaints?: OrderComplaint[];
 }
 
 export interface JobCard {
@@ -357,6 +394,8 @@ export interface PurchaseOrderItem {
 
 // --- Stock Movement ---
 
+export type StockCategory = 'RAW' | 'WIP' | 'FINISHED';
+
 export interface StockMovement {
   id: string;
   materialId: string;
@@ -365,23 +404,90 @@ export interface StockMovement {
   qty: number;
   reference: string;
   date: string;
+  stockCategory?: StockCategory; // Jenis stok: bahan baku, WIP, atau barang jadi
+}
+
+// --- Finished Good Stock (Barang Jadi) ---
+
+export interface FinishedGoodStock {
+  id: string;
+  productId: string;
+  variantId?: string;
+  productName: string;
+  variantLabel?: string;
+  stock: number;
+  minStock: number;
+  unit: string; // default 'unit'
+}
+
+// --- Returned Good (Barang Retur dari Komplain / Refund) ---
+
+export type ReturnedGoodAction = 'RESTOCK' | 'REPAIR' | 'DISASSEMBLE' | 'SCRAP';
+export type ReturnedGoodStatus = 'PENDING' | 'RESTOCKED' | 'REPAIR' | 'DISASSEMBLED' | 'SCRAPPED';
+
+export interface ReturnedGood {
+  id: string;
+  complaintId: string;
+  salesOrderId: string;
+  salesOrderNumber: string;
+  customerName: string;
+  productId: string;
+  variantId?: string;
+  productName: string;
+  variantLabel?: string;
+  qty: number;
+  unitPrice?: number;
+  conditionReason: string;
+  customNotes?: string;
+  returnedAt: string;
+  status: ReturnedGoodStatus;
+  actionTaken?: ReturnedGoodAction;
+  actionNotes?: string;
+  actionAt?: string;
+  actionBy?: string;
 }
 
 // --- Delivery Order ---
+ 
+export interface DeliveryOrderItem {
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  customerAddress: string;
+  productId?: string;
+  productName: string;
+  variantLabel?: string;
+  qty: number;
+  itemIndex: number;        // Index item di SO.items untuk tracking fulfillment
+}
 
 export interface DeliveryOrder {
   id: string;
   doNumber: string;
+  tripId?: string;              // ID Kloter keberangkatan armada
+  tripNumber?: string;          // Kode Kloter keberangkatan (misal KLT-2026-001)
   salesOrderId: string;
   salesOrderNumber: string;
+  salesOrderIds?: string[];
+  salesOrderNumbers?: string[];
   customerName: string;
   customerAddress: string;
   items: string[];
+  orderItems?: DeliveryOrderItem[];
+  driverId?: string;
   assignedDriverName: string;
+  driverPhone?: string;
+  armadaId?: string;
+  armadaName?: string;
   vehiclePlate: string;
   scheduledDate: string;
   status: DeliveryStatus;
-  deliveryProofNote?: string;   // Driver's confirmation note / photo description
+  notes?: string;
+  loadedAt?: string;            // ISO timestamp when driver confirmed loading
+  loadedBy?: string;            // Name of driver/person who confirmed loading
+  receiverName?: string;        // Name of person who received the goods
+  deliveryProofNote?: string;   // Driver's confirmation note / handover note
+  deliveryProofPhoto?: string;  // Uploaded proof photo (base64 data URL or photo URL)
   deliveredAt?: string;
   createdAt: string;
 }
@@ -524,7 +630,8 @@ export type JournalSourceType =
   | 'MANUAL'
   | 'MANUAL_JOURNAL'
   | 'CLOSING_ENTRY'
-  | 'DIVIDEND';
+  | 'DIVIDEND'
+  | 'REFUND';
 
 export interface JournalEntry {
   id: string;
@@ -540,7 +647,7 @@ export interface JournalEntry {
 // --- App State ---
 
 export interface AppState {
-  strictSOStockCheck?: boolean; // If true, block SO confirmation if any material/sub-assembly stock < qtyNeeded
+  strictSOStockCheck?: boolean; // If true, block SO confirmation if any material/bahan setengah jadi stock < qtyNeeded
   materials: RawMaterial[];
   products: Product[];
   attributes: AttributeMaster[];    // Global attribute master data
@@ -552,6 +659,8 @@ export interface AppState {
   purchaseOrders: PurchaseOrder[];
   stockMovements: StockMovement[];
   deliveryOrders: DeliveryOrder[];
+  finishedGoods: FinishedGoodStock[];  // Stok barang jadi
+  returnedGoods?: ReturnedGood[];      // Barang retur dari komplain/refund
   invoices: Invoice[];
   currentUserId: string;      // Active simulated user
   categories: string[];       // Dynamic raw material categories

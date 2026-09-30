@@ -38,13 +38,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = body.action;
 
-    // 1. Update Delivery Status (e.g. DELIVERED)
-    if (action === 'update_status' || (body.deliveryOrderId && body.status)) {
+    // 1. Update Delivery Status (e.g. IN_TRANSIT or DELIVERED)
+    if (action === 'update_status' || action === 'confirm_loading' || (body.deliveryOrderId && body.status)) {
       const doId = body.deliveryOrderId || body.id;
-      const status = body.status as DeliveryStatus;
-      const proofNote = body.deliveryProofNote;
+      const status = (action === 'confirm_loading' ? 'IN_TRANSIT' : body.status) as DeliveryStatus;
 
-      const updated = updateDeliveryStatus(doId, status, proofNote);
+      const updated = updateDeliveryStatus(doId, status, {
+        deliveryProofNote: body.deliveryProofNote,
+        deliveryProofPhoto: body.deliveryProofPhoto,
+        receiverName: body.receiverName,
+        driverName: body.driverName,
+      });
+
       if (!updated) {
         return NextResponse.json(
           { success: false, error: `Delivery order ${doId} tidak ditemukan` },
@@ -54,22 +59,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data: updated }, { status: 200 });
     }
 
-    // 2. Create Delivery Order
-    if (action === 'create' || (body.salesOrderId && body.assignedDriverName)) {
-      const { salesOrderId, assignedDriverName, vehiclePlate, scheduledDate } = body;
+    // 2. Create Delivery Order (Single or Multi-Order)
+    if (action === 'create' || ((body.salesOrderId || body.salesOrderIds) && body.assignedDriverName)) {
+      const {
+        salesOrderId,
+        salesOrderIds,
+        selectedItems,
+        assignedDriverName,
+        driverId,
+        driverPhone,
+        armadaId,
+        armadaName,
+        vehiclePlate,
+        scheduledDate,
+        notes,
+      } = body;
 
-      if (!salesOrderId || !assignedDriverName || !vehiclePlate) {
+      const targetIds = salesOrderIds || (salesOrderId ? [salesOrderId] : []);
+      if (targetIds.length === 0 || !assignedDriverName || !vehiclePlate) {
         return NextResponse.json(
-          { success: false, error: 'salesOrderId, assignedDriverName, dan vehiclePlate wajib diisi' },
+          { success: false, error: 'salesOrderId/salesOrderIds, assignedDriverName, dan vehiclePlate wajib diisi' },
           { status: 400 }
         );
       }
 
       const newDO = createDeliveryOrder({
-        salesOrderId,
+        salesOrderId: targetIds[0],
+        salesOrderIds: targetIds,
+        selectedItems,
         assignedDriverName,
+        driverId,
+        driverPhone,
+        armadaId,
+        armadaName,
         vehiclePlate,
         scheduledDate: scheduledDate || new Date().toISOString().split('T')[0],
+        notes,
       });
 
       return NextResponse.json({ success: true, data: newDO }, { status: 201 });

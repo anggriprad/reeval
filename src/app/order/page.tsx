@@ -54,7 +54,7 @@ export function OrderListContent() {
   const [cancelReasonInput, setCancelReasonInput] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState('');
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useUrlTab(['all', 'pending', 'processing', 'ready', 'sent', 'canceled'] as const, 'pending');
+  const [statusFilter, setStatusFilter] = useUrlTab(['all', 'pending', 'processing', 'ready', 'sent', 'canceled', 'komplain'] as const, 'pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [salesFilter, setSalesFilter] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -75,7 +75,14 @@ export function OrderListContent() {
   }));
 
   const filteredOrders = baseOrders
-    .filter(o => statusFilter === 'all' || o.status.toLowerCase() === statusFilter)
+    .filter(o => {
+      if (statusFilter === 'all') return true;
+      const s = o.status;
+      if (statusFilter === 'processing') return s === 'PROCESSING' || s === 'PARTIALLY_READY';
+      if (statusFilter === 'ready') return s === 'READY' || s === 'PARTIALLY_SHIPPED';
+      if (statusFilter === 'komplain') return false;
+      return s.toLowerCase() === statusFilter;
+    })
     .filter(o => !salesFilter || o.createdBy === salesFilter)
     .filter(o => {
       if (!searchTerm.trim()) return true;
@@ -90,6 +97,26 @@ export function OrderListContent() {
       );
     });
 
+  const allComplaints = baseOrders
+    .filter(o => !salesFilter || o.createdBy === salesFilter)
+    .flatMap(o => (o.complaints || []).map(c => ({
+      ...c,
+      orderId: o.id,
+      orderNumber: o.orderNumber,
+      customerName: o.customer.name
+    })));
+
+  const filteredComplaints = allComplaints.filter(c => {
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.toLowerCase();
+    return (
+      c.orderNumber.toLowerCase().includes(q) ||
+      c.customerName.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q) ||
+      c.description.toLowerCase().includes(q) ||
+      c.items.some(i => i.productName.toLowerCase().includes(q))
+    );
+  });
   const handleProcessOrder = (id: string) => {
     setErrorMsg('');
     const res = processOrder(id);
@@ -136,13 +163,13 @@ export function OrderListContent() {
     {
       key: 'processing',
       label: 'Diproses',
-      count: baseOrders.filter(o => o.status === 'PROCESSING').length,
+      count: baseOrders.filter(o => o.status === 'PROCESSING' || o.status === 'PARTIALLY_READY').length,
       icon: Cog,
     },
     {
       key: 'ready',
       label: 'Siap Kirim',
-      count: baseOrders.filter(o => o.status === 'READY').length,
+      count: baseOrders.filter(o => o.status === 'READY' || o.status === 'PARTIALLY_SHIPPED').length,
       icon: Truck,
     },
     {
@@ -155,6 +182,13 @@ export function OrderListContent() {
       label: 'Dibatalkan',
       icon: XCircle,
     },
+    {
+      key: 'komplain',
+      label: 'Komplain',
+      count: baseOrders.filter(o => o.complaints?.some(c => c.status !== 'SELESAI')).length || undefined,
+      icon: AlertCircle,
+      countColor: 'bg-red-600',
+    }
   ];
 
   return (
@@ -198,14 +232,79 @@ export function OrderListContent() {
         filterValue={salesFilter}
         onFilterChange={setSalesFilter}
         filterOptions={salesOptions}
-        filterPlaceholder="Semua Sales Executive"
+        filterPlaceholder="Semua Sales"
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Cari sales order, pelanggan, produk..."
       />
 
-      {/* Sales Orders List */}
-      {filteredOrders.length === 0 ? (
+      {/* List */}
+      {statusFilter === 'komplain' ? (
+        filteredComplaints.length === 0 ? (
+          <Card>
+            <EmptyState
+              title="Tidak Ada Komplain"
+              description="Tidak ada komplain yang sesuai dengan filter/pencarian."
+              icon={<AlertCircle className="h-7 w-7 text-slate-400" />}
+            />
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {filteredComplaints.map(complaint => (
+              <Card
+                key={complaint.id}
+                onClick={() => router.push(`/order/complaint/${complaint.id}`)}
+                className="transition-all cursor-pointer hover:shadow-xs hover:border-slate-300 dark:hover:border-slate-700"
+              >
+                <div className="p-4 sm:p-5 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white">
+                        {complaint.category}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        {complaint.orderNumber} · {complaint.customerName}
+                      </div>
+                    </div>
+                    <div className="flex items-center sm:flex-col sm:items-end gap-1.5 shrink-0">
+                      <Badge className={
+                        complaint.status === 'SELESAI' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800' :
+                        complaint.status === 'DITANGANI' ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800' :
+                        'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+                      }>
+                        {complaint.status}
+                      </Badge>
+                      <span className="text-[11px] text-slate-500">
+                        {formatDateTime(complaint.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Barang yang dikomplain */}
+                  <div className="text-xs text-slate-700 dark:text-slate-300 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    {complaint.items.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{item.productName}</span>
+                        {item.variantLabel && (
+                          <span className="text-slate-500">({formatVariantLabel(item.variantLabel)})</span>
+                        )}
+                        <span className="font-bold text-slate-700 dark:text-slate-300">x{item.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Deskripsi komplain di bawahnya */}
+                  {complaint.description && (
+                    <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                      {complaint.description}
+                    </p>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
+      ) : filteredOrders.length === 0 ? (
         <Card>
           <EmptyState
             title="Tidak Ada Order"
@@ -235,6 +334,11 @@ export function OrderListContent() {
                         <Badge variant={getOrderStatusVariant(order.status)}>
                           {getOrderStatusLabel(order.status, order.cancelledByRole)}
                         </Badge>
+                        {order.complaints && order.complaints.some(c => c.status !== 'SELESAI') && (
+                          <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
+                            Dikomplain
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex flex-col text-xs text-slate-600 dark:text-slate-400 space-y-1">
                         <span className="flex items-center gap-1.5 font-normal text-slate-700 dark:text-slate-300">
@@ -362,7 +466,7 @@ export function OrderListContent() {
                         </div>
                       </div>
 
-                      {(canApproveOrder(currentUser.role) && order.status === 'PENDING') || order.status === 'PENDING' ? (
+                      {(canApproveOrder(currentUser.role) && order.status === 'PENDING') || order.status === 'PENDING' || order.status === 'PROCESSING' ? (
                         <div className="flex items-center gap-1.5 relative border-l border-slate-200 dark:border-slate-700 pl-4" onClick={(e) => e.stopPropagation()}>
                           {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
                             <Button
@@ -377,8 +481,8 @@ export function OrderListContent() {
                             </Button>
                           )}
 
-                          {/* MORE OPTIONS BUTTON FOR PENDING ORDERS (EDIT & DELETE/BATALKAN) */}
-                          {order.status === 'PENDING' && (
+                          {/* MORE OPTIONS BUTTON FOR PENDING / PROCESSING ORDERS */}
+                          {(order.status === 'PENDING' || order.status === 'PROCESSING') && (
                             <div className="relative">
                               <button
                                 type="button"
@@ -394,18 +498,20 @@ export function OrderListContent() {
 
                               {isMenuOpen && (
                                 <div className="absolute right-0 bottom-full mb-1 w-44 rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 z-30 py-1.5 text-xs">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenActionMenuId(null);
-                                      router.push(`/order/create?edit=${order.id}`);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700 text-left font-medium"
-                                  >
-                                    <Edit className="h-3.5 w-3.5 text-indigo-600" />
-                                    Edit Pesanan
-                                  </button>
+                                  {order.status === 'PENDING' && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenActionMenuId(null);
+                                        router.push(`/order/create?edit=${order.id}`);
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700 text-left font-medium"
+                                    >
+                                      <Edit className="h-3.5 w-3.5 text-indigo-600" />
+                                      Edit Pesanan
+                                    </button>
+                                  )}
 
                                   <button
                                     type="button"
@@ -413,7 +519,9 @@ export function OrderListContent() {
                                       e.stopPropagation();
                                       handleOpenCancelModal(order.id);
                                     }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 text-left font-medium border-t border-slate-100 dark:border-slate-700/60"
+                                    className={`w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 text-left font-medium ${
+                                      order.status === 'PENDING' ? 'border-t border-slate-100 dark:border-slate-700/60' : ''
+                                    }`}
                                   >
                                     <XCircle className="h-3.5 w-3.5" />
                                     Batalkan Order

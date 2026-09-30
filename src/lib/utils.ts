@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { BOMItem, RawMaterial } from '@/lib/types';
+import type { BOMItem, RawMaterial, Product, FinishedGoodStock } from '@/lib/types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -113,7 +113,9 @@ export function getOrderStatusColor(status: string): string {
   switch (status) {
     case 'PENDING': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
     case 'PROCESSING': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+    case 'PARTIALLY_READY': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'READY': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+    case 'PARTIALLY_SHIPPED': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
     case 'SENT': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
     case 'CANCELED': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
     default: return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
@@ -124,7 +126,9 @@ export function getOrderStatusVariant(status: string): 'warning' | 'info' | 'pur
   switch (status) {
     case 'PENDING': return 'warning';
     case 'PROCESSING': return 'info';
+    case 'PARTIALLY_READY': return 'info';
     case 'READY': return 'purple';
+    case 'PARTIALLY_SHIPPED': return 'purple';
     case 'SENT': return 'success';
     case 'CANCELED': return 'danger';
     default: return 'default';
@@ -135,7 +139,9 @@ export function getOrderStatusLabel(status: string, cancelledByRole?: string): s
   switch (status) {
     case 'PENDING': return 'Menunggu';
     case 'PROCESSING': return 'Diproses';
+    case 'PARTIALLY_READY': return 'Sebagian Siap';
     case 'READY': return 'Siap Kirim';
+    case 'PARTIALLY_SHIPPED': return 'Sebagian Terkirim';
     case 'SENT': return 'Terkirim';
     case 'CANCELED':
       if (cancelledByRole) {
@@ -155,6 +161,7 @@ export function getSPKStatusColor(status: string): string {
     case 'UPHOLSTERY': return 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400';
     case 'QC_PACKING': return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400';
     case 'COMPLETED': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
+    case 'CANCELED': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
     default: return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
   }
 }
@@ -167,6 +174,7 @@ export function getSPKStatusLabel(status: string): string {
     case 'UPHOLSTERY': return 'Jok & Busa';
     case 'QC_PACKING': return 'QC & Packing';
     case 'COMPLETED': return 'Selesai';
+    case 'CANCELED': return 'Dibatalkan';
     default: return status;
   }
 }
@@ -232,8 +240,8 @@ export function formatVariantLabel(label?: string | null): string {
 }
 
 /**
- * Calculates Sub-Assembly unit cost = (Sum of Child Materials Cost) + (Planned Labor Cost of Routing).
- * Recursively supports nested Sub-Assemblies.
+ * Calculates Bahan Setengah Jadi unit cost = (Sum of Child Materials Cost) + (Planned Labor Cost of Routing).
+ * Recursively supports nested Bahan Setengah Jadi.
  */
 export function calculateSubAssemblyCost(
   childBom: { materialId: string; qty: number }[] | undefined | null,
@@ -266,7 +274,7 @@ export function calculateSubAssemblyCost(
 
 /**
  * Recursively explodes a BOM item list down to raw materials and calculates total material cost.
- * If a BOM item is a Sub-Assembly with its own childBom, it recursively calculates the sub-assembly cost (including its labor).
+ * If a BOM item is a Bahan Setengah Jadi with its own childBom, it recursively calculates the bahan setengah jadi cost (including its labor).
  */
 export function calculateRollupBOMCost(
   bom: { materialId: string; qty: number }[] | undefined | null,
@@ -288,4 +296,84 @@ export function calculateRollupBOMCost(
 
     return total + (mat.unitCost * item.qty);
   }, 0);
+}
+
+/**
+ * Sinkronisasi produk katalog beserta seluruh variannya ke dalam daftar Barang Jadi (Finished Goods).
+ * Semua produk katalog otomatis memiliki entri barang jadi dengan default stok 0.
+ * Jika barang jadi sudah ada sebelumnya, stok dan pengaturannya tetap dipertahankan.
+ */
+export function syncFinishedGoodsWithProducts(
+  products: Product[],
+  currentFinishedGoods: FinishedGoodStock[] = []
+): FinishedGoodStock[] {
+  const fgMap = new Map<string, FinishedGoodStock>();
+  for (const fg of currentFinishedGoods) {
+    const key = `${fg.productId}__${fg.variantId || ''}`;
+    fgMap.set(key, fg);
+  }
+
+  const result: FinishedGoodStock[] = [];
+
+  for (const prod of products) {
+    if (prod.variants && prod.variants.length > 0) {
+      for (const variant of prod.variants) {
+        if (variant.isActive === false) continue;
+        const key = `${prod.id}__${variant.id}`;
+        const existing = fgMap.get(key);
+        const variantLabel = Object.values(variant.combination || {}).join(' • ') || variant.sku;
+
+        if (existing) {
+          result.push({
+            ...existing,
+            productName: prod.name,
+            variantLabel: variantLabel || existing.variantLabel,
+          });
+          fgMap.delete(key);
+        } else {
+          result.push({
+            id: `fg-${prod.id}-${variant.id}`,
+            productId: prod.id,
+            variantId: variant.id,
+            productName: prod.name,
+            variantLabel,
+            stock: 0,
+            minStock: 0,
+            unit: 'unit',
+          });
+        }
+      }
+    } else {
+      // Produk tanpa varian
+      const key = `${prod.id}__`;
+      const existing = fgMap.get(key);
+      if (existing) {
+        result.push({
+          ...existing,
+          productName: prod.name,
+        });
+        fgMap.delete(key);
+      } else {
+        result.push({
+          id: `fg-${prod.id}`,
+          productId: prod.id,
+          variantId: undefined,
+          productName: prod.name,
+          variantLabel: undefined,
+          stock: 0,
+          minStock: 0,
+          unit: 'unit',
+        });
+      }
+    }
+  }
+
+  // Pertahankan barang jadi non-katalog/custom yang masih memiliki stok
+  for (const remainingFG of fgMap.values()) {
+    if (remainingFG.stock > 0) {
+      result.push(remainingFG);
+    }
+  }
+
+  return result;
 }

@@ -117,20 +117,28 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
 
   // Extract options from options prop or React children <option> elements
   const parsedOptions: SelectOption[] = useMemo(() => {
+    let res: SelectOption[] = [];
     if (options && options.length > 0) {
-      return options;
+      res = [...options];
+    } else {
+      React.Children.forEach(children, (child) => {
+        if (React.isValidElement(child) && child.type === 'option') {
+          const val = (child.props as any).value ?? '';
+          const lbl = (child.props as any).children ?? String(val);
+          const dis = (child.props as any).disabled;
+          res.push({ value: val, label: typeof lbl === 'string' ? lbl : String(lbl), disabled: dis });
+        }
+      });
     }
-    const res: SelectOption[] = [];
-    React.Children.forEach(children, (child) => {
-      if (React.isValidElement(child) && child.type === 'option') {
-        const val = (child.props as any).value ?? '';
-        const lbl = (child.props as any).children ?? String(val);
-        const dis = (child.props as any).disabled;
-        res.push({ value: val, label: typeof lbl === 'string' ? lbl : String(lbl), disabled: dis });
-      }
-    });
+
+    // Auto-inject placeholder as selectable option if provided and no empty option already exists
+    const hasEmptyOption = res.some(opt => String(opt.value) === '' || String(opt.value).toUpperCase() === 'ALL');
+    if (placeholder && !hasEmptyOption) {
+      res.unshift({ value: '', label: placeholder });
+    }
+
     return res;
-  }, [options, children]);
+  }, [options, children, placeholder]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
@@ -281,7 +289,6 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
           tabIndex={-1}
           {...props}
         >
-          {placeholder && <option value="">{placeholder}</option>}
           {parsedOptions.map(opt => (
             <option key={String(opt.value)} value={opt.value} disabled={opt.disabled}>
               {opt.label}

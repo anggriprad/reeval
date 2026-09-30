@@ -2,7 +2,7 @@
 // Reeval ERP — Role & Access Control Matrix
 // ========================================
 
-export type RoleType = 'ADMIN' | 'SALES' | 'PRODUKSI' | 'DRIVER' | 'GUDANG';
+export type RoleType = 'ADMIN' | 'SALES' | 'PRODUKSI' | 'DRIVER' | 'GUDANG' | 'PURCHASING';
 
 export interface UserAccount {
   id: string;
@@ -60,6 +60,15 @@ export const USER_ACCOUNTS: UserAccount[] = [
     email: 'gudang@reeval.id',
     phone: '6281798765439',
   },
+  {
+    id: 'purchasing-1',
+    name: 'Rina Maharani',
+    role: 'PURCHASING',
+    roleLabel: 'Staff Purchasing',
+    initials: 'RM',
+    email: 'purchasing@reeval.id',
+    phone: '6281898765438',
+  },
 ];
 
 export const DEFAULT_USER_ID = 'admin-1';
@@ -103,6 +112,11 @@ export const ROLE_ALLOWED_ROUTES: Record<RoleType, string[]> = {
     '/inventory',
     '/products',
   ],
+  PURCHASING: [
+    '/',
+    '/inventory',
+    '/products',
+  ],
 };
 
 export function isRouteAllowed(role: RoleType, path: string): boolean {
@@ -135,7 +149,15 @@ export function canManageInventory(role: RoleType): boolean {
 }
 
 export function canCreatePO(role: RoleType): boolean {
-  return role === 'GUDANG' || role === 'ADMIN' || role === 'PRODUKSI';
+  return role === 'PURCHASING' || role === 'ADMIN';
+}
+
+export function canRequestPO(role: RoleType): boolean {
+  return role === 'GUDANG' || role === 'ADMIN' || role === 'PURCHASING' || role === 'PRODUKSI';
+}
+
+export function canAccessPurchasing(role: RoleType): boolean {
+  return role === 'PURCHASING' || role === 'ADMIN' || role === 'GUDANG';
 }
 
 export function canConfirmPayment(role: RoleType): boolean {
@@ -147,5 +169,5 @@ export function canViewFinance(role: RoleType): boolean {
 }
 
 export function canSeeCosts(role: RoleType): boolean {
-  return role === 'ADMIN' || role === 'PRODUKSI' || role === 'GUDANG';
+  return role === 'ADMIN' || role === 'PRODUKSI' || role === 'GUDANG' || role === 'PURCHASING';
 }

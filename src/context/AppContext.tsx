@@ -7,15 +7,18 @@ import type {
   Product,
   ProductVariantSKU,
   SalesOrder,
+  OrderComplaint,
   SalesOrderItem,
   WorkOrder,
   PurchaseOrder,
   PurchaseOrderItem,
   StockMovement,
   DeliveryOrder,
+  DeliveryOrderItem,
   Invoice,
   Payment,
   SPKStatus,
+  OrderStatus,
   JobCard,
   Customer,
   CompanyAsset,
@@ -39,6 +42,10 @@ import type {
   Armada,
   Driver,
   ShippingRate,
+  FinishedGoodStock,
+  ReturnedGood,
+  ReturnedGoodAction,
+  ReturnedGoodStatus,
 } from '@/lib/types';
 import {
   initialMaterials,
@@ -68,7 +75,9 @@ import {
   initialAssetCategories,
   initialArmadas,
   initialDrivers,
-} from '@/lib/initial-data-empty';
+  initialFinishedGoods,
+  initialReturnedGoods,
+} from '@/lib/initial-data';
 import { generateVariantsFromRules } from '@/lib/product-resolver';
 import {
   createOpeningBalanceJournal,
@@ -86,10 +95,10 @@ import {
   createClosingJournal,
   createDividendJournal,
 } from '@/lib/accounting';
-import { generateId, calculateSubAssemblyCost } from '@/lib/utils';
+import { generateId, calculateSubAssemblyCost, syncFinishedGoodsWithProducts } from '@/lib/utils';
 import { DEFAULT_USER_ID, getUserById, USER_ACCOUNTS, UserAccount } from '@/lib/roles';
 
-const STORAGE_KEY = 'reeval-erp-state-v16'; // v16: Default to populated initial-data with Sub-Assembly Multi-Level BOM
+const STORAGE_KEY = 'reeval-erp-state-v16'; // v16: Default to populated initial-data with Bahan Setengah Jadi Multi-Level BOM
 
 // ========================================
 // Context Shape
@@ -135,6 +144,13 @@ interface AppContextType extends AppState {
   deleteMaterialCategory: (category: string) => boolean;
   reorderMaterialCategories: (categories: string[]) => void;
 
+  // Finished Goods CRUD
+  finishedGoods: FinishedGoodStock[];
+  addFinishedGood: (fg: Omit<FinishedGoodStock, 'id'>) => void;
+  updateFinishedGood: (id: string, fg: Partial<FinishedGoodStock>) => void;
+  deleteFinishedGood: (id: string) => boolean;
+  adjustFinishedGoodStock: (productId: string, variantId: string | undefined, delta: number, reference: string) => void;
+
   // Product Category CRUD
   addProductCategory: (category: string) => void;
   deleteProductCategory: (category: string) => boolean;
@@ -164,6 +180,12 @@ interface AppContextType extends AppState {
   updateSalesOrder: (orderId: string, customer: Customer, items: SalesOrderItem[], orderNotes?: string, shippingCost?: number) => void;
   processOrder: (orderId: string) => { success: boolean; error?: string };
   cancelOrder: (orderId: string, cancelReason: string) => void;
+  submitOrderComplaint: (orderId: string, complaint: Omit<OrderComplaint, 'id' | 'status' | 'createdAt'>) => void;
+  resolveOrderComplaint: (orderId: string, complaintId: string, resolution: 'Batalkan Pesanan (Refund)' | 'Kirim Barang Pengganti' | 'Perbaikan', resolutionNotes?: string, refundBankAccountId?: string) => void;
+
+  // Barang Retur
+  returnedGoods: ReturnedGood[];
+  processReturnedGoodAction: (returnId: string, action: ReturnedGoodAction, notes?: string) => void;
 
   // Production
   updateJobCardProgress: (workOrderId: string, jobCardId: string, completedQty: number, picName: string) => void;
@@ -185,8 +207,32 @@ interface AppContextType extends AppState {
   setStrictSOStockCheck: (enabled: boolean) => void;
 
   // Delivery
-  createDeliveryOrder: (salesOrderId: string, assignedDriverName: string, vehiclePlate: string, scheduledDate: string) => void;
-  confirmDelivery: (deliveryOrderId: string, deliveryProofNote: string) => void;
+  createDeliveryOrder: (
+    paramsOrSOId: string | {
+      salesOrderIds: string[];
+      selectedItems?: DeliveryOrderItem[];
+      driverName: string;
+      driverId?: string;
+      driverPhone?: string;
+      vehiclePlate: string;
+      armadaId?: string;
+      armadaName?: string;
+      scheduledDate: string;
+      notes?: string;
+    },
+    legacyDriverName?: string,
+    legacyVehiclePlate?: string,
+    legacyScheduledDate?: string
+  ) => void;
+  confirmLoadingDelivery: (deliveryOrderId: string, driverName?: string) => void;
+  confirmDelivery: (
+    deliveryOrderId: string,
+    proofData: {
+      receiverName: string;
+      proofNote?: string;
+      proofPhoto?: string;
+    } | string
+  ) => void;
 
   // Finance / Invoicing / Payment / Banking
   recordPayment: (invoiceId: string, amount: number, bankAccountId: string, note: string) => void;
@@ -307,6 +353,8 @@ function getDefaultState(): AppState {
     purchaseOrders: structuredClone(initialPurchaseOrders.map(po => ({ ...po, paymentStatus: po.paymentStatus || 'UNPAID' }))),
     stockMovements: structuredClone(initialStockMovements),
     deliveryOrders: structuredClone(initialDeliveryOrders),
+    finishedGoods: initialFinishedGoods,
+    returnedGoods: structuredClone(initialReturnedGoods),
     invoices: structuredClone(initialInvoices),
     currentUserId: DEFAULT_USER_ID,
     categories: structuredClone(initialCategories),
@@ -357,10 +405,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
         variantBoms: saved.variantBoms?.length ? saved.variantBoms : structuredClone(initialVariantBoms),
         products: saved.products?.length ? saved.products : structuredClone(initialProducts),
         materials: saved.materials?.length ? saved.materials : structuredClone(initialMaterials),
+        finishedGoods: syncFinishedGoodsWithProducts(
+          saved.products?.length ? saved.products : structuredClone(initialProducts),
+          saved.finishedGoods || []
+        ),
         productCategories: saved.productCategories?.length ? saved.productCategories : structuredClone(initialProductCategories),
         categories: saved.categories !== undefined ? saved.categories : structuredClone(initialCategories),
         assetCategories: saved.assetCategories !== undefined ? saved.assetCategories : structuredClone(initialAssetCategories),
-        salesOrders: saved.salesOrders ? saved.salesOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) : getDefaultState().salesOrders,
+        salesOrders: (saved.salesOrders || getDefaultState().salesOrders)
+          .map(so => {
+            if (!so.complaints || so.complaints.length === 0) return so;
+            return {
+              ...so,
+              complaints: so.complaints.map(cmp => {
+                if (cmp.attachments && cmp.attachments.length > 0) return cmp;
+                const initSo = initialSalesOrders.find(iso => iso.id === so.id);
+                const initCmp = initSo?.complaints?.find(ic => ic.id === cmp.id);
+                if (initCmp?.attachments && initCmp.attachments.length > 0) {
+                  return { ...cmp, attachments: initCmp.attachments };
+                }
+                return cmp;
+              })
+            };
+          })
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
         assets: saved.assets || structuredClone(initialAssets),
         assetServiceLogs: saved.assetServiceLogs || structuredClone(initialAssetServiceLogs),
         masterModifierGroups: saved.masterModifierGroups || structuredClone(initialModifierGroups),
@@ -753,14 +821,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       items: (v.bom || []).map(b => ({ materialId: b.materialId, qty: b.qty })),
     }));
 
-    setState(prev => ({
-      ...prev,
-      products: [{ ...productWithId, variants }, ...prev.products],
-      variantBoms: [
-        ...prev.variantBoms.filter(vb => !variants.some(v => v.id === vb.variantId)),
-        ...newVariantBoms,
-      ],
-    }));
+    setState(prev => {
+      const nextProducts = [{ ...productWithId, variants }, ...prev.products];
+      return {
+        ...prev,
+        products: nextProducts,
+        finishedGoods: syncFinishedGoodsWithProducts(nextProducts, prev.finishedGoods),
+        variantBoms: [
+          ...prev.variantBoms.filter(vb => !variants.some(v => v.id === vb.variantId)),
+          ...newVariantBoms,
+        ],
+      };
+    });
   }, [state.materials]);
 
   const updateProduct = useCallback((id: string, product: Partial<Omit<Product, 'id'>>) => {
@@ -778,9 +850,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         items: (v.bom || []).map(b => ({ materialId: b.materialId, qty: b.qty })),
       }));
 
+      const nextProducts = prev.products.map(p => (p.id === id ? { ...merged, variants } : p));
       return {
         ...prev,
-        products: prev.products.map(p => (p.id === id ? { ...merged, variants } : p)),
+        products: nextProducts,
+        finishedGoods: syncFinishedGoodsWithProducts(nextProducts, prev.finishedGoods),
         variantBoms: [
           ...prev.variantBoms.filter(vb => !variants.some(v => v.id === vb.variantId)),
           ...newVariantBoms,
@@ -794,7 +868,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(prev => {
       const usedInSO = prev.salesOrders.some(so => so.items.some(i => i.productId === id));
       if (usedInSO) { canDelete = false; return prev; }
-      return { ...prev, products: prev.products.filter(p => p.id !== id) };
+      const nextProducts = prev.products.filter(p => p.id !== id);
+      return {
+        ...prev,
+        products: nextProducts,
+        finishedGoods: syncFinishedGoodsWithProducts(nextProducts, prev.finishedGoods),
+      };
     });
     return canDelete;
   }, []);
@@ -875,6 +954,106 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const count = state.deliveryOrders.length + 1;
     return `DO-${year}-${String(count).padStart(3, '0')}`;
   }, [state.deliveryOrders.length]);
+
+  // ── Finished Goods CRUD ──────────────────────────────────────────────────
+  const addFinishedGood = useCallback((fg: Omit<FinishedGoodStock, 'id'>) => {
+    setState(prev => ({
+      ...prev,
+      finishedGoods: [
+        { ...fg, id: `fg-${crypto.randomUUID().slice(0, 8)}` },
+        ...prev.finishedGoods,
+      ],
+    }));
+  }, []);
+
+  const updateFinishedGood = useCallback((id: string, updates: Partial<FinishedGoodStock>) => {
+    setState(prev => ({
+      ...prev,
+      finishedGoods: prev.finishedGoods.map(fg =>
+        fg.id === id ? { ...fg, ...updates } : fg
+      ),
+    }));
+  }, []);
+
+  const deleteFinishedGood = useCallback((id: string): boolean => {
+    let deleted = false;
+    setState(prev => {
+      const exists = prev.finishedGoods.find(fg => fg.id === id);
+      if (!exists) return prev;
+      deleted = true;
+      const isCatalog = prev.products.some(p => p.id === exists.productId);
+      if (isCatalog) {
+        return {
+          ...prev,
+          finishedGoods: prev.finishedGoods.map(fg => fg.id === id ? { ...fg, stock: 0, minStock: 0 } : fg),
+        };
+      }
+      return {
+        ...prev,
+        finishedGoods: prev.finishedGoods.filter(fg => fg.id !== id),
+      };
+    });
+    return deleted;
+  }, []);
+
+  const adjustFinishedGoodStock = useCallback((productId: string, variantId: string | undefined, delta: number, reference: string) => {
+    setState(prev => {
+      const now = new Date().toISOString();
+      const idx = prev.finishedGoods.findIndex(fg =>
+        fg.productId === productId && (fg.variantId || '') === (variantId || '')
+      );
+
+      let updatedFG = [...prev.finishedGoods];
+      let fgName = '';
+      let fgId = '';
+
+      if (idx >= 0) {
+        updatedFG[idx] = {
+          ...updatedFG[idx],
+          stock: Math.max(0, updatedFG[idx].stock + delta),
+        };
+        fgName = updatedFG[idx].productName + (updatedFG[idx].variantLabel ? ` (${updatedFG[idx].variantLabel})` : '');
+        fgId = updatedFG[idx].id;
+      } else if (delta > 0) {
+        // Auto-create finished good entry if not exists and delta is positive
+        const product = prev.products.find(p => p.id === productId);
+        const variant = product?.variants.find(v => v.id === variantId);
+        const newFG: FinishedGoodStock = {
+          id: `fg-${crypto.randomUUID().slice(0, 8)}`,
+          productId,
+          variantId,
+          productName: product?.name || 'Produk',
+          variantLabel: variant ? Object.values(variant.combination || {}).join(' • ') || variant.sku : undefined,
+          stock: delta,
+          minStock: 0,
+          unit: 'unit',
+        };
+        updatedFG = [newFG, ...updatedFG];
+        fgName = newFG.productName + (newFG.variantLabel ? ` (${newFG.variantLabel})` : '');
+        fgId = newFG.id;
+      } else {
+        return prev; // Can't subtract from non-existent stock
+      }
+
+      // Record stock movement
+      const movement = {
+        id: `sm-${crypto.randomUUID().slice(0, 8)}`,
+        materialId: fgId,
+        materialName: fgName,
+        type: (delta > 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
+        qty: Math.abs(delta),
+        reference,
+        date: now,
+        stockCategory: 'FINISHED' as const,
+      };
+
+      return {
+        ...prev,
+        finishedGoods: updatedFG,
+        stockMovements: [movement, ...prev.stockMovements],
+      };
+    });
+  }, []);
 
   // ---- Raw Materials CRUD ----
   const addMaterial = useCallback((material: Omit<RawMaterial, 'id'>) => {
@@ -1392,7 +1571,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdBy: currentUser.name,
       salesPhone: currentUser.phone || '6281298765432',
       customer,
-      items,
+      items: items.map(item => ({ ...item, producedQty: 0, shippedQty: 0, deliveredQty: 0 })),
       status: 'PENDING',
       totalAmount,
       shippingCost,
@@ -1431,9 +1610,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const user = getUserById(state.currentUserId || DEFAULT_USER_ID);
     const roleLabel = user.role === 'ADMIN' ? 'admin' : user.role === 'SALES' ? 'sales' : user.role.toLowerCase();
     const now = new Date().toISOString();
-    setState(prev => ({
-      ...prev,
-      salesOrders: prev.salesOrders.map(o =>
+
+    const targetOrder = state.salesOrders.find(o => o.id === orderId);
+    if (!targetOrder) return;
+    // Hanya izinkan pembatalan jika pesanan berstatus PENDING atau PROCESSING
+    if (targetOrder.status !== 'PENDING' && targetOrder.status !== 'PROCESSING') return;
+
+    setState(prev => {
+      const order = prev.salesOrders.find(o => o.id === orderId);
+      if (!order) return prev;
+
+      let nextMaterials = [...prev.materials];
+      let nextMovements = [...prev.stockMovements];
+      let nextFinishedGoods = [...prev.finishedGoods];
+
+      // 1. Update status Sales Order menjadi CANCELED
+      const nextSalesOrders = prev.salesOrders.map(o =>
         o.id === orderId
           ? {
             ...o,
@@ -1444,9 +1636,439 @@ export function AppProvider({ children }: { children: ReactNode }) {
             updatedBy: user.name,
           }
           : o
-      ),
+      );
+
+      // 2. Jika order tadinya berstatus PROCESSING, proses semua SPK terkait
+      const nextWorkOrders = prev.workOrders.map(wo => {
+        if (wo.salesOrderId !== order.id && wo.salesOrderNumber !== order.orderNumber) {
+          return wo;
+        }
+
+        // Cek apakah SPK sudah ada pengerjaan oleh operator
+        const hasAnyWorkStarted = wo.status === 'PROCESSING' || wo.status === 'COMPLETED' ||
+          wo.jobCards.some(jc => jc.status === 'IN_PROGRESS' || jc.status === 'PAUSED' || jc.status === 'COMPLETED' || (jc.completedQty && jc.completedQty > 0));
+
+        if (!hasAnyWorkStarted) {
+          // Kasus 1: Belum dikerjakan sama sekali -> Bahan baku kembali ke stok gudang
+          wo.materialsConsumed.forEach(b => {
+            const mIdx = nextMaterials.findIndex(m => m.id === b.materialId);
+            if (mIdx >= 0) {
+              const currentMat = nextMaterials[mIdx];
+              const restoredStock = parseFloat((currentMat.stock + b.qty).toFixed(4));
+              nextMaterials[mIdx] = { ...currentMat, stock: restoredStock };
+
+              nextMovements.unshift({
+                id: generateId(),
+                materialId: currentMat.id,
+                materialName: currentMat.name,
+                type: 'IN',
+                qty: b.qty,
+                date: now,
+                reference: `Batal SO-${order.orderNumber} (Restorasi Bahan ${wo.spkNumber})`,
+              });
+            }
+          });
+        } else {
+          // Kasus 2: Sudah ada yang dikerjakan -> Dianggap selesai semuanya dan masuk ke stok barang jadi / WIP
+          if (wo.isSubAssembly && wo.subAssemblyId) {
+            const targetQty = wo.jobCards[0]?.targetQty || 1;
+            const subIdx = nextMaterials.findIndex(m => m.id === wo.subAssemblyId);
+            if (subIdx >= 0) {
+              const subMat = nextMaterials[subIdx];
+              nextMaterials[subIdx] = { ...subMat, stock: subMat.stock + targetQty };
+              nextMovements.unshift({
+                id: generateId(),
+                materialId: subMat.id,
+                materialName: subMat.name,
+                type: 'IN',
+                qty: targetQty,
+                date: now,
+                reference: `Batal SO-${order.orderNumber} (Stok Setengah Jadi ${wo.spkNumber})`,
+              });
+            }
+          } else {
+            // Produk Jadi
+            const matchingItem = order.items.find(item =>
+              wo.productName === item.productName ||
+              wo.productName.includes(item.productName) ||
+              item.productName.includes(wo.productName)
+            );
+
+            const prodId = matchingItem?.productId || `prod-auto-${generateId()}`;
+            const varId = matchingItem?.variantId;
+            const pName = matchingItem?.productName || wo.productName;
+            const varLabel = matchingItem?.variantLabel || wo.variantName;
+
+            const fgIndex = nextFinishedGoods.findIndex(fg =>
+              fg.productId === prodId && (fg.variantId || '') === (varId || '')
+            );
+
+            let targetFGId = '';
+            if (fgIndex >= 0) {
+              targetFGId = nextFinishedGoods[fgIndex].id;
+              nextFinishedGoods[fgIndex] = {
+                ...nextFinishedGoods[fgIndex],
+                stock: nextFinishedGoods[fgIndex].stock + 1,
+              };
+            } else {
+              targetFGId = `fg-${generateId()}`;
+              nextFinishedGoods.unshift({
+                id: targetFGId,
+                productId: prodId,
+                variantId: varId,
+                productName: pName,
+                variantLabel: varLabel,
+                stock: 1,
+                minStock: 0,
+                unit: 'unit',
+              });
+            }
+
+            nextMovements.unshift({
+              id: generateId(),
+              materialId: targetFGId,
+              materialName: `${pName}${varLabel ? ` (${varLabel})` : ''}`,
+              type: 'IN',
+              qty: 1,
+              reference: `Batal SO-${order.orderNumber} (Alihkan ke Stok Jadi ${wo.spkNumber})`,
+              date: now,
+              stockCategory: 'FINISHED',
+            });
+          }
+        }
+
+        // Semua SPK terkait otomatis berubah status menjadi CANCELED
+        return {
+          ...wo,
+          status: 'CANCELED' as const,
+        };
+      });
+
+      return {
+        ...prev,
+        materials: nextMaterials,
+        stockMovements: nextMovements,
+        finishedGoods: nextFinishedGoods,
+        salesOrders: nextSalesOrders,
+        workOrders: nextWorkOrders,
+      };
+    });
+  }, [state.currentUserId, state.salesOrders]);
+
+  const submitOrderComplaint = useCallback((orderId: string, complaint: Omit<OrderComplaint, 'id' | 'status' | 'createdAt'>) => {
+    setState(prev => ({
+      ...prev,
+      salesOrders: prev.salesOrders.map(o => {
+        if (o.id !== orderId) return o;
+        const newComplaint: OrderComplaint = {
+          ...complaint,
+          id: `CMP-${Date.now()}`,
+          status: 'DIAJUKAN',
+          createdAt: new Date().toISOString(),
+        };
+        return {
+          ...o,
+          complaints: [...(o.complaints || []), newComplaint]
+        };
+      })
     }));
-  }, [state.currentUserId]);
+  }, []);
+
+  const resolveOrderComplaint = useCallback((
+    orderId: string,
+    complaintId: string,
+    resolution: 'Batalkan Pesanan (Refund)' | 'Kirim Barang Pengganti' | 'Perbaikan',
+    resolutionNotes?: string,
+    refundBankAccountId?: string
+  ) => {
+    setState(prev => {
+      const targetOrder = prev.salesOrders.find(o => o.id === orderId);
+      if (!targetOrder || !targetOrder.complaints) return prev;
+
+      const complaint = targetOrder.complaints.find(c => c.id === complaintId);
+      if (!complaint) return prev;
+
+      const now = new Date().toISOString();
+      const isRefund = resolution === 'Batalkan Pesanan (Refund)';
+      const refundAmount = isRefund
+        ? (complaint.items || []).reduce((sum, item) => {
+            const price = (item.unitPrice && item.unitPrice > 0)
+              ? item.unitPrice
+              : (targetOrder.items.find(oi => oi.productId === item.productId)?.unitPrice ?? 0);
+            return sum + (price * item.qty);
+          }, 0)
+        : 0;
+
+      // 1. Update Sales Order totalAmount & complaint status
+      const newOrderTotal = isRefund ? Math.max(0, targetOrder.totalAmount - refundAmount) : targetOrder.totalAmount;
+      const updatedSOs = prev.salesOrders.map(o => {
+        if (o.id !== orderId) return o;
+        return {
+          ...o,
+          totalAmount: newOrderTotal,
+          complaints: (o.complaints || []).map(c =>
+            c.id === complaintId
+              ? { ...c, status: 'SELESAI' as const, resolution, resolutionNotes, resolvedAt: now }
+              : c
+          ),
+        };
+      });
+
+      // 3. Masukkan item komplain refund ke inventaris Barang Retur
+      let updatedReturnedGoods = [...(prev.returnedGoods || [])];
+      if (isRefund) {
+        const newReturnItems: ReturnedGood[] = (complaint.items || []).map((ci, idx) => {
+          const soItem = targetOrder.items.find(oi => oi.productId === ci.productId);
+          return {
+            id: `ret-${Date.now()}-${idx}`,
+            complaintId: complaint.id,
+            salesOrderId: targetOrder.id,
+            salesOrderNumber: targetOrder.orderNumber,
+            customerName: targetOrder.customer.name,
+            productId: ci.productId,
+            variantId: (ci as any).variantId || soItem?.variantId,
+            productName: ci.productName,
+            variantLabel: ci.variantLabel || soItem?.variantLabel,
+            qty: ci.qty,
+            unitPrice: (ci.unitPrice && ci.unitPrice > 0) ? ci.unitPrice : (soItem?.unitPrice ?? 0),
+            conditionReason: `${complaint.category}: ${complaint.description}`,
+            customNotes: soItem?.customNotes,
+            returnedAt: now,
+            status: 'PENDING' as const,
+          };
+        });
+        updatedReturnedGoods = [...newReturnItems, ...updatedReturnedGoods];
+      }
+
+      if (!isRefund || refundAmount <= 0) {
+        return {
+          ...prev,
+          salesOrders: updatedSOs,
+          returnedGoods: updatedReturnedGoods,
+        };
+      }
+
+      // 2. Update Invoices, Bank Accounts & Journal Entries in Finance
+      let updatedInvoices = [...prev.invoices];
+      let updatedBankAccounts = [...prev.bankAccounts];
+      let updatedJournalEntries = [...prev.journalEntries];
+
+      const invIndex = prev.invoices.findIndex(
+        i => i.salesOrderId === orderId || i.salesOrderNumber === targetOrder.orderNumber
+      );
+
+      if (invIndex >= 0) {
+        const inv = prev.invoices[invIndex];
+        const newInvoiceTotal = Math.max(0, inv.totalAmount - refundAmount);
+        const currentPaid = inv.paidAmount;
+
+        // Evaluasi 3 Kondisi:
+        // - Jika pelanggan bayar melebihi total baru -> Kembalikan kelebihan dana kas (cashToReturn)
+        // - Jika belum bayar atau uang muka masih <= total baru -> Cukup kurangi sisa piutang tanpa kas keluar
+        const cashToReturn = Math.max(0, currentPaid - newInvoiceTotal);
+        const newPaidAmount = currentPaid > newInvoiceTotal ? newInvoiceTotal : currentPaid;
+        const newStatus = newInvoiceTotal === 0
+          ? ('PAID' as const)
+          : newPaidAmount >= newInvoiceTotal
+            ? ('PAID' as const)
+            : newPaidAmount > 0
+              ? ('PARTIAL' as const)
+              : ('UNPAID' as const);
+
+        let newPayments = [...inv.payments];
+
+        if (cashToReturn > 0) {
+          const bankAccount = prev.bankAccounts.find(ba => ba.id === refundBankAccountId) || prev.bankAccounts[0];
+          const methodName = bankAccount ? bankAccount.name : 'Kas';
+
+          if (bankAccount) {
+            updatedBankAccounts = prev.bankAccounts.map(ba =>
+              ba.id === bankAccount.id ? { ...ba, balance: ba.balance - cashToReturn } : ba
+            );
+          }
+
+          newPayments.push({
+            id: generateId(),
+            amount: -cashToReturn,
+            method: methodName,
+            date: now,
+            note: `Refund Komplain ${complaint.id} (${resolutionNotes || 'Pengembalian kelebihan dana'})`,
+            confirmedBy: currentUser.name,
+          });
+
+          // Catat Jurnal Pengeluaran Kas Refund
+          updatedJournalEntries.unshift({
+            id: `je-rf-${generateId()}`,
+            entryNumber: `JE-REF-${Date.now().toString().slice(-4)}`,
+            date: now,
+            description: `Pengembalian Dana (Refund) Komplain ${complaint.id} - ${targetOrder.orderNumber} (${targetOrder.customer.name})`,
+            sourceType: 'REFUND',
+            sourceId: complaint.id,
+            createdAt: now,
+            lines: [
+              {
+                accountId: 'coa-41000',
+                accountCode: '4-1000',
+                accountName: 'Pendapatan Penjualan',
+                debit: cashToReturn,
+                credit: 0,
+              },
+              {
+                accountId: bankAccount ? bankAccount.id : 'coa-11100',
+                accountCode: '1-1100',
+                accountName: methodName,
+                debit: 0,
+                credit: cashToReturn,
+              },
+            ],
+          });
+        }
+
+        updatedInvoices[invIndex] = {
+          ...inv,
+          totalAmount: newInvoiceTotal,
+          paidAmount: newPaidAmount,
+          status: newStatus,
+          payments: newPayments,
+        };
+      }
+
+      return {
+        ...prev,
+        salesOrders: updatedSOs,
+        invoices: updatedInvoices,
+        bankAccounts: updatedBankAccounts,
+        journalEntries: updatedJournalEntries,
+        returnedGoods: updatedReturnedGoods,
+      };
+    });
+  }, [currentUser.name]);
+
+  const processReturnedGoodAction = useCallback((
+    returnId: string,
+    action: ReturnedGoodAction,
+    notes?: string
+  ) => {
+    setState(prev => {
+      const item = (prev.returnedGoods || []).find(rg => rg.id === returnId);
+      if (!item || item.status !== 'PENDING') return prev;
+
+      const now = new Date().toISOString();
+      let updatedFinishedGoods = [...prev.finishedGoods];
+      let updatedMaterials = [...prev.materials];
+      let updatedMovements = [...prev.stockMovements];
+
+      if (action === 'RESTOCK') {
+        // Masuk kembali ke stok barang jadi
+        const fgIndex = updatedFinishedGoods.findIndex(
+          fg => fg.productId === item.productId && (!item.variantId || fg.variantId === item.variantId)
+        );
+        let fgName = item.productName + (item.variantLabel ? ` (${item.variantLabel})` : '');
+        let fgId = '';
+
+        if (fgIndex >= 0) {
+          updatedFinishedGoods[fgIndex] = {
+            ...updatedFinishedGoods[fgIndex],
+            stock: updatedFinishedGoods[fgIndex].stock + item.qty,
+          };
+          fgId = updatedFinishedGoods[fgIndex].id;
+        } else {
+          const newFG: FinishedGoodStock = {
+            id: `fg-${Date.now()}`,
+            productId: item.productId,
+            variantId: item.variantId,
+            productName: item.productName,
+            variantLabel: item.variantLabel,
+            stock: item.qty,
+            minStock: 0,
+            unit: 'unit',
+          };
+          updatedFinishedGoods = [newFG, ...updatedFinishedGoods];
+          fgId = newFG.id;
+        }
+
+        updatedMovements.unshift({
+          id: generateId(),
+          materialId: fgId,
+          materialName: fgName,
+          type: 'IN',
+          qty: item.qty,
+          reference: `Restock Barang Retur (${item.complaintId || item.salesOrderNumber})`,
+          date: now,
+          stockCategory: 'FINISHED',
+        });
+      } else if (action === 'DISASSEMBLE') {
+        // Bongkar barang: kembalikan bahan baku ke gudang sesuai BOM
+        const product = prev.products.find(p => p.id === item.productId);
+        const variant = product?.variants.find(v => v.id === item.variantId);
+        const bomItems = variant?.bom || [];
+
+        if (bomItems.length > 0) {
+          bomItems.forEach(b => {
+            const matIdx = updatedMaterials.findIndex(m => m.id === b.materialId);
+            const returnQty = b.qty * item.qty;
+            if (matIdx >= 0) {
+              const currentMat = updatedMaterials[matIdx];
+              updatedMaterials[matIdx] = {
+                ...currentMat,
+                stock: parseFloat((currentMat.stock + returnQty).toFixed(4)),
+              };
+              updatedMovements.unshift({
+                id: generateId(),
+                materialId: currentMat.id,
+                materialName: currentMat.name,
+                type: 'IN',
+                qty: returnQty,
+                reference: `Bongkar Retur (${item.complaintId || item.salesOrderNumber})`,
+                date: now,
+                stockCategory: 'RAW',
+              });
+            }
+          });
+        }
+      } else if (action === 'SCRAP') {
+        // Dibuang / jadi sampah
+        updatedMovements.unshift({
+          id: generateId(),
+          materialId: item.id,
+          materialName: `${item.productName}${item.variantLabel ? ` (${item.variantLabel})` : ''} (Afkir / Sampah)`,
+          type: 'OUT',
+          qty: item.qty,
+          reference: `Afkir Retur (${item.complaintId || item.salesOrderNumber})`,
+          date: now,
+          stockCategory: 'FINISHED',
+        });
+      }
+
+      const statusMap: Record<ReturnedGoodAction, ReturnedGoodStatus> = {
+        RESTOCK: 'RESTOCKED',
+        REPAIR: 'REPAIR',
+        DISASSEMBLE: 'DISASSEMBLED',
+        SCRAP: 'SCRAPPED',
+      };
+
+      const updatedReturnedGoods = (prev.returnedGoods || []).map(rg =>
+        rg.id === returnId
+          ? {
+              ...rg,
+              status: statusMap[action],
+              actionTaken: action,
+              actionNotes: notes,
+              actionAt: now,
+              actionBy: currentUser.name,
+            }
+          : rg
+      );
+
+      return {
+        ...prev,
+        returnedGoods: updatedReturnedGoods,
+        finishedGoods: updatedFinishedGoods,
+        materials: updatedMaterials,
+        stockMovements: updatedMovements,
+      };
+    });
+  }, [currentUser.name]);
 
   const processOrder = useCallback((orderId: string): { success: boolean; error?: string } => {
     const order = state.salesOrders.find(o => o.id === orderId);
@@ -1491,7 +2113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       });
 
-    // Verify stock (with MRP Sub-Assembly auto-expansion or strict mode check)
+    // Verify stock (with MRP Bahan Setengah Jadi auto-expansion or strict mode check)
     for (const [matId, qtyNeeded] of allMaterialsNeeded.entries()) {
       const mat = state.materials.find(m => m.id === matId);
       if (!mat) {
@@ -1502,7 +2124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (mat.stock < qtyNeeded) {
           return {
             success: false,
-            error: `Stok ${mat.isSubAssembly ? 'barang setengah jadi' : 'bahan baku'} "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+            error: `Stok ${mat.isSubAssembly ? 'bahan setengah jadi' : 'bahan baku'} "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
           };
         }
       } else {
@@ -1587,7 +2209,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Process subAssemblyDemands: deduct child raw materials & create Sub-Assembly Work Orders
+      // Process subAssemblyDemands: deduct child raw materials & create Bahan Setengah Jadi Work Orders
       subAssemblyDemands.forEach(({ subMat, deficit }) => {
         const childBom = subMat.childBom || [];
 
@@ -1621,34 +2243,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const jobCards: JobCard[] = assignedRouting
           ? assignedRouting.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
-              const op = prev.operations.find(o => o.id === step.operationId);
-              return {
-                id: `jc-${generateId()}`,
-                workOrderId: woId,
-                operationId: step.operationId,
-                operationName: op?.name || 'Operasi',
-                sequence: step.sequence,
-                targetQty: deficit,
-                completedQty: 0,
-                picName: '',
-                plannedMinutes: (op?.durationMinutes || 30) * deficit,
-                status: 'PENDING' as const,
-              };
-            })
+            const op = prev.operations.find(o => o.id === step.operationId);
+            return {
+              id: `jc-${generateId()}`,
+              workOrderId: woId,
+              operationId: step.operationId,
+              operationName: op?.name || 'Operasi',
+              sequence: step.sequence,
+              targetQty: deficit,
+              completedQty: 0,
+              picName: '',
+              plannedMinutes: (op?.durationMinutes || 30) * deficit,
+              status: 'PENDING' as const,
+            };
+          })
           : [
-              {
-                id: `jc-${generateId()}`,
-                workOrderId: woId,
-                operationId: 'op-sa-default',
-                operationName: 'Pembuatan & Perakitan Sub-Assembly',
-                sequence: 1,
-                targetQty: deficit,
-                completedQty: 0,
-                picName: '',
-                plannedMinutes: 60 * deficit,
-                status: 'PENDING' as const,
-              },
-            ];
+            {
+              id: `jc-${generateId()}`,
+              workOrderId: woId,
+              operationId: 'op-sa-default',
+              operationName: 'Pembuatan & Perakitan Bahan Setengah Jadi',
+              sequence: 1,
+              targetQty: deficit,
+              completedQty: 0,
+              picName: '',
+              plannedMinutes: 60 * deficit,
+              status: 'PENDING' as const,
+            },
+          ];
 
         const plannedLaborCost = jobCards.reduce((acc, jc) => {
           const op = prev.operations.find(o => o.id === jc.operationId);
@@ -1668,7 +2290,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           salesOrderId: order.id,
           salesOrderNumber: order.orderNumber,
           productName: subMat.name,
-          variantName: `${deficit} ${subMat.unit} (Sub-Assembly Otomatis SO-${order.orderNumber})`,
+          variantName: `${deficit} ${subMat.unit} (Bahan Setengah Jadi Otomatis SO-${order.orderNumber})`,
           status: 'PENDING',
           jobCards,
           materialsConsumed,
@@ -1793,18 +2415,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ---- Production ----
 
-  // Helper: update WO status and check SO completion / Sub-Assembly stock mutation
+  // Helper: update WO status and check SO completion / Bahan Setengah Jadi stock mutation
+  // Compute SO status based on item-level fulfillment counters
+  const computeSOStatus = (so: SalesOrder): OrderStatus => {
+    if (so.status === 'CANCELED') return 'CANCELED';
+    if (so.status === 'PENDING') return 'PENDING';
+
+    const items = so.items;
+    const totalQty = items.reduce((s, i) => s + i.qty, 0);
+    const totalDelivered = items.reduce((s, i) => s + (i.deliveredQty || 0), 0);
+    const totalShipped = items.reduce((s, i) => s + (i.shippedQty || 0), 0);
+    const totalProduced = items.reduce((s, i) => s + (i.producedQty || 0), 0);
+
+    if (totalDelivered >= totalQty) return 'SENT';
+    if (totalShipped > 0) return 'PARTIALLY_SHIPPED';
+    if (totalProduced >= totalQty) return 'READY';
+    if (totalProduced > 0) return 'PARTIALLY_READY';
+    return 'PROCESSING';
+  };
+
   const updateWOStatusAndSO = (prev: AppState, workOrderId: string, updatedWOs: WorkOrder[]): AppState => {
     let updatedSOs = prev.salesOrders;
     let updatedMaterials = prev.materials;
     let updatedMovements = prev.stockMovements;
+    let updatedFinishedGoods = prev.finishedGoods;
     const now = new Date().toISOString();
 
     const targetWO = updatedWOs.find(w => w.id === workOrderId);
     if (targetWO && targetWO.status === 'COMPLETED') {
       const prevWO = prev.workOrders.find(w => w.id === workOrderId);
 
-      // 1. Sub-Assembly WO completion: Add produced Sub-Assembly stock (Stock IN)
+      // 1. Bahan Setengah Jadi WO completion: Add produced Bahan Setengah Jadi stock (Stock IN)
       if (targetWO.isSubAssembly && targetWO.subAssemblyId && prevWO && prevWO.status !== 'COMPLETED') {
         const producedQty = targetWO.jobCards[0]?.targetQty || 1;
         const subMat = prev.materials.find(m => m.id === targetWO.subAssemblyId);
@@ -1827,7 +2468,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             date: now,
           }];
 
-          // If manual internal Sub-Assembly WO, deduct Child BOM raw materials
+          // If manual internal Bahan Setengah Jadi WO, deduct Child BOM raw materials
           if (targetWO.salesOrderId === 'INTERNAL-SA') {
             const consumedMap = new Map<string, number>();
             targetWO.materialsConsumed.forEach(b => {
@@ -1859,7 +2500,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           updatedMovements = [...newMovements, ...updatedMovements];
         }
       }
-      // 2. Product WO completion: Deduct consumed Sub-Assembly stock (Stock OUT) & update SO status
+      // 2. Product WO completion: Deduct consumed Bahan Setengah Jadi stock (Stock OUT) & update SO status
       else if (!targetWO.isSubAssembly && prevWO && prevWO.status !== 'COMPLETED') {
         const saMaterialsMap = new Map<string, number>();
         targetWO.materialsConsumed.forEach(b => {
@@ -1887,7 +2528,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               materialName: saMat?.name || matId,
               type: 'OUT',
               qty,
-              reference: `${targetWO.spkNumber} (Penggunaan Sub-Assembly)`,
+              reference: `${targetWO.spkNumber} (Penggunaan Bahan Setengah Jadi)`,
               date: now,
             });
           });
@@ -1895,19 +2536,79 @@ export function AppProvider({ children }: { children: ReactNode }) {
           updatedMovements = [...newMovements, ...updatedMovements];
         }
 
+        // Item-level fulfillment: increment producedQty for the matching SO item
         const soId = targetWO.salesOrderId;
-        const allRelatedWOs = updatedWOs.filter(w => w.salesOrderId === soId);
-        const isSOReady = allRelatedWOs.every(w => w.status === 'COMPLETED');
-        if (isSOReady) {
-          updatedSOs = prev.salesOrders.map(so =>
-            so.id === soId ? { ...so, status: 'READY' as const } : so
-          );
+        updatedFinishedGoods = prev.finishedGoods;
+        const matchingSO = prev.salesOrders.find(s => s.id === soId);
+        const matchingSOItem = matchingSO?.items.find(item =>
+          targetWO.productName === item.productName ||
+          targetWO.productName.includes(item.productName) ||
+          item.productName.includes(targetWO.productName)
+        );
+
+        if (matchingSOItem) {
+          const prodId = matchingSOItem.productId;
+          const varId = matchingSOItem.variantId;
+          const prodObj = prev.products.find(p => p.id === prodId);
+          const varObj = prodObj?.variants?.find(v => v.id === varId);
+          const varLabel = matchingSOItem.variantLabel || (varObj ? Object.values(varObj.combination || {}).join(' • ') || varObj.sku : undefined);
+          const pName = matchingSOItem.productName || prodObj?.name || targetWO.productName;
+
+          const fgIndex = prev.finishedGoods.findIndex(fg => fg.productId === prodId && (fg.variantId || '') === (varId || ''));
+          let targetFGId = '';
+          if (fgIndex >= 0) {
+            targetFGId = prev.finishedGoods[fgIndex].id;
+            updatedFinishedGoods = prev.finishedGoods.map((fg, idx) =>
+              idx === fgIndex ? { ...fg, stock: fg.stock + 1 } : fg
+            );
+          } else {
+            targetFGId = `fg-${generateId()}`;
+            const newFG: FinishedGoodStock = {
+              id: targetFGId,
+              productId: prodId,
+              variantId: varId,
+              productName: pName,
+              variantLabel: varLabel,
+              stock: 1,
+              minStock: 0,
+              unit: 'unit',
+            };
+            updatedFinishedGoods = [newFG, ...prev.finishedGoods];
+          }
+
+          updatedMovements = [{
+            id: generateId(),
+            materialId: targetFGId,
+            materialName: `${pName}${varLabel ? ` (${varLabel})` : ''}`,
+            type: 'IN',
+            qty: 1,
+            reference: `${targetWO.spkNumber} (Produksi Selesai)`,
+            date: now,
+            stockCategory: 'FINISHED',
+          }, ...updatedMovements];
         }
+
+        updatedSOs = (updatedSOs === prev.salesOrders ? [...prev.salesOrders] : updatedSOs).map(so => {
+          if (so.id !== soId) return so;
+          // Find matching SO item by productName
+          const updatedItems = so.items.map(item => {
+            const isMatch = targetWO.productName === item.productName ||
+              targetWO.productName.includes(item.productName) ||
+              item.productName.includes(targetWO.productName);
+            if (isMatch && (item.producedQty || 0) < item.qty) {
+              return { ...item, producedQty: (item.producedQty || 0) + 1 };
+            }
+            return item;
+          });
+          const updatedSO = { ...so, items: updatedItems };
+          return { ...updatedSO, status: computeSOStatus(updatedSO) };
+        });
       }
     }
     return {
       ...prev,
       materials: updatedMaterials,
+      finishedGoods: updatedFinishedGoods ?? prev.finishedGoods,
       stockMovements: updatedMovements,
       workOrders: updatedWOs,
       salesOrders: updatedSOs,
@@ -1921,7 +2622,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(prev => {
       const subMat = prev.materials.find(m => m.id === subAssemblyId && m.isSubAssembly);
       if (!subMat || !subMat.childBom || subMat.childBom.length === 0) {
-        result = { success: false, error: 'Item Sub-Assembly tidak valid atau belum memiliki Child BOM.' };
+        result = { success: false, error: 'Item Bahan Setengah Jadi tidak valid atau belum memiliki Child BOM.' };
         return prev;
       }
       if (targetQty <= 0) {
@@ -1956,34 +2657,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const jobCards: JobCard[] = assignedRouting
         ? assignedRouting.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
-            const op = prev.operations.find(o => o.id === step.operationId);
-            return {
-              id: `jc-${generateId()}`,
-              workOrderId: woId,
-              operationId: step.operationId,
-              operationName: op?.name || 'Operasi',
-              sequence: step.sequence,
-              targetQty,
-              completedQty: 0,
-              picName: '',
-              plannedMinutes: (op?.durationMinutes || 30) * targetQty,
-              status: 'PENDING' as const,
-            };
-          })
+          const op = prev.operations.find(o => o.id === step.operationId);
+          return {
+            id: `jc-${generateId()}`,
+            workOrderId: woId,
+            operationId: step.operationId,
+            operationName: op?.name || 'Operasi',
+            sequence: step.sequence,
+            targetQty,
+            completedQty: 0,
+            picName: '',
+            plannedMinutes: (op?.durationMinutes || 30) * targetQty,
+            status: 'PENDING' as const,
+          };
+        })
         : [
-            {
-              id: `jc-${generateId()}`,
-              workOrderId: woId,
-              operationId: 'op-sa-default',
-              operationName: 'Pembuatan & Perakitan Sub-Assembly',
-              sequence: 1,
-              targetQty,
-              completedQty: 0,
-              picName: '',
-              plannedMinutes: 60 * targetQty,
-              status: 'PENDING' as const,
-            },
-          ];
+          {
+            id: `jc-${generateId()}`,
+            workOrderId: woId,
+            operationId: 'op-sa-default',
+            operationName: 'Pembuatan & Perakitan Bahan Setengah Jadi',
+            sequence: 1,
+            targetQty,
+            completedQty: 0,
+            picName: '',
+            plannedMinutes: 60 * targetQty,
+            status: 'PENDING' as const,
+          },
+        ];
 
       const plannedLaborCost = jobCards.reduce((acc, jc) => {
         const op = prev.operations.find(o => o.id === jc.operationId);
@@ -1999,9 +2700,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         id: woId,
         spkNumber,
         salesOrderId: 'INTERNAL-SA',
-        salesOrderNumber: 'SPK Internal Sub-Assembly',
+        salesOrderNumber: 'SPK Internal Bahan Setengah Jadi',
         productName: subMat.name,
-        variantName: `${targetQty} ${subMat.unit} (Sub-Assembly)`,
+        variantName: `${targetQty} ${subMat.unit} (Bahan Setengah Jadi)`,
         status: 'PENDING',
         jobCards,
         materialsConsumed,
@@ -2093,12 +2794,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const willBeAllJcComplete = targetWO.jobCards.every(jc => jc.id === jobCardId || jc.status === 'COMPLETED');
 
       if (willBeAllJcComplete && !targetWO.isSubAssembly) {
-        // Find if there are any pending Sub-Assembly WOs for the same sales order
+        // Find if there are any pending Bahan Setengah Jadi WOs for the same sales order
         const pendingSA = prev.workOrders.find(w => w.salesOrderId === targetWO.salesOrderId && w.isSubAssembly && w.status !== 'COMPLETED');
         if (pendingSA) {
           result = {
             success: false,
-            error: `SPK Sub-Assembly ${pendingSA.spkNumber} belum selesai.`,
+            error: `SPK Bahan Setengah Jadi ${pendingSA.spkNumber} belum selesai.`,
           };
           return prev;
         }
@@ -2233,79 +2934,322 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---- Delivery ----
-  const createDeliveryOrder = useCallback((salesOrderId: string, assignedDriverName: string, vehiclePlate: string, scheduledDate: string) => {
+  const createDeliveryOrder = useCallback((
+    paramsOrSOId: string | {
+      salesOrderIds: string[];
+      selectedItems?: DeliveryOrderItem[];
+      driverName: string;
+      driverId?: string;
+      driverPhone?: string;
+      vehiclePlate: string;
+      armadaId?: string;
+      armadaName?: string;
+      scheduledDate: string;
+      notes?: string;
+    },
+    legacyDriverName?: string,
+    legacyVehiclePlate?: string,
+    legacyScheduledDate?: string
+  ) => {
     setState(prev => {
-      const so = prev.salesOrders.find(o => o.id === salesOrderId);
-      if (!so) return prev;
+      let salesOrderIds: string[] = [];
+      let selectedItems: DeliveryOrderItem[] | undefined;
+      let driverName = '';
+      let driverId: string | undefined;
+      let driverPhone: string | undefined;
+      let vehiclePlate = '';
+      let armadaId: string | undefined;
+      let armadaName: string | undefined;
+      let scheduledDate = new Date().toISOString().split('T')[0];
+      let notes: string | undefined;
 
-      const dOrder: DeliveryOrder = {
-        id: generateId(),
-        doNumber: nextDONumber(),
-        salesOrderId,
-        salesOrderNumber: so.orderNumber,
-        customerName: so.customer.name,
-        customerAddress: so.customer.address,
-        items: so.items.map(i => `${i.productName}${i.qty > 1 ? ` x${i.qty}` : ''}`),
-        assignedDriverName,
-        vehiclePlate,
-        scheduledDate,
-        status: 'PENDING',
-        createdAt: new Date().toISOString(),
-      };
+      if (typeof paramsOrSOId === 'string') {
+        salesOrderIds = [paramsOrSOId];
+        driverName = legacyDriverName || '';
+        vehiclePlate = legacyVehiclePlate || '';
+        scheduledDate = legacyScheduledDate || scheduledDate;
+      } else {
+        salesOrderIds = paramsOrSOId.salesOrderIds || [];
+        selectedItems = paramsOrSOId.selectedItems;
+        driverName = paramsOrSOId.driverName;
+        driverId = paramsOrSOId.driverId;
+        driverPhone = paramsOrSOId.driverPhone;
+        vehiclePlate = paramsOrSOId.vehiclePlate;
+        armadaId = paramsOrSOId.armadaId;
+        armadaName = paramsOrSOId.armadaName;
+        scheduledDate = paramsOrSOId.scheduledDate || scheduledDate;
+        notes = paramsOrSOId.notes;
+      }
 
-      return {
-        ...prev,
-        deliveryOrders: [...prev.deliveryOrders, dOrder],
-      };
-    });
-  }, [nextDONumber]);
+      if (salesOrderIds.length === 0) return prev;
 
-  const confirmDelivery = useCallback((deliveryOrderId: string, deliveryProofNote: string) => {
-    setState(prev => {
-      const dOrder = prev.deliveryOrders.find(d => d.id === deliveryOrderId);
-      if (!dOrder || dOrder.status === 'DELIVERED') return prev;
+      const targetSOs = prev.salesOrders.filter(o => salesOrderIds.includes(o.id));
+      if (targetSOs.length === 0) return prev;
 
-      const so = prev.salesOrders.find(o => o.id === dOrder.salesOrderId);
+      const year = new Date().getFullYear();
+      const existingTripNumbers = new Set(prev.deliveryOrders.map(d => d.tripNumber).filter(Boolean));
+      const tripNumber = `KLT-${year}-${String(existingTripNumbers.size + 1).padStart(3, '0')}`;
+      const tripId = `trip-${generateId()}`;
       const now = new Date().toISOString();
 
-      const updatedDOs = prev.deliveryOrders.map(d =>
-        d.id === deliveryOrderId
-          ? { ...d, status: 'DELIVERED' as const, deliveryProofNote, deliveredAt: now }
-          : d
-      );
+      const newDOs: DeliveryOrder[] = [];
 
-      const updatedSOs = prev.salesOrders.map(o =>
-        o.id === dOrder.salesOrderId
-          ? { ...o, status: 'SENT' as const, deliveredAt: now }
-          : o
-      );
+      targetSOs.forEach(so => {
+        const soSelectedItems = selectedItems && selectedItems.length > 0
+          ? selectedItems.filter(si => si.orderId === so.id)
+          : [];
 
-      const existingInv = prev.invoices.find(i => i.salesOrderId === dOrder.salesOrderId);
-      let updatedInvoices = prev.invoices;
-      let newJournalEntries = prev.journalEntries;
+        let itemsStringList: string[] = [];
+        if (soSelectedItems.length > 0) {
+          itemsStringList = soSelectedItems.map(
+            i => `${i.productName}${i.variantLabel ? ` (${i.variantLabel})` : ''} x${i.qty}`
+          );
+        } else {
+          itemsStringList = so.items.map(
+            i => `${i.productName}${i.variantLabel ? ` (${i.variantLabel})` : ''}${i.qty > 1 ? ` x${i.qty}` : ''}`
+          );
+        }
 
-      if (!existingInv && so) {
-        const newInvoice: Invoice = {
+        const doIndex = prev.deliveryOrders.length + newDOs.length + 1;
+        const doNumber = `DO-${year}-${String(doIndex).padStart(3, '0')}`;
+
+        const dOrder: DeliveryOrder = {
           id: generateId(),
-          invoiceNumber: `INV-${new Date().getFullYear()}-${String(prev.invoices.length + 1).padStart(3, '0')}`,
+          doNumber,
+          tripId,
+          tripNumber,
           salesOrderId: so.id,
           salesOrderNumber: so.orderNumber,
-          salesName: so.createdBy,
+          salesOrderIds: [so.id],
+          salesOrderNumbers: [so.orderNumber],
           customerName: so.customer.name,
-          totalAmount: so.totalAmount,
-          paidAmount: 0,
-          status: 'UNPAID',
-          payments: [],
-          issuedAt: now,
+          customerAddress: so.customer.address || '',
+          items: itemsStringList,
+          orderItems: soSelectedItems.length > 0 ? soSelectedItems : undefined,
+          driverId,
+          assignedDriverName: driverName,
+          driverPhone,
+          armadaId,
+          armadaName,
+          vehiclePlate,
+          scheduledDate,
+          status: 'READY_TO_SHIP',
+          notes,
           createdAt: now,
         };
-        updatedInvoices = [...prev.invoices, newInvoice];
-        const invJournal = createInvoiceIssuedJournal(newInvoice, prev.journalEntries.length, now, prev.chartOfAccounts);
-        newJournalEntries = [invJournal, ...prev.journalEntries];
+
+        newDOs.push(dOrder);
+      });
+
+      // Update shippedQty for each SO item included in this delivery
+      let updatedSalesOrders = prev.salesOrders;
+      if (selectedItems && selectedItems.length > 0) {
+        updatedSalesOrders = prev.salesOrders.map(so => {
+          if (!salesOrderIds.includes(so.id)) return so;
+          const relevantItems = selectedItems!.filter(si => si.orderId === so.id);
+          if (relevantItems.length === 0) return so;
+          const updatedItems = so.items.map((item, idx) => {
+            const matchingItems = relevantItems.filter(si =>
+              si.itemIndex === idx || (
+                si.productName === item.productName &&
+                (si.variantLabel || '') === (item.variantLabel || '')
+              )
+            );
+            if (matchingItems.length > 0) {
+              const addedQty = matchingItems.reduce((sum, mi) => sum + (mi.qty || 1), 0);
+              return { ...item, shippedQty: (item.shippedQty || 0) + addedQty };
+            }
+            return item;
+          });
+          const updatedSO = { ...so, items: updatedItems };
+          return { ...updatedSO, status: computeSOStatus(updatedSO) };
+        });
       }
 
       return {
         ...prev,
+        deliveryOrders: [...newDOs, ...prev.deliveryOrders],
+        salesOrders: updatedSalesOrders,
+      };
+    });
+  }, [nextDONumber]);
+
+  const confirmLoadingDelivery = useCallback((deliveryOrderIdOrTripId: string, driverName?: string) => {
+    setState(prev => {
+      const matchingDO = prev.deliveryOrders.find(
+        d => d.id === deliveryOrderIdOrTripId || d.tripId === deliveryOrderIdOrTripId
+      );
+      if (!matchingDO) return prev;
+
+      const targetTripId = matchingDO.tripId;
+      const now = new Date().toISOString();
+
+      const updatedDOs = prev.deliveryOrders.map(d => {
+        const isMatch = (targetTripId && d.tripId === targetTripId) || d.id === deliveryOrderIdOrTripId;
+        if (isMatch && d.status !== 'DELIVERED') {
+          return {
+            ...d,
+            status: 'IN_TRANSIT' as const,
+            loadedAt: now,
+            loadedBy: driverName || d.assignedDriverName,
+          };
+        }
+        return d;
+      });
+
+      return {
+        ...prev,
+        deliveryOrders: updatedDOs,
+      };
+    });
+  }, []);
+
+  const confirmDelivery = useCallback((
+    deliveryOrderId: string,
+    proofData: {
+      receiverName: string;
+      proofNote?: string;
+      proofPhoto?: string;
+    } | string
+  ) => {
+    setState(prev => {
+      const dOrder = prev.deliveryOrders.find(d => d.id === deliveryOrderId);
+      if (!dOrder || dOrder.status === 'DELIVERED') return prev;
+
+      let receiverName = '';
+      let proofNote = '';
+      let proofPhoto: string | undefined;
+
+      if (typeof proofData === 'string') {
+        proofNote = proofData;
+        receiverName = 'Penerima di Lokasi';
+      } else {
+        receiverName = proofData.receiverName || '';
+        proofNote = proofData.proofNote || '';
+        proofPhoto = proofData.proofPhoto;
+      }
+
+      const fullProofNote = proofNote
+        ? `Diterima oleh: ${receiverName}. ${proofNote}`
+        : `Diterima oleh: ${receiverName}. Barang lengkap dan tidak ada kerusakan.`;
+
+      const now = new Date().toISOString();
+
+      const updatedDOs = prev.deliveryOrders.map(d =>
+        d.id === deliveryOrderId
+          ? {
+            ...d,
+            status: 'DELIVERED' as const,
+            receiverName,
+            deliveryProofNote: fullProofNote,
+            deliveryProofPhoto: proofPhoto,
+            deliveredAt: now,
+          }
+          : d
+      );
+
+      // Find all target sales order IDs
+      const targetSOIds = dOrder.salesOrderIds && dOrder.salesOrderIds.length > 0
+        ? dOrder.salesOrderIds
+        : [dOrder.salesOrderId];
+
+      // Item-level fulfillment: increment deliveredQty for each delivered item
+      const deliveredItems = dOrder.orderItems || [];
+      const updatedSOs = prev.salesOrders.map(so => {
+        if (!targetSOIds.includes(so.id)) return so;
+        if (deliveredItems.length > 0) {
+          const relevantItems = deliveredItems.filter(di => di.orderId === so.id);
+          if (relevantItems.length === 0) return so;
+          const updatedItems = so.items.map((item, idx) => {
+            const matchingItems = relevantItems.filter(di =>
+              di.itemIndex === idx || (
+                di.productName === item.productName &&
+                (di.variantLabel || '') === (item.variantLabel || '')
+              )
+            );
+            if (matchingItems.length > 0) {
+              const addedQty = matchingItems.reduce((sum, mi) => sum + (mi.qty || 1), 0);
+              return { ...item, deliveredQty: (item.deliveredQty || 0) + addedQty };
+            }
+            return item;
+          });
+          const updatedSO = { ...so, items: updatedItems };
+          const newStatus = computeSOStatus(updatedSO);
+          return {
+            ...updatedSO,
+            status: newStatus,
+            deliveredAt: newStatus === 'SENT' ? now : so.deliveredAt,
+          };
+        }
+        // Fallback for legacy DOs without orderItems: mark fully delivered
+        return { ...so, status: 'SENT' as const, deliveredAt: now };
+      });
+
+      let updatedInvoices = [...prev.invoices];
+      let newJournalEntries = [...prev.journalEntries];
+
+      // Only create invoice when SO becomes fully delivered (SENT)
+      for (const soId of targetSOIds) {
+        const updatedSO = updatedSOs.find(o => o.id === soId);
+        if (!updatedSO || updatedSO.status !== 'SENT') continue;
+
+        const existingInv = updatedInvoices.find(i => i.salesOrderId === soId);
+        if (!existingInv) {
+          const originalSO = prev.salesOrders.find(o => o.id === soId);
+          const newInvoice: Invoice = {
+            id: generateId(),
+            invoiceNumber: `INV-${new Date().getFullYear()}-${String(updatedInvoices.length + 1).padStart(3, '0')}`,
+            salesOrderId: updatedSO.id,
+            salesOrderNumber: updatedSO.orderNumber,
+            salesName: updatedSO.createdBy,
+            customerName: updatedSO.customer.name,
+            totalAmount: updatedSO.totalAmount,
+            paidAmount: 0,
+            status: 'UNPAID',
+            payments: [],
+            issuedAt: now,
+            createdAt: now,
+          };
+          updatedInvoices.push(newInvoice);
+          const invJournal = createInvoiceIssuedJournal(newInvoice, newJournalEntries.length, now, prev.chartOfAccounts);
+          newJournalEntries = [invJournal, ...newJournalEntries];
+        }
+      }
+
+      // Deduct delivered items from Finished Goods stock
+      let updatedFinishedGoods = [...prev.finishedGoods];
+      const newFGMovs: StockMovement[] = [];
+
+      if (deliveredItems.length > 0) {
+        deliveredItems.forEach(di => {
+          const qty = di.qty || 1;
+          const idx = updatedFinishedGoods.findIndex(fg =>
+            (di.productId && fg.productId === di.productId && (di.variantLabel ? fg.variantLabel === di.variantLabel : true)) ||
+            (fg.productName === di.productName && (di.variantLabel ? fg.variantLabel === di.variantLabel : true))
+          );
+          if (idx >= 0) {
+            updatedFinishedGoods[idx] = {
+              ...updatedFinishedGoods[idx],
+              stock: Math.max(0, updatedFinishedGoods[idx].stock - qty),
+            };
+            newFGMovs.push({
+              id: generateId(),
+              materialId: updatedFinishedGoods[idx].id,
+              materialName: `${updatedFinishedGoods[idx].productName}${updatedFinishedGoods[idx].variantLabel ? ` (${updatedFinishedGoods[idx].variantLabel})` : ''}`,
+              type: 'OUT',
+              qty,
+              reference: `${dOrder.doNumber} (Pengiriman Selesai)`,
+              date: now,
+              stockCategory: 'FINISHED',
+            });
+          }
+        });
+      }
+
+      return {
+        ...prev,
+        finishedGoods: updatedFinishedGoods,
+        stockMovements: newFGMovs.length > 0 ? [...newFGMovs, ...prev.stockMovements] : prev.stockMovements,
         deliveryOrders: updatedDOs,
         salesOrders: updatedSOs,
         invoices: updatedInvoices,
@@ -2881,6 +3825,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateMaterialCategory,
     deleteMaterialCategory,
     reorderMaterialCategories,
+    finishedGoods: state.finishedGoods,
+    addFinishedGood,
+    updateFinishedGood,
+    deleteFinishedGood,
+    adjustFinishedGoodStock,
     addProductCategory,
     deleteProductCategory,
     addAssetCategory,
@@ -2903,6 +3852,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateSalesOrder,
     processOrder,
     cancelOrder,
+    submitOrderComplaint,
+    resolveOrderComplaint,
+    returnedGoods: state.returnedGoods || [],
+    processReturnedGoodAction,
     updateJobCardProgress,
     startJobCard,
     pauseJobCard,
@@ -2919,6 +3872,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateOperator,
     deleteOperator,
     createDeliveryOrder,
+    confirmLoadingDelivery,
     confirmDelivery,
     recordPayment,
     recordExpense,

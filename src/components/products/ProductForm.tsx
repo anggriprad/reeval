@@ -249,7 +249,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
 
-  // Sub-Assembly expandable rows state
+  // Bahan Setengah Jadi expandable rows state
   const [expandedSubAssemblies, setExpandedSubAssemblies] = useState<Record<string, boolean>>({});
 
   const toggleSubAssemblyExpand = (key: string) => {
@@ -533,7 +533,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     setModalNewMaterialQty(1);
   };
 
-  // ── Helper: Calculate BOM Cost (with recursive Sub-Assembly rollup including labor) ──────
+  // ── Helper: Calculate BOM Cost (with recursive Bahan Setengah Jadi rollup including labor) ──────
   const calculateBOMCost = (bom: BOMItem[]): number => {
     return calculateRollupBOMCost(bom, materials, routings, operations);
   };
@@ -983,7 +983,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                   <span className="font-semibold text-slate-900 dark:text-white">{mat?.name || item.materialId}</span>
                                   {mat?.isSubAssembly && (
                                     <>
-                                      <Badge variant="purple">Sub-Assembly</Badge>
+                                      <Badge variant="purple">Bahan Setengah Jadi</Badge>
                                       <button
                                         type="button"
                                         onClick={() => toggleSubAssemblyExpand(`single-${item.materialId}`)}
@@ -1042,10 +1042,10 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                   <div className="space-y-2 text-xs">
                                     <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 font-semibold">
                                       <span className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-bold">
-                                        <Layers className="h-3.5 w-3.5" /> Material Penyusun Sub-Assembly ({mat.name}):
+                                        <Layers className="h-3.5 w-3.5" /> Material Penyusun Bahan Setengah Jadi ({mat.name}):
                                       </span>
                                       <span className="text-[10px] italic text-slate-400">
-                                        (Bahan penyusun terkunci dari Master BOM Sub-Assembly di Inventory)
+                                        (Bahan penyusun terkunci dari Master BOM Bahan Setengah Jadi di Inventory)
                                       </span>
                                     </div>
                                     <div className="rounded-lg border border-purple-100 dark:border-purple-900/40 overflow-hidden bg-white dark:bg-slate-900">
@@ -1053,7 +1053,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                         <thead className="bg-purple-50/50 dark:bg-purple-950/20 text-purple-900 dark:text-purple-200 text-[10px] font-bold">
                                           <tr>
                                             <th className="px-3 py-1.5">Material Child</th>
-                                            <th className="px-3 py-1.5 text-center">Qty / Sub-Assembly</th>
+                                            <th className="px-3 py-1.5 text-center">Qty / Bahan Setengah Jadi</th>
                                             <th className="px-3 py-1.5 text-center">Total Qty Kebutuhan</th>
                                             <th className="px-3 py-1.5 text-right">Biaya Satuan</th>
                                             <th className="px-3 py-1.5 text-right">Subtotal</th>
@@ -1115,12 +1115,12 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                   >
                     <option value="">
                       {availableMaterialsForSingle.length > 0
-                        ? '+ Tambah Material / Sub-Assembly ke BOM...'
+                        ? '+ Tambah Material / Bahan Setengah Jadi ke BOM...'
                         : '-- Semua material telah ditambahkan ke BOM --'}
                     </option>
                     {availableMaterialsForSingle.map(m => (
                       <option key={m.id} value={m.id}>
-                        [{m.category}] {m.name} {m.isSubAssembly ? '(Sub-Assembly) ' : ''}— {formatCurrency(m.unitCost)} / {m.unit}
+                        [{m.category}] {m.name} {m.isSubAssembly ? '(Bahan Setengah Jadi) ' : ''}— {formatCurrency(m.unitCost)} / {m.unit}
                       </option>
                     ))}
                   </select>
@@ -2101,7 +2101,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                     <span>{mat?.name || 'Material tidak ditemukan'}</span>
                                     {mat?.isSubAssembly && (
                                       <>
-                                        <Badge variant="purple">Sub-Assembly</Badge>
+                                        <Badge variant="purple">Bahan Setengah Jadi</Badge>
                                         <button
                                           type="button"
                                           onClick={() => toggleSubAssemblyExpand(`var-${activeEditingVariant.id}-${item.materialId}`)}
@@ -2170,10 +2170,10 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                     <div className="space-y-2 text-xs">
                                       <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 font-semibold">
                                         <span className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-bold">
-                                          <Layers className="h-3.5 w-3.5" /> Material Penyusun Sub-Assembly ({mat.name}):
+                                          <Layers className="h-3.5 w-3.5" /> Material Penyusun Bahan Setengah Jadi ({mat.name}):
                                         </span>
                                         <span className="text-[10px] italic text-slate-400">
-                                          (Bahan penyusun terkunci dari Master BOM Sub-Assembly di Inventory)
+                                          (Bahan penyusun terkunci dari Master BOM Bahan Setengah Jadi di Inventory)
                                         </span>
                                       </div>
                                       <div className="rounded-lg border border-purple-100 dark:border-purple-900/40 overflow-hidden bg-white dark:bg-slate-900">
@@ -2181,7 +2181,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                           <thead className="bg-purple-50/50 dark:bg-purple-950/20 text-purple-900 dark:text-purple-200 text-[10px] font-bold">
                                             <tr>
                                               <th className="px-3 py-1.5">Material Child</th>
-                                              <th className="px-3 py-1.5 text-center">Qty / Sub-Assembly</th>
+                                              <th className="px-3 py-1.5 text-center">Qty / Bahan Setengah Jadi</th>
                                               <th className="px-3 py-1.5 text-center">Total Qty Kebutuhan</th>
                                               <th className="px-3 py-1.5 text-right">Biaya Satuan</th>
                                               <th className="px-3 py-1.5 text-right">Subtotal</th>
@@ -2239,7 +2239,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                 <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20 space-y-2">
                   <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
                     <Plus className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    Tambah Material / Sub-Assembly Manual ke Varian Custom
+                    Tambah Material / Bahan Setengah Jadi Manual ke Varian Custom
                   </div>
                   <div className="flex flex-col sm:flex-row items-center gap-2">
                     <Select
@@ -2250,12 +2250,12 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     >
                       <option value="">
                         {availableMaterialsForVariant.length > 0
-                          ? '-- Pilih Bahan Baku / Sub-Assembly --'
+                          ? '-- Pilih Bahan Baku / Bahan Setengah Jadi --'
                           : '-- Semua material telah ditambahkan --'}
                       </option>
                       {availableMaterialsForVariant.map(m => (
                         <option key={m.id} value={m.id}>
-                          [{m.category}] {m.name} {m.isSubAssembly ? '(Sub-Assembly) ' : ''}— {formatCurrency(m.unitCost)} / {m.unit}
+                          [{m.category}] {m.name} {m.isSubAssembly ? '(Bahan Setengah Jadi) ' : ''}— {formatCurrency(m.unitCost)} / {m.unit}
                         </option>
                       ))}
                     </Select>

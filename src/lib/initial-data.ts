@@ -25,9 +25,12 @@ import type {
   Armada,
   Driver,
   ShippingRate,
+  FinishedGoodStock,
+  ReturnedGood,
 } from './types';
 import { DEFAULT_CHART_OF_ACCOUNTS } from './accounting';
 import { generateVariantsFromRules } from './product-resolver';
+import { syncFinishedGoodsWithProducts } from './utils';
 
 
 // ========================================
@@ -49,7 +52,7 @@ export const initialMaterials: RawMaterial[] = [
   {
     id: 'mat-sub-laci',
     code: 'SA-LACI-50CM',
-    name: 'Laci Tarik Storage 50cm (Sub-Assembly)',
+    name: 'Laci Tarik Storage 50cm (Bahan Setengah Jadi)',
     category: 'Aksesoris',
     unit: 'unit',
     unitCost: 185000,
@@ -610,6 +613,48 @@ export const initialSalesOrders: SalesOrder[] = [
     paidAt: '2026-07-22T16:00:00',
     updatedAt: '2026-07-22T14:00:00',
     updatedBy: 'Hasan Basri',
+    complaints: [
+      {
+        id: 'CMP-2026-001',
+        category: 'Barang rusak / cacat',
+        description: 'Terdapat retak pada sambungan rangka saat proses penurunan barang di lobi hotel.',
+        status: 'DIAJUKAN',
+        items: [
+          {
+            productId: so1Items[0].productId,
+            variantId: so1Items[0].variantId,
+            productName: so1Items[0].productName,
+            variantLabel: so1Items[0].variantLabel,
+            qty: 1,
+            unitPrice: so1Items[0].unitPrice,
+          }
+        ],
+        attachments: [
+          {
+            id: 'ATT-2026-001',
+            name: 'foto-retak-sambungan-rangka.jpg',
+            type: 'image',
+            url: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=1200&q=80',
+            size: 1420500,
+          },
+          {
+            id: 'ATT-2026-002',
+            name: 'detail-kerusakan-kayu.jpg',
+            type: 'image',
+            url: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1200&q=80',
+            size: 2150000,
+          },
+          {
+            id: 'ATT-2026-003',
+            name: 'video-pemeriksaan-barang.mp4',
+            type: 'video',
+            url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+            size: 15400000,
+          },
+        ],
+        createdAt: '2026-07-23T10:15:00',
+      }
+    ],
   },
   {
     id: 'so-2',
@@ -824,6 +869,12 @@ export const initialDrivers: Driver[] = [
   { id: 'drv-2', name: 'Budi Santoso', phone: '081298765432' },
   { id: 'drv-3', name: 'Asep Supriyatna', phone: '081211223344' },
 ];
+
+// ========================================
+// SEED FINISHED GOODS (Barang Jadi)
+// ========================================
+export const initialFinishedGoods: FinishedGoodStock[] = syncFinishedGoodsWithProducts(initialProducts, []);
+export const initialReturnedGoods: ReturnedGood[] = [];
 
 // ========================================
 // SEED DELIVERY ORDERS
@@ -1271,7 +1322,7 @@ export const initialJournalEntries: JournalEntry[] = [
   },
 ];
 
-export const initialCategories: string[] = ['Papan', 'Kayu', 'Busa', 'Kain', 'Aksesoris', 'Lem', 'Hardware', 'Sub-Assembly'];
+export const initialCategories: string[] = ['Papan', 'Kayu', 'Busa', 'Kain', 'Aksesoris', 'Lem', 'Hardware', 'Bahan Setengah Jadi'];
 export const initialAssetCategories: string[] = ['Kendaraan', 'Mesin & Peralatan', 'Elektronik & IT'];
 
 
