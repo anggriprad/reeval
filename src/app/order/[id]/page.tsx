@@ -25,6 +25,7 @@ import {
 } from '@/lib/utils';
 import { canApproveOrder, USER_ACCOUNTS } from '@/lib/roles';
 import { ComplaintAttachment } from '@/lib/types';
+import { CustomProcessModal } from '@/components/order/CustomProcessModal';
 import {
   ArrowLeft,
   Phone,
@@ -43,7 +44,50 @@ import {
   Upload,
   Film,
   Trash2,
+  Eye,
+  Sliders,
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  Archive,
+  FolderTree,
+  Sparkles,
 } from 'lucide-react';
+
+const iconMap: Record<string, React.ElementType> = {
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+};
 
 export default function OrderDetailPage() {
   const router = useRouter();
@@ -53,6 +97,7 @@ export default function OrderDetailPage() {
 
   const {
     salesOrders,
+    products,
     deliveryOrders,
     workOrders,
     currentUser,
@@ -74,6 +119,8 @@ export default function OrderDetailPage() {
   const [complaintAttachments, setComplaintAttachments] = useState<ComplaintAttachment[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [complaintError, setComplaintError] = useState('');
+  const [selectedProofPhoto, setSelectedProofPhoto] = useState<string | null>(null);
+  const [customProcessModalOpen, setCustomProcessModalOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -110,11 +157,11 @@ export default function OrderDetailPage() {
     const res = processOrder(order.id);
     if (res.success) {
       toast.success(
-        'SPK Berhasil Diterbitkan',
-        `Sales Order ${order.orderNumber} telah diproses dan dokumen SPK diproduksi.`
+        'Pesanan Diproses',
+        `Pesanan ${order.orderNumber} berhasil diproses.`
       );
     } else {
-      toast.error('Gagal Memproses Order', res.error || 'Terjadi kesalahan sistem.');
+      toast.error('Gagal Memproses Pesanan', res.error || 'Terjadi kesalahan saat memproses pesanan.');
     }
   };
 
@@ -260,171 +307,290 @@ export default function OrderDetailPage() {
     doItem.salesOrderNumber === order.orderNumber
   );
 
-  const isCanceled = order.status === 'CANCELED';
-  const isProcessing = ['PROCESSING', 'PARTIALLY_READY', 'READY', 'PARTIALLY_SHIPPED', 'SENT'].includes(order.status);
-  const isReady = ['READY', 'PARTIALLY_SHIPPED', 'SENT'].includes(order.status);
-  const isShipped = ['PARTIALLY_SHIPPED', 'SENT'].includes(order.status) || relatedDeliveries.some(d => d.status === 'IN_TRANSIT' || d.status === 'DELIVERED');
-  const isDelivered = order.status === 'SENT' || relatedDeliveries.some(d => d.status === 'DELIVERED');
-
   interface OrderTimelineEvent {
     id: string;
     title: string;
     description: string;
     timestamp?: string;
     actor: string;
-    status: 'completed' | 'current' | 'pending';
+    status: 'completed' | 'current';
+    photo?: string;
   }
 
-  const timelineEvents: OrderTimelineEvent[] = [];
+  const rawEvents: OrderTimelineEvent[] = [];
 
   // 1. Pesanan Dibuat
-  timelineEvents.push({
-    id: 'created',
-    title: 'Pesanan Dibuat',
-    description: `Sales order berhasil dicatat (${order.items.length} jenis item)`,
-    timestamp: order.createdAt,
-    actor: order.createdBy,
-    status: 'completed',
+  if (order.createdAt) {
+    rawEvents.push({
+      id: 'order-created',
+      title: 'Pesanan Dibuat',
+      description: `Sales order berhasil dicatat (${order.items.length} jenis item)`,
+      timestamp: order.createdAt,
+      actor: order.createdBy,
+      status: 'completed',
+    });
+  }
+
+  // 2. Pesanan Dikonfirmasi (jika ada confirmedAt)
+  if (order.confirmedAt) {
+    rawEvents.push({
+      id: 'order-confirmed',
+      title: 'Pesanan Dikonfirmasi',
+      description: 'Pesanan telah diverifikasi dan disetujui untuk diproses',
+      timestamp: order.confirmedAt,
+      actor: 'Admin',
+      status: 'completed',
+    });
+  }
+
+  // 3. SPK Diterbitkan (Work Orders reguler non-komplain)
+  const regularWOs = relatedWorkOrders.filter(w => !w.isComplaintReplacement);
+  if (regularWOs.length > 0 || order.spkIssuedAt) {
+    const spkTime = order.spkIssuedAt || regularWOs.map(w => w.issuedAt).filter(Boolean).sort()[0];
+    if (spkTime) {
+      rawEvents.push({
+        id: 'spk-issued',
+        title: 'SPK Produksi Diterbitkan',
+        description: regularWOs.length > 0
+          ? `${regularWOs.length} SPK diterbitkan (${regularWOs.map(w => w.spkNumber).join(', ')})`
+          : 'Dokumen SPK diterbitkan untuk proses produksi',
+        timestamp: spkTime,
+        actor: 'Admin Produksi',
+        status: 'completed',
+      });
+    }
+  }
+
+  // 4. SPK Produksi Selesai (Reguler)
+  const completedRegularWOs = regularWOs.filter(w => w.status === 'COMPLETED' && w.completedAt);
+  if (completedRegularWOs.length > 0) {
+    if (completedRegularWOs.length === regularWOs.length && regularWOs.length > 0) {
+      const latestFinish = completedRegularWOs.map(w => w.completedAt!).sort().reverse()[0];
+      rawEvents.push({
+        id: 'production-completed',
+        title: 'Produksi Selesai',
+        description: 'Seluruh barang pesanan telah selesai diproduksi dan siap dikirim',
+        timestamp: latestFinish,
+        actor: 'Tim Produksi & QC',
+        status: 'completed',
+      });
+    } else {
+      completedRegularWOs.forEach(w => {
+        rawEvents.push({
+          id: `production-done-${w.id}`,
+          title: `Produksi Selesai: ${w.productName}`,
+          description: `SPK ${w.spkNumber} telah selesai diproduksi`,
+          timestamp: w.completedAt!,
+          actor: 'Tim Produksi & QC',
+          status: 'completed',
+        });
+      });
+    }
+  }
+
+  // 5. Surat Jalan & Pengiriman (Delivery Orders)
+  relatedDeliveries.forEach(del => {
+    // 5a. DO Diterbitkan
+    if (del.createdAt) {
+      rawEvents.push({
+        id: `do-created-${del.id}`,
+        title: del.isReplacement ? `Surat Jalan Pengganti Dibuat (${del.doNumber})` : `Surat Jalan Dibuat (${del.doNumber})`,
+        description: `Armada: ${del.armadaName || 'Armada Pengiriman'} (${del.vehiclePlate}) · Driver: ${del.assignedDriverName || '-'}`,
+        timestamp: del.createdAt,
+        actor: 'Admin Logistik',
+        status: 'completed',
+      });
+    }
+
+    // 5b. Barang Dimuat
+    if (del.loadedAt) {
+      rawEvents.push({
+        id: `do-loaded-${del.id}`,
+        title: del.isReplacement ? 'Barang Pengganti Dimuat ke Armada' : 'Barang Dimuat ke Armada',
+        description: 'Barang telah dimuat dan armada sedang menuju lokasi pengiriman',
+        timestamp: del.loadedAt,
+        actor: del.loadedBy || del.assignedDriverName || 'Driver Logistik',
+        status: 'completed',
+      });
+    }
+
+    // 5c. Barang Diterima
+    if (del.deliveredAt) {
+      rawEvents.push({
+        id: `do-delivered-${del.id}`,
+        title: del.isReplacement ? 'Barang Pengganti Diterima Pelanggan' : 'Pesanan Diterima Pelanggan',
+        description: del.receiverName
+          ? `Diterima oleh ${del.receiverName}${del.deliveryProofNote ? ` (${del.deliveryProofNote})` : ''}`
+          : 'Barang berhasil diserahterimakan di alamat tujuan',
+        timestamp: del.deliveredAt,
+        actor: del.assignedDriverName || 'Driver Logistik',
+        status: 'completed',
+        photo: del.deliveryProofPhoto,
+      });
+    }
   });
 
-  if (isCanceled && !isProcessing) {
-    timelineEvents.push({
-      id: 'canceled',
+  // Fallback jika order.status === 'SENT' dan order.deliveredAt ada tapi belum ada DO yang deliveredAt
+  if (order.status === 'SENT' && order.deliveredAt && !relatedDeliveries.some(d => d.deliveredAt)) {
+    const matchedDO = relatedDeliveries[0] || deliveryOrders.find(d =>
+      d.salesOrderId === order.id ||
+      d.salesOrderNumber === order.orderNumber ||
+      (d.salesOrderIds && d.salesOrderIds.includes(order.id)) ||
+      (d.orderItems && d.orderItems.some(i => i.orderId === order.id || i.orderNumber === order.orderNumber))
+    );
+    rawEvents.push({
+      id: 'order-delivered-fallback',
+      title: 'Pesanan Diterima Pelanggan',
+      description: matchedDO?.receiverName
+        ? `Diterima oleh ${matchedDO.receiverName}${matchedDO.deliveryProofNote ? ` (${matchedDO.deliveryProofNote})` : ''}`
+        : 'Barang berhasil diserahterimakan di alamat tujuan',
+      timestamp: order.deliveredAt,
+      actor: matchedDO?.assignedDriverName || 'Driver Logistik',
+      status: 'completed',
+      photo: matchedDO?.deliveryProofPhoto,
+    });
+  }
+
+  // 6. SPK Pengganti dari Komplain (jika ada yang selesai)
+  const replacementWOs = relatedWorkOrders.filter(w => w.isComplaintReplacement);
+  replacementWOs.forEach(wo => {
+    if (wo.status === 'COMPLETED' && wo.completedAt) {
+      rawEvents.push({
+        id: `spk-repl-completed-${wo.id}`,
+        title: `Produksi Pengganti Selesai`,
+        description: `Unit pengganti ${wo.productName} telah selesai dan siap dikirim`,
+        timestamp: wo.completedAt,
+        actor: 'Tim Produksi & QC',
+        status: 'completed',
+      });
+    }
+  });
+
+  // 7. Komplain Pelanggan
+  (order.complaints || []).forEach(cmp => {
+    // 7a. Komplain Diajukan
+    if (cmp.createdAt) {
+      rawEvents.push({
+        id: `cmp-filed-${cmp.id}`,
+        title: `Komplain Diajukan: ${cmp.category}`,
+        description: `Keluhan: "${cmp.description}" (${(cmp.items || []).map(i => `${i.productName} x${i.qty}`).join(', ')})`,
+        timestamp: cmp.createdAt,
+        actor: 'Pelanggan / Sales',
+        status: 'completed',
+      });
+    }
+
+    // 7b. Komplain Refund Selesai (Hanya untuk Refund, Kirim Barang Pengganti langsung ke Produksi/Pengiriman)
+    if (cmp.resolution === 'Batalkan Pesanan (Refund)' && cmp.status === 'SELESAI' && cmp.resolvedAt) {
+      rawEvents.push({
+        id: `cmp-resolved-${cmp.id}`,
+        title: 'Komplain Selesai (Refund)',
+        description: cmp.resolutionNotes || 'Dana telah dikembalikan kepada pelanggan',
+        timestamp: cmp.resolvedAt,
+        actor: 'Admin Customer Service',
+        status: 'completed',
+      });
+    } else if (cmp.resolution === 'Kirim Barang Pengganti' && cmp.status === 'SELESAI' && cmp.resolvedAt) {
+      rawEvents.push({
+        id: `cmp-resolved-${cmp.id}`,
+        title: 'Komplain Selesai',
+        description: 'Barang pengganti telah diterima oleh pelanggan di lokasi',
+        timestamp: cmp.resolvedAt,
+        actor: 'Customer Service & Logistik',
+        status: 'completed',
+      });
+    }
+  });
+
+  // 8. Kustom Proses Ditetapkan (jika ada)
+  if (order.isCustomProcess && order.customProcessAt) {
+    rawEvents.push({
+      id: 'custom-process-saved',
+      title: 'Kustom Proses Ditetapkan',
+      description: 'Penyesuaian kebutuhan bahan baku dan alur produksi (SPK) disimpan untuk pesanan ini',
+      timestamp: order.customProcessAt,
+      actor: order.customProcessBy || 'Admin Produksi',
+      status: 'completed',
+    });
+  }
+
+  // 9. Pembatalan Pesanan (jika ada)
+  if (order.status === 'CANCELED' && order.updatedAt) {
+    rawEvents.push({
+      id: 'order-canceled',
       title: 'Pesanan Dibatalkan',
       description: order.cancelReason || 'Pesanan dibatalkan',
       timestamp: order.updatedAt,
       actor: order.updatedBy || (order.cancelledByRole ? `User (${order.cancelledByRole})` : 'Admin'),
       status: 'completed',
     });
-  } else {
-    // 2. Pesanan Diproses / SPK
-    const spkCount = relatedWorkOrders.length;
-    timelineEvents.push({
-      id: 'processing',
-      title: isProcessing ? 'Pesanan Diproses' : 'Menunggu Diproses',
-      description: isProcessing
-        ? (spkCount > 0 ? `${spkCount} SPK produksi telah diterbitkan dan berjalan` : 'SPK produksi telah diterbitkan')
-        : 'Menunggu persetujuan dan penerbitan dokumen SPK',
-      timestamp: relatedWorkOrders[0]?.issuedAt || (isProcessing ? order.updatedAt : undefined),
-      actor: isProcessing ? (order.updatedBy || 'Admin Produksi') : '-',
-      status: isProcessing ? 'completed' : (order.status === 'PENDING' ? 'current' : 'pending'),
-    });
-
-    // 3. Produksi Selesai / Siap Kirim
-    timelineEvents.push({
-      id: 'ready',
-      title: isReady ? 'Produksi Selesai & Siap Kirim' : 'Proses Produksi',
-      description: isReady
-        ? 'Seluruh barang selesai diproduksi dan siap dikirim'
-        : (isProcessing ? 'Barang sedang dalam tahap pengerjaan di pabrik' : 'Menunggu antrean produksi'),
-      timestamp: relatedWorkOrders[0]?.completedAt || (isReady ? order.updatedAt : undefined),
-      actor: isReady ? 'Tim Produksi & QC' : '-',
-      status: isReady ? 'completed' : ((order.status === 'PROCESSING' || order.status === 'PARTIALLY_READY') ? 'current' : 'pending'),
-    });
-
-    // 4. Detail Pengiriman / Surat Jalan
-    if (relatedDeliveries.length > 0) {
-      relatedDeliveries.forEach(del => {
-        timelineEvents.push({
-          id: `do-${del.id}`,
-          title: `Surat Jalan Dibuat (${del.doNumber})`,
-          description: `Armada: ${del.armadaName || 'Pengiriman'} · Driver: ${del.assignedDriverName || '-'}`,
-          timestamp: del.createdAt,
-          actor: 'Admin Logistik',
-          status: 'completed',
-        });
-
-        const isLoaded = del.status === 'IN_TRANSIT' || del.status === 'DELIVERED';
-        timelineEvents.push({
-          id: `load-${del.id}`,
-          title: isLoaded ? 'Barang Dimuat & Dalam Perjalanan' : 'Proses Muat Armada',
-          description: isLoaded
-            ? 'Barang telah dimuat dan armada sedang menuju lokasi pelanggan'
-            : 'Menunggu konfirmasi muat barang oleh driver armada',
-          timestamp: del.loadedAt || (isLoaded ? del.createdAt : undefined),
-          actor: del.loadedBy || del.assignedDriverName || 'Driver Logistik',
-          status: isLoaded ? 'completed' : (del.status === 'READY_TO_SHIP' ? 'current' : 'pending'),
-        });
-
-        const isDeliv = del.status === 'DELIVERED';
-        timelineEvents.push({
-          id: `deliv-${del.id}`,
-          title: isDeliv ? 'Pesanan Diterima Pelanggan' : 'Konfirmasi Penerimaan',
-          description: isDeliv
-            ? (del.receiverName ? `Diterima oleh ${del.receiverName}${del.deliveryProofNote ? ` (${del.deliveryProofNote})` : ''}` : 'Barang telah berhasil diterima pelanggan')
-            : 'Menunggu serah terima barang di alamat tujuan',
-          timestamp: del.deliveredAt || order.deliveredAt,
-          actor: del.assignedDriverName || 'Driver Logistik',
-          status: isDeliv ? 'completed' : (del.status === 'IN_TRANSIT' ? 'current' : 'pending'),
-        });
-      });
-    } else {
-      timelineEvents.push({
-        id: 'shipping',
-        title: isDelivered ? 'Pesanan Terkirim' : (isShipped ? 'Dalam Pengiriman' : 'Pengiriman Barang'),
-        description: isDelivered
-          ? 'Barang telah diterima oleh pelanggan di alamat tujuan'
-          : (isShipped ? 'Barang sedang dalam perjalanan menuju pelanggan' : (isReady ? 'Menunggu pembuatan surat jalan & armada pengiriman' : 'Menunggu kesiapan barang')),
-        timestamp: order.deliveredAt,
-        actor: isDelivered ? (order.updatedBy || 'Driver Logistik') : '-',
-        status: isDelivered ? 'completed' : (isShipped ? 'completed' : (order.status === 'READY' ? 'current' : 'pending')),
-      });
-    }
-
-    if (isCanceled) {
-      timelineEvents.push({
-        id: 'canceled',
-        title: 'Pesanan Dibatalkan',
-        description: order.cancelReason || 'Pesanan telah dibatalkan',
-        timestamp: order.updatedAt,
-        actor: order.updatedBy || (order.cancelledByRole ? `User (${order.cancelledByRole})` : 'Admin'),
-        status: 'completed',
-      });
-    }
-
-    // 5. Komplain & Resolusi Komplain (jika ada)
-    if (order.complaints && order.complaints.length > 0) {
-      order.complaints.forEach(cmp => {
-        timelineEvents.push({
-          id: `cmp-submit-${cmp.id}`,
-          title: `Komplain Diajukan: ${cmp.category}`,
-          description: `Keluhan: "${cmp.description}" (${cmp.items.map(i => `${i.productName} x${i.qty}`).join(', ')})`,
-          timestamp: cmp.createdAt,
-          actor: 'Pelanggan / Sales',
-          status: 'completed',
-        });
-
-        if (cmp.status === 'SELESAI') {
-          timelineEvents.push({
-            id: `cmp-resolve-${cmp.id}`,
-            title: `Komplain Selesai: ${cmp.resolution || 'Diselesaikan'}`,
-            description: cmp.resolutionNotes || `Tindakan penyelesaian telah diproses: ${cmp.resolution}`,
-            timestamp: cmp.resolvedAt || cmp.createdAt,
-            actor: 'Admin Customer Service',
-            status: 'completed',
-          });
-        } else if (cmp.status === 'DITANGANI') {
-          timelineEvents.push({
-            id: `cmp-progress-${cmp.id}`,
-            title: 'Komplain Sedang Ditangani',
-            description: 'Tim terkait sedang menindaklanjuti proses penanganan komplain',
-            timestamp: cmp.createdAt,
-            actor: 'Admin Customer Service',
-            status: 'current',
-          });
-        } else {
-          timelineEvents.push({
-            id: `cmp-pending-${cmp.id}`,
-            title: 'Menunggu Penanganan Komplain',
-            description: 'Menunggu tinjauan dan keputusan aksi resolusi dari admin',
-            timestamp: cmp.createdAt,
-            actor: 'Admin Customer Service',
-            status: 'current',
-          });
-        }
-      });
-    }
   }
+
+  // SORTING KRONOLOGIS SEMPURNA BERDASARKAN TIMESTAMP (Earliest -> Latest)
+  const sortedEvents = rawEvents
+    .filter(e => Boolean(e.timestamp))
+    .sort((a, b) => new Date(a.timestamp!).getTime() - new Date(b.timestamp!).getTime());
+
+  // 9. Status Aktif Saat Ini (Next Step / Pending Action) jika belum selesai
+  if (order.status === 'PENDING') {
+    sortedEvents.push({
+      id: 'step-pending',
+      title: 'Menunggu Persetujuan & SPK',
+      description: 'Pesanan menunggu tinjauan admin untuk penerbitan SPK produksi',
+      actor: '',
+      status: 'current',
+    });
+  } else if ((order.status === 'PROCESSING' || order.status === 'PARTIALLY_READY') && regularWOs.some(w => w.status !== 'COMPLETED')) {
+    sortedEvents.push({
+      id: 'step-processing',
+      title: 'Proses Produksi Sedang Berjalan',
+      description: 'Item pesanan sedang dalam proses pengerjaan di pabrik',
+      actor: '',
+      status: 'current',
+    });
+  } else if (order.status === 'READY') {
+    sortedEvents.push({
+      id: 'step-ready-delivery',
+      title: 'Menunggu Pengiriman',
+      description: 'Barang telah selesai diproduksi dan menunggu penerbitan surat jalan',
+      actor: '',
+      status: 'current',
+    });
+  } else if (relatedDeliveries.some(d => d.status === 'READY_TO_SHIP')) {
+    sortedEvents.push({
+      id: 'step-loading',
+      title: 'Menunggu Muat Armada',
+      description: 'Surat jalan siap, menunggu konfirmasi muat barang oleh supir',
+      actor: '',
+      status: 'current',
+    });
+  } else if (relatedDeliveries.some(d => d.status === 'IN_TRANSIT')) {
+    sortedEvents.push({
+      id: 'step-transit',
+      title: 'Dalam Perjalanan Menuju Pelanggan',
+      description: 'Armada sedang dalam perjalanan mengantarkan pesanan',
+      actor: '',
+      status: 'current',
+    });
+  } else if ((order.complaints || []).some(c => c.status === 'DITANGANI' && c.replacementStatus === 'WAITING_PRODUCTION')) {
+    sortedEvents.push({
+      id: 'step-comp-prod',
+      title: 'Produksi Barang Pengganti',
+      description: 'SPK barang pengganti sedang dalam proses pengerjaan produksi',
+      actor: '',
+      status: 'current',
+    });
+  } else if ((order.complaints || []).some(c => c.status === 'DITANGANI' && c.replacementStatus === 'READY_FOR_DELIVERY')) {
+    sortedEvents.push({
+      id: 'step-comp-delivery',
+      title: 'Menunggu Pengiriman Barang Pengganti',
+      description: 'Barang pengganti siap dan berada di antrean kirim logistik',
+      actor: '',
+      status: 'current',
+    });
+  }
+
+  const timelineEvents = sortedEvents;
 
   const salesWaMsg = `Halo ${order.createdBy}, perihal Sales Order ${order.orderNumber}. Detail pesanan dapat dilihat di: ${currentUrl}`;
   const customerWaMsg = `Halo ${order.customer.name}, kami dari Reeval ERP perihal Sales Order ${order.orderNumber}...`;
@@ -478,12 +644,20 @@ export default function OrderDetailPage() {
             <Badge variant={getOrderStatusVariant(order.status)}>
               {getOrderStatusLabel(order.status, order.cancelledByRole)}
             </Badge>
+            {order.items.some(i => i.isBomCustomized) && (
+              <Badge variant="purple">Kustom Proses</Badge>
+            )}
           </div>
         }
         actionMenuItems={
           (() => {
             const items = [];
             if (order.status === 'PENDING') {
+              items.push({
+                label: 'Kustom Proses',
+                icon: Sliders,
+                onClick: () => setCustomProcessModalOpen(true),
+              });
               items.push({
                 label: 'Edit Pesanan',
                 icon: Edit,
@@ -527,9 +701,11 @@ export default function OrderDetailPage() {
       />
 
       {/* COMPLAINT INFO ALERT */}
-      {order.complaints && order.complaints.length > 0 && (
+      {order.complaints && order.complaints.some(c => c.status !== 'SELESAI') && (
         <div className="space-y-2">
-          {order.complaints.map(complaint => (
+          {order.complaints
+            .filter(c => c.status !== 'SELESAI')
+            .map(complaint => (
             <div
               key={complaint.id}
               className="text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-3 flex-wrap shadow-xs"
@@ -590,6 +766,8 @@ export default function OrderDetailPage() {
             {/* DAFTAR ITEM PESANAN */}
             <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {order.items.map((item, idx) => {
+                const product = products.find(p => p.id === item.productId || p.name === item.productName);
+                const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
                 const refundedQty = getItemRefundedQty(item);
                 const isFullyRefunded = refundedQty >= item.qty;
                 const isPartiallyRefunded = refundedQty > 0 && refundedQty < item.qty;
@@ -608,13 +786,31 @@ export default function OrderDetailPage() {
                           : ''
                     }`}
                   >
-                    {/* Header Card Item: Product Name, Variant & Modifiers */}
-                    <div className="flex justify-between min-w-0">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-sm font-semibold ${isFullyRefunded ? 'text-slate-500 line-through dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                            {item.productName}
-                          </span>
+                    {/* Header Card Item: Product Thumbnail, Product Name, Variant & Modifiers */}
+                    <div className="flex justify-between items-start gap-3 min-w-0">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        {product?.image ? (
+                          <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                            <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                            <IconComp className="h-6 w-6" />
+                          </div>
+                        )}
+
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-sm font-semibold ${isFullyRefunded ? 'text-slate-500 line-through dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                              {item.productName}
+                            </span>
+                          {item.isBomCustomized && (
+                            <Badge variant="purple" className="text-[10px] py-0 px-1.5 font-semibold">
+                              {item.qty > 1 && item.unitCustomProcesses
+                                ? `Kustom Proses (${item.unitCustomProcesses.filter(u => u.isBomCustomized).length}/${item.qty} unit)`
+                                : 'Kustom Proses'}
+                            </Badge>
+                          )}
                           {isFullyRefunded && (
                             <Badge variant="danger" className="text-[10px] py-0 px-1.5 font-bold">
                               Dibatalkan (Refund Penuh)
@@ -649,7 +845,8 @@ export default function OrderDetailPage() {
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-col text-right shrink-0">
+                    </div>
+                    <div className="flex flex-col text-right shrink-0">
                         {isFullyRefunded ? (
                           <>
                             <span className="font-semibold text-sm text-slate-400 line-through">x {item.qty}</span>
@@ -767,7 +964,7 @@ export default function OrderDetailPage() {
 
           {/* CONTAINER: LOG PROSES / RIWAYAT PESANAN */}
           {(() => {
-            const displayedEvents = timelineEvents.filter(evt => evt.status !== 'pending');
+            const displayedEvents = timelineEvents;
             if (displayedEvents.length === 0) return null;
 
             return (
@@ -810,17 +1007,43 @@ export default function OrderDetailPage() {
                           <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
                             {evt.description}
                           </p>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 pt-0.5 flex items-center gap-1.5 flex-wrap">
-                            {evt.timestamp && (
-                              <span>{formatDateTime(evt.timestamp)}</span>
-                            )}
-                            {evt.actor && evt.actor !== '-' && (
-                              <>
-                                <span>·</span>
-                                <span>Oleh: {evt.actor}</span>
-                              </>
-                            )}
-                          </div>
+                          {(evt.timestamp || (isDone && evt.actor && evt.actor !== '-')) && (
+                            <div className="text-[10px] text-slate-400 dark:text-slate-500 pt-0.5 flex items-center gap-1.5 flex-wrap">
+                              {evt.timestamp && (
+                                <span>{formatDateTime(evt.timestamp)}</span>
+                              )}
+                              {isDone && evt.actor && evt.actor !== '-' && (
+                                <>
+                                  {evt.timestamp && <span>·</span>}
+                                  <span>Oleh: {evt.actor}</span>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Bukti Foto Penerimaan (Jika Ada) */}
+                          {evt.photo && (
+                            <div className="pt-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProofPhoto(evt.photo!)}
+                                className="group relative block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-500 hover:ring-2 hover:ring-indigo-500/20 transition-all cursor-pointer shadow-2xs text-left"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={evt.photo}
+                                  alt="Bukti Serah Terima"
+                                  className="w-32 h-20 sm:w-36 sm:h-24 object-cover rounded-lg group-hover:scale-105 transition-transform duration-200"
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 backdrop-blur-xs">
+                                    <Eye className="w-3 h-3" />
+                                    <span>Lihat Foto</span>
+                                  </div>
+                                </div>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -958,16 +1181,29 @@ export default function OrderDetailPage() {
               {order.items.map((item, idx) => {
                 const isSelected = complaintItems.some(i => i.idx === idx);
                 const selectedItem = complaintItems.find(i => i.idx === idx);
+                const product = products.find(p => p.id === item.productId || p.name === item.productName);
+                const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
                 
                 return (
                   <div key={idx} className={`p-3 rounded-lg border transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isSelected ? 'border-indigo-300 bg-indigo-50/50 dark:border-indigo-500/50 dark:bg-indigo-900/20' : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50'}`}>
                     <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="mt-0.5">
+                      <div className="mt-1">
                         <Checkbox
                           checked={isSelected}
                           onChange={(checked) => handleToggleComplaintItem(idx, checked, item.qty)}
                         />
                       </div>
+
+                      {product?.image ? (
+                        <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                          <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                          <IconComp className="h-5 w-5" />
+                        </div>
+                      )}
+
                       <div className="min-w-0 flex-1">
                         <div className="font-semibold text-slate-900 dark:text-white truncate">
                           {item.productName}
@@ -1079,6 +1315,37 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </Modal>
+
+      {/* DELIVERY PROOF PHOTO PREVIEW MODAL */}
+      <Modal
+        isOpen={!!selectedProofPhoto}
+        onClose={() => setSelectedProofPhoto(null)}
+        title="Foto Bukti Pesanan Diterima"
+        size="lg"
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => setSelectedProofPhoto(null)}>
+            Tutup
+          </Button>
+        }
+      >
+        <div className="flex flex-col items-center justify-center p-1">
+          {selectedProofPhoto && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={selectedProofPhoto}
+              alt="Bukti Serah Terima"
+              className="max-h-[72vh] w-auto max-w-full rounded-lg object-contain shadow-xs"
+            />
+          )}
+        </div>
+      </Modal>
+
+      {/* CUSTOM PROCESS MODAL */}
+      <CustomProcessModal
+        isOpen={customProcessModalOpen}
+        onClose={() => setCustomProcessModalOpen(false)}
+        order={order}
+      />
     </div>
   );
 }

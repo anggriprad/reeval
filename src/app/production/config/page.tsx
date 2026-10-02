@@ -13,6 +13,7 @@ import { formatCurrency } from '@/lib/utils';
 import { canManageProduction } from '@/lib/roles';
 import type { ProductionOperation, ProductionRouting, ProductionOperator, RoutingStep } from '@/lib/types';
 import { Toggle } from '@/components/ui/Toggle';
+import { Badge } from '@/components/ui/Badge';
 import {
   Wrench,
   Layers,
@@ -411,13 +412,13 @@ function ProductionConfigContent() {
                         </td>
                         <td className="px-4 py-3">
                           {op.costingMethod === 'fixed' ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                              Borongan (Fixed)
-                            </span>
+                            <Badge variant="success">
+                              Borongan
+                            </Badge>
                           ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
-                              Durasi (Per Jam)
-                            </span>
+                            <Badge variant="info">
+                              Durasi per jam
+                            </Badge>
                           )}
                         </td>
                         <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
@@ -720,8 +721,8 @@ function ProductionConfigContent() {
               value={opCostingMethod}
               onChange={e => setOpCostingMethod(e.target.value as 'fixed' | 'hourly')}
               options={[
-                { value: 'fixed', label: 'Borongan (Tarif Tetap per Unit)' },
-                { value: 'hourly', label: 'Durasi (Tarif per Jam)' },
+                { value: 'fixed', label: 'Borongan' },
+                { value: 'hourly', label: 'Durasi per jam' },
               ]}
             />
 
@@ -844,7 +845,7 @@ function ProductionConfigContent() {
                       containerClassName="flex-1 min-w-0"
                       options={operations.map(op => ({
                         value: op.id,
-                        label: `${op.name} (${op.costingMethod === 'fixed' ? 'Borongan' : 'Durasi'}, ${op.durationMinutes || 0}m)`
+                        label: `${op.name} (${op.costingMethod === 'fixed' ? 'Borongan' : 'Durasi per jam'}, ${op.durationMinutes || 0}m)`
                       }))}
                     />
                     <Button

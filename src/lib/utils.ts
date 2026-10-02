@@ -307,8 +307,12 @@ export function syncFinishedGoodsWithProducts(
   products: Product[],
   currentFinishedGoods: FinishedGoodStock[] = []
 ): FinishedGoodStock[] {
+  // Entri stok SPK spesifik (id berbasis SPK) dipertahankan tersendiri tanpa tertimpa
+  const spkFinishedGoods = currentFinishedGoods.filter(fg => fg.id.startsWith('SPK') || fg.id.startsWith('spk'));
+  const nonSpkFinishedGoods = currentFinishedGoods.filter(fg => !fg.id.startsWith('SPK') && !fg.id.startsWith('spk'));
+
   const fgMap = new Map<string, FinishedGoodStock>();
-  for (const fg of currentFinishedGoods) {
+  for (const fg of nonSpkFinishedGoods) {
     const key = `${fg.productId}__${fg.variantId || ''}`;
     fgMap.set(key, fg);
   }
@@ -375,5 +379,25 @@ export function syncFinishedGoodsWithProducts(
     }
   }
 
-  return result;
+  return [...result, ...spkFinishedGoods];
+}
+
+/**
+ * Format ID Pesanan: YYMMDDHHmmss + increment (contoh: 2610021131151)
+ */
+export function generateOrderNumber(orderCount: number, date = new Date()): string {
+  const yy = String(date.getFullYear()).slice(-2);
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `${yy}${mm}${dd}${hh}${min}${ss}${orderCount}`;
+}
+
+/**
+ * Format ID Barang / Unit SPK: Pesanan-orderitem (contoh: 2610021131151-001)
+ */
+export function generateItemUnitNumber(orderNumber: string, unitIndex: number): string {
+  return `${orderNumber}-${String(unitIndex).padStart(3, '0')}`;
 }

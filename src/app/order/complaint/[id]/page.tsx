@@ -12,9 +12,59 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
-import { formatCurrency, formatDateTime, formatVariantLabel } from '@/lib/utils';
+import { cn, formatCurrency, formatDateTime, formatVariantLabel } from '@/lib/utils';
 import { ComplaintAttachment } from '@/lib/types';
-import { AlertCircle, CheckCircle, Eye, Film, Play } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Eye,
+  Film,
+  Play,
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+} from 'lucide-react';
+
+const iconMap: Record<string, React.ElementType> = {
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+};
 
 export default function ComplaintDetailPage() {
   const router = useRouter();
@@ -22,7 +72,7 @@ export default function ComplaintDetailPage() {
   const complaintId = params?.id as string;
   const { toast } = useToast();
 
-  const { salesOrders, invoices, bankAccounts, resolveOrderComplaint } = useApp();
+  const { salesOrders, products, invoices, bankAccounts, resolveOrderComplaint } = useApp();
 
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [refundNotes, setRefundNotes] = useState('');
@@ -72,8 +122,18 @@ export default function ComplaintDetailPage() {
   const newRemainingUnpaid = Math.max(0, newTotal - currentPaid);
 
   const handleResolve = (resolution: 'Batalkan Pesanan (Refund)' | 'Kirim Barang Pengganti' | 'Perbaikan', note: string, bankId?: string) => {
-    resolveOrderComplaint(order.id, complaint.id, resolution, note, bankId);
-    toast.success('Komplain Diselesaikan', `Resolusi: ${resolution}`);
+    const res = resolveOrderComplaint(order.id, complaint.id, resolution, note, bankId) as { success: boolean; inStock?: boolean; spkNumber?: string } | undefined;
+    if (resolution === 'Kirim Barang Pengganti') {
+      if (res && res.inStock) {
+        toast.success('Komplain Diselesaikan', 'Stok barang jadi tersedia. Unit pengganti masuk ke Antrean Kirim.');
+      } else if (res && res.spkNumber) {
+        toast.success('Komplain Diselesaikan', `Stok belum tersedia. ${res.spkNumber} telah diterbitkan untuk produksi.`);
+      } else {
+        toast.success('Komplain Diselesaikan', `Resolusi: ${resolution}`);
+      }
+    } else {
+      toast.success('Komplain Diselesaikan', `Resolusi: ${resolution}`);
+    }
   };
 
   const handleConfirmRefund = () => {
@@ -135,20 +195,38 @@ export default function ComplaintDetailPage() {
                 Item Bermasalah
               </div>
               <div className="space-y-2">
-                {complaint.items.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between text-sm py-1.5 border-b border-slate-100 dark:border-slate-800/80 last:border-0"
-                  >
-                    <div>
-                      <span className="font-medium text-slate-900 dark:text-white">{item.productName}</span>
-                      {item.variantLabel && (
-                        <span className="text-slate-500 text-xs ml-1.5">({formatVariantLabel(item.variantLabel)})</span>
-                      )}
+                {complaint.items.map((item, idx) => {
+                  const product = products.find(p => p.id === item.productId || p.name === item.productName);
+                  const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between text-sm py-2 border-b border-slate-100 dark:border-slate-800/80 last:border-0"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {product?.image ? (
+                          <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                            <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                            <IconComp className="h-5 w-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="font-semibold text-slate-900 dark:text-white block truncate">{item.productName}</span>
+                          {item.variantLabel && (
+                            <span className="text-slate-500 text-xs block truncate">
+                              {formatVariantLabel(item.variantLabel)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="font-bold text-slate-900 dark:text-white shrink-0 ml-3">x{item.qty}</span>
                     </div>
-                    <span className="font-bold text-slate-900 dark:text-white">x{item.qty}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -210,7 +288,7 @@ export default function ComplaintDetailPage() {
               Tindakan Resolusi
             </div>
 
-            {complaint.status !== 'SELESAI' ? (
+            {!complaint.resolution ? (
               <div className="space-y-3">
                 <button
                   type="button"
@@ -252,18 +330,60 @@ export default function ComplaintDetailPage() {
                 </button>
               </div>
             ) : (
-              <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30 space-y-1.5">
-                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-semibold text-sm">
-                  <CheckCircle className="w-4 h-4 shrink-0" />
+              <div className={cn(
+                "p-4 rounded-xl border space-y-2",
+                complaint.status === 'SELESAI'
+                  ? "border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30"
+                  : "border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30"
+              )}>
+                <div className={cn(
+                  "flex items-center gap-2 font-semibold text-sm",
+                  complaint.status === 'SELESAI'
+                    ? "text-emerald-800 dark:text-emerald-300"
+                    : "text-blue-800 dark:text-blue-300"
+                )}>
+                  {complaint.status === 'SELESAI' ? (
+                    <CheckCircle className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <Clock className="w-4 h-4 shrink-0" />
+                  )}
                   <span>Resolusi: {complaint.resolution}</span>
                 </div>
                 {complaint.resolutionNotes && (
-                  <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                  <p className={cn(
+                    "text-xs leading-relaxed",
+                    complaint.status === 'SELESAI'
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-blue-700 dark:text-blue-400"
+                  )}>
                     {complaint.resolutionNotes}
                   </p>
                 )}
-                <div className="text-[11px] text-emerald-600/80 dark:text-emerald-500 pt-1">
-                  Diselesaikan pada {formatDateTime(complaint.resolvedAt!)}
+                {complaint.replacementStatus && (
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Penggantian:</span>
+                    <Badge
+                      variant={
+                        complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'success' :
+                        complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'warning' : 'purple'
+                      }
+                      className="text-[10px]"
+                    >
+                      {complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'Siap di Antrean Kirim' :
+                       complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'Menunggu Produksi (SPK)' :
+                       complaint.replacementStatus === 'SHIPPED' ? 'Dalam Pengiriman' : 'Selesai Dikirim'}
+                    </Badge>
+                  </div>
+                )}
+                <div className={cn(
+                  "text-[11px] pt-1",
+                  complaint.status === 'SELESAI'
+                    ? "text-emerald-600/80 dark:text-emerald-500"
+                    : "text-blue-600/80 dark:text-blue-500"
+                )}>
+                  {complaint.status === 'SELESAI' && complaint.resolvedAt
+                    ? `Diselesaikan pada ${formatDateTime(complaint.resolvedAt)}`
+                    : 'Status: Sedang Ditangani'}
                 </div>
               </div>
             )}

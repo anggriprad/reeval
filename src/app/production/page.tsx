@@ -43,6 +43,7 @@ import {
   TrendingDown,
   Plus,
   Layers,
+  Package,
   AlertCircle,
   Lock,
   XCircle,
@@ -53,6 +54,7 @@ function ProductionContent() {
   const {
     currentUser,
     workOrders,
+    products = [],
     materials = [],
     operators = [],
     operations = [],
@@ -60,6 +62,7 @@ function ProductionContent() {
     pauseJobCard,
     completeJobCard,
     createSubAssemblyWorkOrder,
+    createNormalWorkOrder,
   } = useApp();
 
   const canManage = canManageProduction(currentUser.role);
@@ -67,11 +70,15 @@ function ProductionContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [spkTypeFilter, setSpkTypeFilter] = useState('');
 
-  // Bahan Setengah Jadi SPK Modal state
-  const [showSaModal, setShowSaModal] = useState(false);
-  const [saMaterialId, setSaMaterialId] = useState('');
-  const [saTargetQty, setSaTargetQty] = useState('1');
-  const [saError, setSaError] = useState('');
+  // SPK Creation Modal state (Normal Barang Jadi & WIP)
+  const [showSpkModal, setShowSpkModal] = useState(false);
+  const [spkCategory, setSpkCategory] = useState<'NORMAL' | 'WIP'>('NORMAL');
+  const [spkProductId, setSpkProductId] = useState('');
+  const [spkVariantId, setSpkVariantId] = useState('');
+  const [spkSaMaterialId, setSpkSaMaterialId] = useState('');
+  const [spkTargetQty, setSpkTargetQty] = useState('1');
+  const [spkNotes, setSpkNotes] = useState('');
+  const [spkError, setSpkError] = useState('');
 
   // ... (keeping other states same)
   const [selectedWOId, setSelectedWOId] = useState<string | null>(null);
@@ -231,30 +238,58 @@ function ProductionContent() {
     };
   }).sort((a, b) => b.efficiencyScore - a.efficiencyScore);
 
-  const handleCreateSaWorkOrder = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaError('');
+  const handleOpenSpkModal = () => {
+    setSpkCategory('NORMAL');
+    setSpkProductId('');
+    setSpkVariantId('');
+    setSpkSaMaterialId('');
+    setSpkTargetQty('1');
+    setSpkNotes('');
+    setSpkError('');
+    setShowSpkModal(true);
+  };
 
-    if (!saMaterialId) {
-      setSaError('Pilih bahan setengah jadi.');
-      return;
-    }
+  const handleCreateWorkOrder = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSpkError('');
 
-    const qty = parseFloat(saTargetQty.replace(',', '.'));
+    const qty = parseFloat(spkTargetQty.replace(',', '.'));
     if (isNaN(qty) || qty <= 0) {
-      setSaError('Kuantitas produksi harus lebih besar dari 0.');
+      setSpkError('Kuantitas rencana produksi harus lebih besar dari 0.');
       return;
     }
 
-    const res = createSubAssemblyWorkOrder(saMaterialId, qty);
-    if (!res.success) {
-      setSaError(res.error || 'Gagal menerbitkan SPK bahan setengah jadi.');
-      return;
+    if (spkCategory === 'NORMAL') {
+      if (!spkProductId) {
+        setSpkError('Silakan pilih produk terlebih dahulu.');
+        return;
+      }
+      const prod = products.find(p => p.id === spkProductId);
+      if (prod?.variants && prod.variants.length > 1 && !spkVariantId) {
+        setSpkError('Silakan pilih varian produk.');
+        return;
+      }
+      const res = createNormalWorkOrder(spkProductId, spkVariantId || undefined, qty, spkNotes);
+      if (!res.success) {
+        setSpkError(res.error || 'Gagal menerbitkan SPK.');
+        return;
+      }
+      toast.success('SPK Berhasil Diterbitkan', `SPK Barang Jadi untuk ${qty} unit "${prod?.name}" berhasil dibuat.`);
+      setShowSpkModal(false);
+    } else {
+      if (!spkSaMaterialId) {
+        setSpkError('Silakan pilih bahan setengah jadi.');
+        return;
+      }
+      const res = createSubAssemblyWorkOrder(spkSaMaterialId, qty, spkNotes);
+      if (!res.success) {
+        setSpkError(res.error || 'Gagal menerbitkan SPK bahan setengah jadi.');
+        return;
+      }
+      const targetMat = materials.find(m => m.id === spkSaMaterialId);
+      toast.success('SPK Berhasil Diterbitkan', `SPK untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name}" berhasil dibuat.`);
+      setShowSpkModal(false);
     }
-
-    const targetMat = materials.find(m => m.id === saMaterialId);
-    toast.success('SPK Bahan Setengah Jadi Diterbitkan', `SPK untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name}" berhasil dibuat.`);
-    setShowSaModal(false);
   };
 
   return (
@@ -265,15 +300,10 @@ function ProductionContent() {
         {canManage && (
           <Button
             variant="primary"
-            onClick={() => {
-              setSaMaterialId('');
-              setSaTargetQty('1');
-              setSaError('');
-              setShowSaModal(true);
-            }}
+            onClick={handleOpenSpkModal}
           >
-            <Plus className="h-4 w-4 mr-1.5" />
-            Buat SPK WIP
+            <Plus className="h-4 w-4" />
+            Buat SPK Baru
           </Button>
         )}
         <Link href="/production/config">
@@ -1136,156 +1166,264 @@ function ProductionContent() {
         )}
       </Modal>
 
-      {/* MODAL: BUAT SPK BAHAN SETENGAH JADI */}
+      {/* MODAL: BUAT SPK (NORMAL & WIP) */}
       <Modal
-        isOpen={showSaModal}
-        onClose={() => setShowSaModal(false)}
-        title="Buat SPK Bahan Setengah Jadi"
-        size="lg"
+        isOpen={showSpkModal}
+        onClose={() => setShowSpkModal(false)}
+        title="Buat SPK Baru"
+        size="sm"
         actions={
           <>
-            <Button variant="outline" onClick={() => setShowSaModal(false)}>
+            <Button variant="outline" onClick={() => setShowSpkModal(false)}>
               Batal
             </Button>
             <Button
               variant="primary"
-              onClick={handleCreateSaWorkOrder}
-              disabled={!saMaterialId}
+              onClick={() => handleCreateWorkOrder()}
+              disabled={
+                spkCategory === 'NORMAL'
+                  ? (!spkProductId || (Boolean(products.find(p => p.id === spkProductId)?.variants?.length) && products.find(p => p.id === spkProductId)!.variants.length > 1 && !spkVariantId))
+                  : !spkSaMaterialId
+              }
             >
-              <Layers className="h-4 w-4" /> Terbitkan SPK Bahan Setengah Jadi
+              Terbitkan SPK
             </Button>
           </>
         }
       >
-        <form onSubmit={handleCreateSaWorkOrder} className="space-y-4 text-xs">
-          {saError && (
-            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 font-semibold flex items-center gap-2">
+        <form onSubmit={handleCreateWorkOrder} className="space-y-3.5 text-xs">
+          {spkError && (
+            <div className="p-2.5 rounded-lg border border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 font-semibold flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{saError}</span>
+              <span>{spkError}</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Pilih Bahan Setengah Jadi <span className="text-red-500">*</span>
+          {/* 1. Dropdown Tipe SPK: Produk (Barang Jadi) / Bahan Setengah Jadi (WIP) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+              Tipe SPK <span className="text-red-500">*</span>
+            </label>
+            <Select
+              value={spkCategory}
+              onChange={e => {
+                const cat = e.target.value as 'NORMAL' | 'WIP';
+                setSpkCategory(cat);
+                setSpkProductId('');
+                setSpkVariantId('');
+                setSpkSaMaterialId('');
+                setSpkError('');
+              }}
+              inputSize="sm"
+              containerClassName="w-full"
+              dropdownClassName="w-full max-w-full"
+            >
+              <option value="NORMAL">Produk (Barang Jadi)</option>
+              <option value="WIP">Bahan Setengah Jadi (WIP)</option>
+            </Select>
+          </div>
+
+          {/* 2. Dropdown Pilih Produk / Bahan WIP */}
+          {spkCategory === 'NORMAL' ? (
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Pilih Produk <span className="text-red-500">*</span>
               </label>
               <Select
-                value={saMaterialId}
+                value={spkProductId}
                 onChange={e => {
-                  setSaMaterialId(e.target.value);
-                  setSaError('');
+                  const pid = e.target.value;
+                  setSpkProductId(pid);
+                  setSpkVariantId('');
+                  setSpkError('');
                 }}
                 inputSize="sm"
+                containerClassName="w-full"
+                dropdownClassName="w-full max-w-full"
               >
-                <option value="">-- Pilih Bahan Setengah Jadi --</option>
-                {materials.filter(m => m.isSubAssembly).map(m => (
-                  <option key={m.id} value={m.id}>
-                    [{m.code}] {m.name} — Stok Saat Ini: {m.stock} {m.unit}
+                <option value="">-- Pilih Produk --</option>
+                {products.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </Select>
             </div>
-
+          ) : (
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Kuantitas Rencana SPK <span className="text-red-500">*</span>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Pilih Bahan Setengah Jadi <span className="text-red-500">*</span>
               </label>
-              <Input
-                type="text"
-                value={saTargetQty}
-                onChange={e => setSaTargetQty(e.target.value)}
-                placeholder="0"
+              <Select
+                value={spkSaMaterialId}
+                onChange={e => {
+                  setSpkSaMaterialId(e.target.value);
+                  setSpkError('');
+                }}
                 inputSize="sm"
-                className="font-bold text-right"
-              />
+                containerClassName="w-full"
+                dropdownClassName="w-full max-w-full"
+              >
+                <option value="">-- Pilih Bahan Setengah Jadi --</option>
+                {materials.filter(m => m.isSubAssembly).map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
             </div>
+          )}
+
+          {/* 3. Dropdown Varian jika ada (untuk Produk Jadi) */}
+          {spkCategory === 'NORMAL' && (() => {
+            const selectedProduct = products.find(p => p.id === spkProductId);
+            if (!selectedProduct || !selectedProduct.variants || selectedProduct.variants.length === 0) return null;
+            return (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                  Varian Produk {selectedProduct.variants.length > 1 && <span className="text-red-500">*</span>}
+                </label>
+                <Select
+                  value={spkVariantId}
+                  onChange={e => {
+                    setSpkVariantId(e.target.value);
+                    setSpkError('');
+                  }}
+                  inputSize="sm"
+                  containerClassName="w-full"
+                  dropdownClassName="w-full max-w-full"
+                >
+                  <option value="">-- Pilih Varian --</option>
+                  {selectedProduct.variants.map(v => {
+                    const label = Object.values(v.combination || {}).join(', ') || v.sku;
+                    return (
+                      <option key={v.id} value={v.id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </Select>
+              </div>
+            );
+          })()}
+
+          {/* 4. Input Kuantitas */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+              Kuantitas Target <span className="text-red-500">*</span>
+            </label>
+            <Input
+              type="text"
+              value={spkTargetQty}
+              onChange={e => setSpkTargetQty(e.target.value)}
+              placeholder="1"
+              inputSize="sm"
+              className="w-full font-semibold"
+            />
           </div>
 
-          {/* Child BOM Requirement & Stock Preview */}
-          {saMaterialId && (() => {
-            const targetMat = materials.find(m => m.id === saMaterialId);
-            const targetQtyNum = parseFloat(saTargetQty.replace(',', '.')) || 0;
-            const childBom = targetMat?.childBom || [];
+          {/* 5. Input Catatan (sama dengan catatan produk saat buat sales order) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+              Catatan Produk (Opsional)
+            </label>
+            <Input
+              type="text"
+              value={spkNotes}
+              onChange={e => setSpkNotes(e.target.value)}
+              placeholder="Catatan khusus pengerjaan produk..."
+              inputSize="sm"
+              className="w-full"
+            />
+          </div>
 
-            let hasInsufficientStock = false;
+          {/* 6. Info BOM Kurang (Hanya jika ada kekurangan stok bahan, dalam bentuk card list sederhana tanpa tabel header) */}
+          {(() => {
+            const targetQtyNum = parseFloat(spkTargetQty.replace(',', '.')) || 0;
+            if (targetQtyNum <= 0) return null;
+
+            const insufficientList: {
+              name: string;
+              requiredQty: number;
+              currentStock: number;
+              shortageQty: number;
+              unit: string;
+            }[] = [];
+
+            if (spkCategory === 'NORMAL') {
+              const selectedProduct = products.find(p => p.id === spkProductId);
+              const selectedVariant = selectedProduct?.variants && selectedProduct.variants.length > 0
+                ? (selectedProduct.variants.find(v => v.id === spkVariantId) || selectedProduct.variants[0])
+                : undefined;
+              const bomItems = selectedVariant?.bom || [];
+
+              bomItems.forEach(b => {
+                const mat = materials.find(m => m.id === b.materialId);
+                const reqQty = b.qty * targetQtyNum;
+                const currentStock = mat?.stock || 0;
+                if (currentStock < reqQty) {
+                  insufficientList.push({
+                    name: mat?.name || b.materialId,
+                    requiredQty: reqQty,
+                    currentStock,
+                    shortageQty: parseFloat((reqQty - currentStock).toFixed(4)),
+                    unit: mat?.unit || 'unit',
+                  });
+                }
+              });
+            } else {
+              const targetMat = materials.find(m => m.id === spkSaMaterialId);
+              const childBom = targetMat?.childBom || [];
+
+              childBom.forEach(b => {
+                const mat = materials.find(m => m.id === b.materialId);
+                const reqQty = b.qty * targetQtyNum;
+                const currentStock = mat?.stock || 0;
+                if (currentStock < reqQty) {
+                  insufficientList.push({
+                    name: mat?.name || b.materialId,
+                    requiredQty: reqQty,
+                    currentStock,
+                    shortageQty: parseFloat((reqQty - currentStock).toFixed(4)),
+                    unit: mat?.unit || 'unit',
+                  });
+                }
+              });
+            }
+
+            if (insufficientList.length === 0) return null;
 
             return (
-              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-indigo-500" />
-                    Kebutuhan Bahan Baku Penyusun (Child BOM)
-                  </div>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    Untuk Produksi: <strong className="text-indigo-600 dark:text-indigo-400">{targetQtyNum} {targetMat?.unit || 'unit'}</strong>
-                  </span>
+              <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>Perhatian: Bahan Baku / BOM Kurang</span>
                 </div>
 
-                {childBom.length === 0 ? (
-                  <div className="p-4 rounded-xl border border-dashed border-amber-200 bg-amber-50/50 text-amber-800 text-center dark:border-amber-900/40 dark:bg-amber-950/20">
-                    <p className="font-semibold text-xs">Item bahan setengah jadi ini belum memiliki Child BOM yang terdaftar di Inventory.</p>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
-                        <tr>
-                          <th className="px-3 py-2">Bahan Baku Penyusun</th>
-                          <th className="px-3 py-2 text-center">BOM / Unit</th>
-                          <th className="px-3 py-2 text-center">Dibutuhkan</th>
-                          <th className="px-3 py-2 text-center">Stok Gudang</th>
-                          <th className="px-3 py-2 text-center">Status Stok</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {childBom.map((child, idx) => {
-                          const childMat = materials.find(m => m.id === child.materialId);
-                          const requiredQty = child.qty * targetQtyNum;
-                          const currentStock = childMat?.stock || 0;
-                          const isOk = currentStock >= requiredQty;
-                          if (!isOk) hasInsufficientStock = true;
-
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
-                              <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
-                                {childMat?.name || child.materialId}
-                                <div className="text-[10px] text-slate-400 font-normal">{childMat?.code} • {childMat?.category}</div>
-                              </td>
-                              <td className="px-3 py-2 text-center font-mono">{child.qty} {childMat?.unit}</td>
-                              <td className="px-3 py-2 text-center font-mono font-bold text-slate-900 dark:text-white">
-                                {requiredQty} {childMat?.unit}
-                              </td>
-                              <td className="px-3 py-2 text-center font-mono">
-                                {currentStock} {childMat?.unit}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                {isOk ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                    Stok Cukup
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
-                                    Stok Kurang ({requiredQty - currentStock})
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {hasInsufficientStock && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-900/50 dark:text-amber-300 text-xs flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="font-semibold">Peringatan Stok Kurang:</strong> Beberapa bahan baku penyusun memiliki stok di bawah kuantitas kebutuhan produksi. Penerbitan SPK tetap dapat diproses namun disarankan melakukan pengadaan bahan baku terlebih dahulu.
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                  {insufficientList.map((mat, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-slate-900 dark:text-white truncate">
+                          {mat.name}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Butuh: <span className="font-semibold text-slate-700 dark:text-slate-300">{mat.requiredQty} {mat.unit}</span>
+                          {' • '}
+                          Stok: <span className="font-semibold text-slate-700 dark:text-slate-300">{mat.currentStock} {mat.unit}</span>
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+                          Kurang {mat.shortageQty} {mat.unit}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             );
           })()}

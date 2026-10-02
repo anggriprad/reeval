@@ -147,7 +147,7 @@ export default function DeliveryDetailPage() {
         backHref="/delivery"
         title={
           <div className="flex items-center gap-3 flex-wrap">
-            <span>{dOrder.doNumber}</span>
+            <span>Pesanan {dOrder.salesOrderNumber}</span>
             {isDelivered && (
               <Badge variant="success" className="text-xs">
                 Terkirim & Selesai
@@ -155,7 +155,7 @@ export default function DeliveryDetailPage() {
             )}
             {isInTransit && (
               <Badge variant="info" className="text-xs">
-                Sedang di Perjalanan
+                Dalam Perjalanan
               </Badge>
             )}
             {isReadyToShip && (
@@ -317,6 +317,11 @@ export default function DeliveryDetailPage() {
                   <div key={idx} className="p-4 flex items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {item.spkNumber && (
+                          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700">
+                            {item.spkNumber}
+                          </span>
+                        )}
                         <span className="text-xs font-semibold text-slate-900 dark:text-white">
                           {item.productName}
                         </span>

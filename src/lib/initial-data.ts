@@ -597,7 +597,7 @@ const so4Items = [
 export const initialSalesOrders: SalesOrder[] = [
   {
     id: 'so-1',
-    orderNumber: 'SO-2026-001',
+    orderNumber: '2607010900001',
     createdBy: 'Budi Santoso',
     salesPhone: '6281298765432',
     customer: { name: 'Hotel Grand Mahakam', phone: '628115551234', address: 'Jl. Mahakam No. 6, Jakarta Selatan' },
@@ -615,7 +615,7 @@ export const initialSalesOrders: SalesOrder[] = [
     updatedBy: 'Hasan Basri',
     complaints: [
       {
-        id: 'CMP-2026-001',
+        id: '1',
         category: 'Barang rusak / cacat',
         description: 'Terdapat retak pada sambungan rangka saat proses penurunan barang di lobi hotel.',
         status: 'DIAJUKAN',
@@ -658,7 +658,7 @@ export const initialSalesOrders: SalesOrder[] = [
   },
   {
     id: 'so-2',
-    orderNumber: 'SO-2026-002',
+    orderNumber: '2608051100002',
     createdBy: 'Budi Santoso',
     salesPhone: '6281298765432',
     customer: { name: 'Bpk. Hendra Gunawan', phone: '6281287654321', address: 'Jl. Cipete Raya No. 17, Jakarta Selatan' },
@@ -675,7 +675,7 @@ export const initialSalesOrders: SalesOrder[] = [
   },
   {
     id: 'so-3',
-    orderNumber: 'SO-2026-003',
+    orderNumber: '2608150830003',
     createdBy: 'Sari Wulandari',
     salesPhone: '6281222243282',
     customer: { name: 'Toko Mebel Jaya - Bp. Agus', phone: '6285612345678', address: 'Jl. Boulevard Raya Blok QJ No. 1, Kelapa Gading, Jakarta Utara' },
@@ -691,7 +691,7 @@ export const initialSalesOrders: SalesOrder[] = [
   },
   {
     id: 'so-4',
-    orderNumber: 'SO-2026-004',
+    orderNumber: '2608191400004',
     createdBy: 'Sari Wulandari',
     salesPhone: '6281222243282',
     customer: { name: 'CV Fortuna Properti', phone: '6282198765432', address: 'Jl. Sudirman Kav. 52, Jakarta Pusat' },
@@ -732,9 +732,13 @@ const wo3Cost = calcRoutingCost('rt-1', 1);
 export const initialWorkOrders: WorkOrder[] = [
   {
     id: 'wo-1-1',
-    spkNumber: 'SPK-SO-2026-001-1',
+    spkNumber: '2607010900001-001',
     salesOrderId: 'so-1',
-    salesOrderNumber: 'SO-2026-001',
+    salesOrderNumber: '2607010900001',
+    productId: 'prod-1',
+    variantId: 'pv-1-3',
+    itemIndex: 0,
+    unitIndex: 1,
     productName: 'Dipan Minimalis Fabric',
     variantName: '160x200 cm • Midili (Kain)',
     status: 'COMPLETED',
@@ -754,9 +758,13 @@ export const initialWorkOrders: WorkOrder[] = [
   },
   {
     id: 'wo-1-2',
-    spkNumber: 'SPK-SO-2026-001-2',
+    spkNumber: '2607010900001-002',
     salesOrderId: 'so-1',
-    salesOrderNumber: 'SO-2026-001',
+    salesOrderNumber: '2607010900001',
+    productId: 'prod-1',
+    variantId: 'pv-1-3',
+    itemIndex: 0,
+    unitIndex: 2,
     productName: 'Dipan Minimalis Fabric',
     variantName: '160x200 cm • Midili (Kain)',
     status: 'COMPLETED',
@@ -776,9 +784,13 @@ export const initialWorkOrders: WorkOrder[] = [
   },
   {
     id: 'wo-3',
-    spkNumber: 'SPK-SO-2026-002-1',
+    spkNumber: '2608051100002-001',
     salesOrderId: 'so-2',
-    salesOrderNumber: 'SO-2026-002',
+    salesOrderNumber: '2608051100002',
+    productId: 'prod-2',
+    variantId: 'pv-2-3',
+    itemIndex: 0,
+    unitIndex: 1,
     productName: 'Dipan Storage 2-Laci',
     variantName: '180x200 cm • Oscar (Kulit Sintetis)',
     status: 'PROCESSING',
@@ -804,7 +816,7 @@ export const initialWorkOrders: WorkOrder[] = [
 export const initialPurchaseOrders: PurchaseOrder[] = [
   {
     id: 'po-1',
-    poNumber: 'PO-2026-001',
+    poNumber: '1',
     supplier: 'UD Kayu Makmur Jaya',
     createdBy: 'Pak Joko',
     items: [
@@ -821,7 +833,7 @@ export const initialPurchaseOrders: PurchaseOrder[] = [
   },
   {
     id: 'po-2',
-    poNumber: 'PO-2026-002',
+    poNumber: '2',
     supplier: 'PT Oscar Leather Indonesia',
     createdBy: 'Pak Joko',
     items: [
@@ -840,19 +852,19 @@ export const initialPurchaseOrders: PurchaseOrder[] = [
 // SEED STOCK MOVEMENTS
 // ========================================
 export const initialStockMovements: StockMovement[] = [
-  { id: 'sm-1', materialId: 'mat-2', materialName: 'Kayu Rangka Mahoni Kering', type: 'IN', qty: 5, reference: 'PO-2026-001', date: '2026-06-28T09:00:00' },
-  { id: 'sm-2', materialId: 'mat-1', materialName: 'Multiplek / Plywood 18mm', type: 'IN', qty: 30, reference: 'PO-2026-001', date: '2026-06-28T09:00:00' },
-  { id: 'sm-3', materialId: 'mat-6', materialName: 'Kulit Sintetis Oscar Premium', type: 'IN', qty: 50, reference: 'PO-2026-002', date: '2026-07-12T10:00:00' },
-  { id: 'sm-4', materialId: 'mat-5', materialName: 'Kain Jok Midili Grey/Beige', type: 'IN', qty: 60, reference: 'PO-2026-002', date: '2026-07-12T10:00:00' },
+  { id: 'sm-1', materialId: 'mat-2', materialName: 'Kayu Rangka Mahoni Kering', type: 'IN', qty: 5, reference: '1', date: '2026-06-28T09:00:00' },
+  { id: 'sm-2', materialId: 'mat-1', materialName: 'Multiplek / Plywood 18mm', type: 'IN', qty: 30, reference: '1', date: '2026-06-28T09:00:00' },
+  { id: 'sm-3', materialId: 'mat-6', materialName: 'Kulit Sintetis Oscar Premium', type: 'IN', qty: 50, reference: '2', date: '2026-07-12T10:00:00' },
+  { id: 'sm-4', materialId: 'mat-5', materialName: 'Kain Jok Midili Grey/Beige', type: 'IN', qty: 60, reference: '2', date: '2026-07-12T10:00:00' },
   // Stock OUT for SO-1 production
-  { id: 'sm-5', materialId: 'mat-1', materialName: 'Multiplek / Plywood 18mm', type: 'OUT', qty: 4, reference: 'SPK-SO-2026-001-1', date: '2026-07-03T08:30:00' },
-  { id: 'sm-6', materialId: 'mat-2', materialName: 'Kayu Rangka Mahoni Kering', type: 'OUT', qty: 0.16, reference: 'SPK-SO-2026-001-1', date: '2026-07-03T08:30:00' },
-  { id: 'sm-7', materialId: 'mat-5', materialName: 'Kain Jok Midili Grey/Beige', type: 'OUT', qty: 13, reference: 'SPK-SO-2026-001-1', date: '2026-07-03T08:30:00' },
-  { id: 'sm-8', materialId: 'mat-11', materialName: 'Busa Kasur Rebounded D50', type: 'OUT', qty: 2, reference: 'SPK-SO-2026-001-2', date: '2026-07-03T08:30:00' },
-  { id: 'sm-9', materialId: 'mat-12', materialName: 'Kain Cover Knitted Kasur', type: 'OUT', qty: 11, reference: 'SPK-SO-2026-001-2', date: '2026-07-03T08:30:00' },
+  { id: 'sm-5', materialId: 'mat-1', materialName: 'Multiplek / Plywood 18mm', type: 'OUT', qty: 4, reference: '2607010900001-001', date: '2026-07-03T08:30:00' },
+  { id: 'sm-6', materialId: 'mat-2', materialName: 'Kayu Rangka Mahoni Kering', type: 'OUT', qty: 0.16, reference: '2607010900001-001', date: '2026-07-03T08:30:00' },
+  { id: 'sm-7', materialId: 'mat-5', materialName: 'Kain Jok Midili Grey/Beige', type: 'OUT', qty: 13, reference: '2607010900001-001', date: '2026-07-03T08:30:00' },
+  { id: 'sm-8', materialId: 'mat-11', materialName: 'Busa Kasur Rebounded D50', type: 'OUT', qty: 2, reference: '2607010900001-002', date: '2026-07-03T08:30:00' },
+  { id: 'sm-9', materialId: 'mat-12', materialName: 'Kain Cover Knitted Kasur', type: 'OUT', qty: 11, reference: '2607010900001-002', date: '2026-07-03T08:30:00' },
   // Stock OUT for SO-2 production
-  { id: 'sm-10', materialId: 'mat-1', materialName: 'Multiplek / Plywood 18mm', type: 'OUT', qty: 3.5, reference: 'SPK-SO-2026-002-1', date: '2026-08-07T08:30:00' },
-  { id: 'sm-11', materialId: 'mat-6', materialName: 'Kulit Sintetis Oscar Premium', type: 'OUT', qty: 8, reference: 'SPK-SO-2026-002-1', date: '2026-08-07T08:30:00' },
+  { id: 'sm-10', materialId: 'mat-1', materialName: 'Multiplek / Plywood 18mm', type: 'OUT', qty: 3.5, reference: '2608051100002-001', date: '2026-08-07T08:30:00' },
+  { id: 'sm-11', materialId: 'mat-6', materialName: 'Kulit Sintetis Oscar Premium', type: 'OUT', qty: 8, reference: '2608051100002-001', date: '2026-08-07T08:30:00' },
 ];
 
 // ========================================
@@ -882,9 +894,9 @@ export const initialReturnedGoods: ReturnedGood[] = [];
 export const initialDeliveryOrders: DeliveryOrder[] = [
   {
     id: 'do-1',
-    doNumber: 'DO-2026-001',
+    doNumber: '1',
     salesOrderId: 'so-1',
-    salesOrderNumber: 'SO-2026-001',
+    salesOrderNumber: '2607010900001',
     customerName: 'Hotel Grand Mahakam',
     customerAddress: 'Jl. Mahakam No. 6, Jakarta Selatan',
     items: ['Dipan Minimalis Fabric (160x200 cm • Bahan Cover: Midili (Kain)) x2', 'Kasur Rebounded Orthopedic (160x200 cm • Ketebalan: 25 cm) x2'],
@@ -893,6 +905,7 @@ export const initialDeliveryOrders: DeliveryOrder[] = [
     scheduledDate: '2026-07-22',
     status: 'DELIVERED',
     deliveryProofNote: 'Barang diterima oleh Resepsionis Hotel (Ibu Ratna). Kondisi baik, tidak ada kerusakan.',
+    deliveryProofPhoto: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1200&q=80',
     deliveredAt: '2026-07-22T14:00:00',
     createdAt: '2026-07-21T10:00:00',
   },
@@ -904,9 +917,9 @@ export const initialDeliveryOrders: DeliveryOrder[] = [
 export const initialInvoices: Invoice[] = [
   {
     id: 'inv-1',
-    invoiceNumber: 'INV-2026-001',
+    invoiceNumber: '1',
     salesOrderId: 'so-1',
-    salesOrderNumber: 'SO-2026-001',
+    salesOrderNumber: '2607010900001',
     salesName: 'Budi Santoso',
     customerName: 'Hotel Grand Mahakam',
     totalAmount: 9200000,
@@ -921,9 +934,9 @@ export const initialInvoices: Invoice[] = [
   },
   {
     id: 'inv-2',
-    invoiceNumber: 'INV-2026-002',
+    invoiceNumber: '2',
     salesOrderId: 'so-2',
-    salesOrderNumber: 'SO-2026-002',
+    salesOrderNumber: '2608051100002',
     salesName: 'Budi Santoso',
     customerName: 'Bpk. Hendra Gunawan',
     totalAmount: 4250000,
@@ -1121,7 +1134,7 @@ export const initialJournalEntries: JournalEntry[] = [
     id: 'je-seed-11',
     entryNumber: 'JE-2026-0011',
     date: '2026-08-06T11:00:00.000Z',
-    description: 'Pembayaran Penjualan Bpk. Hendra Gunawan #INV-2026-002 (DP 50%)',
+    description: 'Pembayaran Penjualan Bpk. Hendra Gunawan #2 (DP 50%)',
     sourceType: 'INVOICE_PAYMENT',
     sourceId: 'inv-2',
     lines: [
@@ -1134,7 +1147,7 @@ export const initialJournalEntries: JournalEntry[] = [
     id: 'je-seed-10',
     entryNumber: 'JE-2026-0010',
     date: '2026-08-06T09:30:00.000Z',
-    description: 'Penjualan Bpk. Hendra Gunawan #INV-2026-002',
+    description: 'Penjualan Bpk. Hendra Gunawan #2',
     sourceType: 'INVOICE_ISSUED',
     sourceId: 'inv-2',
     lines: [
@@ -1149,7 +1162,7 @@ export const initialJournalEntries: JournalEntry[] = [
     id: 'je-seed-9',
     entryNumber: 'JE-2026-0009',
     date: '2026-07-22T16:00:00.000Z',
-    description: 'Pembayaran Penjualan Hotel Grand Mahakam #INV-2026-001 (Pelunasan)',
+    description: 'Pembayaran Penjualan Hotel Grand Mahakam #1 (Pelunasan)',
     sourceType: 'INVOICE_PAYMENT',
     sourceId: 'inv-1',
     lines: [
@@ -1162,7 +1175,7 @@ export const initialJournalEntries: JournalEntry[] = [
     id: 'je-seed-7',
     entryNumber: 'JE-2026-0007',
     date: '2026-07-22T14:30:00.000Z',
-    description: 'Penjualan Hotel Grand Mahakam #INV-2026-001',
+    description: 'Penjualan Hotel Grand Mahakam #1',
     sourceType: 'INVOICE_ISSUED',
     sourceId: 'inv-1',
     lines: [
@@ -1175,7 +1188,7 @@ export const initialJournalEntries: JournalEntry[] = [
     id: 'je-seed-6',
     entryNumber: 'JE-2026-0006',
     date: '2026-07-12T10:00:00.000Z',
-    description: 'Pembelanjaan PT Oscar Leather Indonesia #PO-2026-002',
+    description: 'Pembelanjaan PT Oscar Leather Indonesia #2',
     sourceType: 'PO_RECEIVED',
     sourceId: 'po-2',
     lines: [
@@ -1188,7 +1201,7 @@ export const initialJournalEntries: JournalEntry[] = [
     id: 'je-seed-8',
     entryNumber: 'JE-2026-0008',
     date: '2026-07-02T14:00:00.000Z',
-    description: 'Pembayaran Penjualan Hotel Grand Mahakam #INV-2026-001 (DP 50%)',
+    description: 'Pembayaran Penjualan Hotel Grand Mahakam #1 (DP 50%)',
     sourceType: 'INVOICE_PAYMENT',
     sourceId: 'inv-1',
     lines: [

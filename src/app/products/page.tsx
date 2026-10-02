@@ -12,17 +12,21 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, getEffectiveVariantBOM, calculateRollupBOMCost } from '@/lib/utils';
 import type { Product, ProductVariantSKU, VariantType, BOMItem, ProductModifierGroup, ProductModifierOption, ProductionOperation } from '@/lib/types';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronUp,
   Tag, X, AlertTriangle, BedDouble, Layers, Box, Grip, FileSpreadsheet, Copy, Clock, Settings,
+  Armchair, Sofa, Package, Lamp, Tv, Coffee, Hammer, Wrench, Frame, Palette, Scissors, Shield,
+  ShoppingBag, Archive, FolderTree, Sparkles,
 } from 'lucide-react';
 import { canManageInventory } from '@/lib/roles';
 
 // ── Icon map ──────────────────────────────────────────────────────────────────
-const iconMap: Record<string, React.ElementType> = { BedDouble, Layers, Box };
-const iconOptions = ['BedDouble', 'Layers', 'Box'];
+const iconMap: Record<string, React.ElementType> = {
+  BedDouble, Layers, Box, Armchair, Sofa, Package, Lamp, Tv, Coffee, Hammer,
+  Wrench, Frame, Palette, Scissors, Shield, Tag, ShoppingBag, Archive, FolderTree, Sparkles,
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function combinationLabel(combination: Record<string, string>): string {
@@ -332,6 +336,7 @@ function ProductsContent() {
     productCategories,
     addProductCategory,
     deleteProductCategory,
+    routings,
     operations,
     attributes,
     addAttribute,
@@ -761,9 +766,17 @@ function ProductsContent() {
                       <tr className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 cursor-pointer" onClick={() => setExpandedProductId(isExpanded ? null : p.id)}>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/50">
-                              <IconComp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                            </div>
+                            {p.image ? (
+                              <img
+                                src={p.image}
+                                alt={p.name}
+                                className="h-9 w-9 shrink-0 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
+                              />
+                            ) : (
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/50">
+                                <IconComp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                              </div>
+                            )}
                             <div>
                               <p className="text-sm font-semibold text-slate-900 dark:text-white">{p.name}</p>
                               <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">{p.description}</p>
@@ -818,7 +831,8 @@ function ProductsContent() {
                                   </thead>
                                   <tbody>
                                     {p.variants.map(v => {
-                                      const bomCost = v.bom.reduce((sum, b) => { const mat = materials.find(m => m.id === b.materialId); return sum + (mat ? mat.unitCost * b.qty : 0); }, 0);
+                                      const effectiveBom = getEffectiveVariantBOM(v, bomTemplateItems);
+                                      const bomCost = calculateRollupBOMCost(effectiveBom, materials, routings, operations);
                                       const margin = v.price > 0 ? ((v.price - bomCost) / v.price * 100).toFixed(1) : '-';
                                       const hours = v.estimatedHours || p.defaultEstimatedHours || 0;
                                       return (
@@ -1123,10 +1137,12 @@ function ProductsContent() {
               ) : (
                 filteredBomTemplates.map(tpl => {
                   const items = bomTemplateItems.filter(item => item.templateId === tpl.id);
-                  const totalCost = items.reduce((sum, item) => {
-                    const mat = materials.find(m => m.id === item.materialId);
-                    return sum + (mat ? mat.unitCost * item.defaultQty : 0);
-                  }, 0);
+                  const totalCost = calculateRollupBOMCost(
+                    items.map(item => ({ materialId: item.materialId, qty: item.defaultQty })),
+                    materials,
+                    routings,
+                    operations
+                  );
                   const isExpanded = expandedBomTemplateId === tpl.id;
 
                   return (

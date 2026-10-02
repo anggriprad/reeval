@@ -37,7 +37,7 @@ import {
   initialRoutings,
   initialOperations,
 } from './initial-data';
-import { generateId } from './utils';
+import { generateId, generateOrderNumber, generateItemUnitNumber } from './utils';
 
 // ============================================================================
 // IN-MEMORY / PERSISTENT STORE INTERFACE
@@ -354,7 +354,7 @@ export function createSalesOrder(orderData: {
   const totalAmount = itemsTotal + (orderData.shippingCost || 0);
 
   const count = store.salesOrders.length + 1;
-  const orderNumber = `SO-${new Date().getFullYear()}-${String(count).padStart(3, '0')}`;
+  const orderNumber = generateOrderNumber(count);
   const now = new Date().toISOString();
 
   const newOrder: SalesOrder = {
@@ -453,7 +453,7 @@ export function updateSalesOrderStatus(
 
         const newWorkOrder: WorkOrder = {
           id: woId,
-          spkNumber: `SPK-${order.orderNumber}-${itemIdx + 1}`,
+          spkNumber: generateItemUnitNumber(order.orderNumber, itemIdx + 1),
           salesOrderId: order.id,
           salesOrderNumber: order.orderNumber,
           productName: item.productName,

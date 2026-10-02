@@ -11,6 +11,9 @@ import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Badge } from '@/components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Toggle } from '@/components/ui/Toggle';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { formatCurrency, generateId, getEffectiveVariantBOM, calculateRollupBOMCost } from '@/lib/utils';
 import type {
   Product,
@@ -22,6 +25,8 @@ import { generateSKU } from '@/lib/product-resolver';
 import {
   Plus,
   X,
+  Check,
+  Filter,
   AlertTriangle,
   BedDouble,
   Layers,
@@ -45,10 +50,53 @@ import {
   Tag,
   ChevronDown,
   ChevronUp,
+  Upload,
+  Image as ImageIcon,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
 } from 'lucide-react';
+import Link from 'next/link';
 
-const iconMap: Record<string, React.ElementType> = { BedDouble, Layers, Box };
-const iconOptions = ['BedDouble', 'Layers', 'Box'];
+const availableIcons: { name: string; label: string; icon: React.ElementType }[] = [
+  { name: 'Box', label: 'Box / Kotak', icon: Box },
+  { name: 'Layers', label: 'Layers / Lapisan', icon: Layers },
+  { name: 'BedDouble', label: 'Tempat Tidur', icon: BedDouble },
+  { name: 'Armchair', label: 'Kursi Santai', icon: Armchair },
+  { name: 'Sofa', label: 'Sofa / Couch', icon: Sofa },
+  { name: 'Package', label: 'Paket / Dus', icon: Package },
+  { name: 'Lamp', label: 'Lampu / Penerangan', icon: Lamp },
+  { name: 'Tv', label: 'Elektronik / TV', icon: Tv },
+  { name: 'Coffee', label: 'Meja Kopi / Kafe', icon: Coffee },
+  { name: 'Hammer', label: 'Pertukangan Kayu', icon: Hammer },
+  { name: 'Wrench', label: 'Perkakas / Rakit', icon: Wrench },
+  { name: 'Frame', label: 'Bingkai / Cermin', icon: Frame },
+  { name: 'Palette', label: 'Finishing / Cat', icon: Palette },
+  { name: 'Scissors', label: 'Kain & Jahit', icon: Scissors },
+  { name: 'Shield', label: 'Proteksi / Garansi', icon: Shield },
+  { name: 'Tag', label: 'Spesial / Custom', icon: Tag },
+  { name: 'ShoppingBag', label: 'Aksesoris', icon: ShoppingBag },
+  { name: 'Archive', label: 'Lemari / Kabinet', icon: Archive },
+  { name: 'FolderTree', label: 'Struktur Produk', icon: FolderTree },
+  { name: 'Sparkles', label: 'Produk Unggulan', icon: Sparkles },
+];
+
+const iconMap: Record<string, React.ElementType> = availableIcons.reduce((acc, curr) => {
+  acc[curr.name] = curr.icon;
+  return acc;
+}, {} as Record<string, React.ElementType>);
 
 interface ProductFormProps {
   initialProduct?: Product;
@@ -68,8 +116,6 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     addProduct,
     updateProduct,
     productCategories,
-    addProductCategory,
-    deleteProductCategory,
   } = useApp();
 
   const isEditMode = !!initialProduct;
@@ -79,13 +125,54 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     return Boolean(initialProduct?.variantTypes && initialProduct.variantTypes.length > 0);
   });
 
-
-
-  // ── 1. Basic Product Info ──────────────────────────────────────────────────
+  // ── 1. Basic Product Info & Visuals ────────────────────────────────────────
   const [name, setName] = useState(initialProduct?.name || '');
   const [description, setDescription] = useState(initialProduct?.description || '');
   const [category, setCategory] = useState(initialProduct?.category || '');
-  const [imageIcon, setImageIcon] = useState(initialProduct?.imageIcon || 'Box');
+  const [visualType, setVisualType] = useState<'image' | 'icon'>(() => {
+    return initialProduct?.image ? 'image' : 'icon';
+  });
+  const [image, setImage] = useState<string>(initialProduct?.image || '');
+  const [imageIcon, setImageIcon] = useState<string>(initialProduct?.imageIcon || 'Box');
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Format Tidak Didukung', 'Harap pilih file gambar (JPG, PNG, atau WebP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File Terlalu Besar', 'Ukuran gambar maksimal adalah 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new (window as any).Image();
+      img.onload = () => {
+        // Auto center crop to 1:1 square
+        const canvas = document.createElement('canvas');
+        const size = Math.min(img.width, img.height);
+        canvas.width = 600;
+        canvas.height = 600;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const sx = (img.width - size) / 2;
+          const sy = (img.height - size) / 2;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, 600, 600);
+          const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          setImage(croppedDataUrl);
+          toast.success('Gambar Berhasil Dipilih', 'Gambar otomatis dipotong proporsional 1:1.');
+        }
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   // ── 2. Single Product States (when hasVariants === false) ───────────────────
   const [singleSku, setSingleSku] = useState<string>(() => {
@@ -138,7 +225,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     if (initialProduct?.variants?.[0]?.presetId) {
       return initialProduct.variants[0].presetId;
     }
-    return bomTemplates[0]?.id || '';
+    return '';
   });
   const [singleNewMatId, setSingleNewMatId] = useState<string>('');
   const [singleNewMatQty, setSingleNewMatQty] = useState<number>(1);
@@ -175,10 +262,26 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
   const [variantTypes, setVariantTypes] = useState<VariantType[]>(() => {
     if (initialProduct?.variantTypes && initialProduct.variantTypes.length > 0) {
-      return structuredClone(initialProduct.variantTypes);
+      return initialProduct.variantTypes.map(vt => ({
+        name: vt.name,
+        values: Array.from(new Set(
+          (vt.values || [])
+            .flatMap(v => (typeof v === 'string' ? v.split(',') : [v]))
+            .map(v => v.trim())
+            .filter(Boolean)
+        )),
+        valueImages: vt.valueImages ? { ...vt.valueImages } : undefined,
+      }));
     }
     return [];
   });
+
+  // Swatch Modal State for Attribute Values
+  const [swatchModalTarget, setSwatchModalTarget] = useState<{
+    typeIdx: number;
+    val: string;
+    previewImage: string;
+  } | null>(null);
 
   // Tracking new attribute value input per variant type
   const [newAttributeValues, setNewAttributeValues] = useState<Record<number, string>>({});
@@ -246,8 +349,18 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
   const [errorMessage, setErrorMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
+
+  // BOM Validation: Produk dan seluruh varian wajib memiliki minimal 1 material
+  const hasBOMError = useMemo(() => {
+    if (!hasVariants) {
+      return effectiveSingleBom.length === 0;
+    }
+    if (variants.length === 0) return true;
+    return variants.some(v => {
+      const eff = v.isCustomBOM ? (v.bom || []) : getEffectiveVariantBOM(v, bomTemplateItems);
+      return eff.length === 0;
+    });
+  }, [hasVariants, effectiveSingleBom, variants, bomTemplateItems]);
 
   // Bahan Setengah Jadi expandable rows state
   const [expandedSubAssemblies, setExpandedSubAssemblies] = useState<Record<string, boolean>>({});
@@ -287,37 +400,34 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const [bulkValIsCustomBOM, setBulkValIsCustomBOM] = useState<boolean>(false);
   const [batchFeedback, setBatchFeedback] = useState<string | null>(null);
 
-  // Attribute Combination Selection Helper
-  const applyAttributeFilterToSelection = (newSelections: Record<string, string>) => {
-    setAttrFilterSelections(newSelections);
+  // Filtered variants based on attrFilterSelections
+  const filteredVariants = useMemo(() => {
+    const activeFilterEntries = Object.entries(attrFilterSelections).filter(([_, val]) => val && val !== 'ALL');
+    if (activeFilterEntries.length === 0) return variants;
+    return variants.filter(v =>
+      activeFilterEntries.every(([attrName, attrVal]) => v.combination[attrName] === attrVal)
+    );
+  }, [variants, attrFilterSelections]);
 
-    const activeFilterEntries = Object.entries(newSelections).filter(([_, val]) => val && val !== 'ALL');
+  // Selection Checkbox Helpers (Filtered vs All)
+  const isAllFilteredSelected = useMemo(() => {
+    if (filteredVariants.length === 0) return false;
+    return filteredVariants.every(v => selectedVariantIds.includes(v.id));
+  }, [filteredVariants, selectedVariantIds]);
 
-    if (activeFilterEntries.length === 0) {
-      setSelectedVariantIds(variants.map(v => v.id));
-      return;
-    }
+  const isFilteredIndeterminate = useMemo(() => {
+    if (filteredVariants.length === 0) return false;
+    const hasSome = filteredVariants.some(v => selectedVariantIds.includes(v.id));
+    return hasSome && !isAllFilteredSelected;
+  }, [filteredVariants, selectedVariantIds, isAllFilteredSelected]);
 
-    const matchingIds = variants
-      .filter(v => {
-        return activeFilterEntries.every(([attrName, attrVal]) => v.combination[attrName] === attrVal);
-      })
-      .map(v => v.id);
-
-    setSelectedVariantIds(matchingIds);
-  };
-
-  // Selection Checkbox Helpers
-  const isAllSelected = useMemo(() => {
-    return variants.length > 0 && selectedVariantIds.length === variants.length;
-  }, [variants, selectedVariantIds]);
-
-  const toggleSelectAll = () => {
-    setAttrFilterSelections({});
-    if (isAllSelected) {
-      setSelectedVariantIds([]);
+  const toggleSelectFiltered = () => {
+    if (isAllFilteredSelected) {
+      const filteredIds = new Set(filteredVariants.map(v => v.id));
+      setSelectedVariantIds(prev => prev.filter(id => !filteredIds.has(id)));
     } else {
-      setSelectedVariantIds(variants.map(v => v.id));
+      const newIds = new Set([...selectedVariantIds, ...filteredVariants.map(v => v.id)]);
+      setSelectedVariantIds(Array.from(newIds));
     }
   };
 
@@ -385,13 +495,26 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   };
 
   const addVariantTypeValue = (typeIdx: number) => {
-    const val = (newAttributeValues[typeIdx] || '').trim();
-    if (!val) return;
+    const rawVal = (newAttributeValues[typeIdx] || '').trim();
+    if (!rawVal) return;
+
+    // Split by comma in case user typed or pasted comma-separated values
+    const itemsToAdd = rawVal
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    if (itemsToAdd.length === 0) return;
 
     setVariantTypes(prev => prev.map((vt, i) => {
       if (i !== typeIdx) return vt;
-      if (vt.values.includes(val)) return vt;
-      return { ...vt, values: [...vt.values, val] };
+      const currentValues = [...vt.values];
+      for (const item of itemsToAdd) {
+        if (!currentValues.includes(item)) {
+          currentValues.push(item);
+        }
+      }
+      return { ...vt, values: currentValues };
     }));
     setNewAttributeValues(prev => ({ ...prev, [typeIdx]: '' }));
   };
@@ -399,7 +522,16 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const removeVariantTypeValue = (typeIdx: number, valIdx: number) => {
     setVariantTypes(prev => prev.map((vt, i) => {
       if (i !== typeIdx) return vt;
-      return { ...vt, values: vt.values.filter((_, vi) => vi !== valIdx) };
+      const valToRemove = vt.values[valIdx];
+      const nextImages = { ...(vt.valueImages || {}) };
+      if (valToRemove && nextImages[valToRemove]) {
+        delete nextImages[valToRemove];
+      }
+      return {
+        ...vt,
+        values: vt.values.filter((_, vi) => vi !== valIdx),
+        valueImages: Object.keys(nextImages).length > 0 ? nextImages : undefined,
+      };
     }));
   };
 
@@ -415,11 +547,96 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const importFromGlobalAttribute = (attrId: string) => {
     const found = attributes.find(a => a.id === attrId);
     if (!found) return;
+
+    const cleanValues = Array.from(new Set(
+      (found.values || [])
+        .flatMap(v => (typeof v === 'string' ? v.split(',') : [v]))
+        .map(v => v.trim())
+        .filter(Boolean)
+    ));
+
     setVariantTypes(prev => {
       const exists = prev.some(vt => vt.name.toLowerCase() === found.name.toLowerCase());
       if (exists) return prev;
-      return [...prev, { name: found.name, values: [...found.values] }];
+      return [...prev, {
+        name: found.name,
+        values: cleanValues,
+        valueImages: found.valueImages ? { ...found.valueImages } : undefined,
+      }];
     });
+  };
+
+  // ── Swatch Image Handlers (Attribute Values) ────────────────────────────────
+  const openSwatchModal = (typeIdx: number, val: string) => {
+    const currentImg = variantTypes[typeIdx]?.valueImages?.[val] || '';
+    setSwatchModalTarget({
+      typeIdx,
+      val,
+      previewImage: currentImg,
+    });
+  };
+
+  const handleSwatchFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Format Tidak Didukung', 'Harap pilih file gambar (JPG, PNG, atau WebP).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const img = new (window as any).Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = Math.min(img.width, img.height);
+        canvas.width = 400;
+        canvas.height = 400;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const sx = (img.width - size) / 2;
+          const sy = (img.height - size) / 2;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, 400, 400);
+          const cropped = canvas.toDataURL('image/jpeg', 0.85);
+          setSwatchModalTarget(prev => (prev ? { ...prev, previewImage: cropped } : null));
+        }
+      };
+      img.src = reader.result as string;
+    };
+  };
+
+  const handleSaveSwatch = () => {
+    if (!swatchModalTarget) return;
+    const { typeIdx, val, previewImage } = swatchModalTarget;
+
+    setVariantTypes(prev => prev.map((vt, i) => {
+      if (i !== typeIdx) return vt;
+      const nextImages = { ...(vt.valueImages || {}) };
+      if (previewImage) {
+        nextImages[val] = previewImage;
+      } else {
+        delete nextImages[val];
+      }
+      return { ...vt, valueImages: Object.keys(nextImages).length > 0 ? nextImages : undefined };
+    }));
+
+    toast.success('Gambar Disimpan', `Gambar swatch untuk "${val}" berhasil disimpan.`);
+    setSwatchModalTarget(null);
+  };
+
+  const handleRemoveSwatch = () => {
+    if (!swatchModalTarget) return;
+    const { typeIdx, val } = swatchModalTarget;
+
+    setVariantTypes(prev => prev.map((vt, i) => {
+      if (i !== typeIdx) return vt;
+      const nextImages = { ...(vt.valueImages || {}) };
+      delete nextImages[val];
+      return { ...vt, valueImages: Object.keys(nextImages).length > 0 ? nextImages : undefined };
+    }));
+
+    toast.success('Gambar Dihapus', `Gambar swatch untuk "${val}" telah dihapus.`);
+    setSwatchModalTarget(null);
   };
 
   const updateVariantField = <K extends keyof ProductVariantSKU>(
@@ -453,22 +670,32 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
   const handleUpdateSingleBomQty = (materialId: string, newQty: number) => {
     const qty = Math.max(0.01, Number(newQty) || 0.01);
-    setSingleBom(prev => prev.map(b => (b.materialId === materialId ? { ...b, qty } : b)));
+    setIsSingleCustomBOM(true);
+    setSingleBom(prev => {
+      const baseBom = prev.length > 0 ? prev : (effectiveSingleBom.length > 0 ? structuredClone(effectiveSingleBom) : []);
+      return baseBom.map(b => (b.materialId === materialId ? { ...b, qty } : b));
+    });
   };
 
   const handleRemoveSingleBomItem = (materialId: string) => {
-    setSingleBom(prev => prev.filter(b => b.materialId !== materialId));
+    setIsSingleCustomBOM(true);
+    setSingleBom(prev => {
+      const baseBom = prev.length > 0 ? prev : (effectiveSingleBom.length > 0 ? structuredClone(effectiveSingleBom) : []);
+      return baseBom.filter(b => b.materialId !== materialId);
+    });
   };
 
   const handleAddManualMaterialToSingle = () => {
     if (!singleNewMatId) return;
     const qty = Math.max(0.01, Number(singleNewMatQty) || 1);
+    setIsSingleCustomBOM(true);
     setSingleBom(prev => {
-      const exists = prev.some(b => b.materialId === singleNewMatId);
+      const baseBom = prev.length > 0 ? prev : (effectiveSingleBom.length > 0 ? structuredClone(effectiveSingleBom) : []);
+      const exists = baseBom.some(b => b.materialId === singleNewMatId);
       if (exists) {
-        return prev.map(b => b.materialId === singleNewMatId ? { ...b, qty: b.qty + qty } : b);
+        return baseBom.map(b => b.materialId === singleNewMatId ? { ...b, qty: b.qty + qty } : b);
       }
-      return [...prev, { materialId: singleNewMatId, qty }];
+      return [...baseBom, { materialId: singleNewMatId, qty }];
     });
     setSingleNewMatId('');
     setSingleNewMatQty(1);
@@ -503,7 +730,13 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     const qtyNum = Math.max(0.01, Number(newQty) || 0.01);
     setVariants(prev => prev.map(v => {
       if (v.id !== activeEditingVariant.id) return v;
-      return { ...v, bom: v.bom.map(b => (b.materialId === materialId ? { ...b, qty: qtyNum } : b)) };
+      const currentEff = getEffectiveVariantBOM(v, bomTemplateItems);
+      const baseBom = (v.bom && v.bom.length > 0) ? v.bom : structuredClone(currentEff);
+      return {
+        ...v,
+        isCustomBOM: true,
+        bom: baseBom.map(b => (b.materialId === materialId ? { ...b, qty: qtyNum } : b)),
+      };
     }));
   };
 
@@ -511,7 +744,13 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     if (!activeEditingVariant) return;
     setVariants(prev => prev.map(v => {
       if (v.id !== activeEditingVariant.id) return v;
-      return { ...v, bom: v.bom.filter(b => b.materialId !== materialId) };
+      const currentEff = getEffectiveVariantBOM(v, bomTemplateItems);
+      const baseBom = (v.bom && v.bom.length > 0) ? v.bom : structuredClone(currentEff);
+      return {
+        ...v,
+        isCustomBOM: true,
+        bom: baseBom.filter(b => b.materialId !== materialId),
+      };
     }));
   };
 
@@ -520,14 +759,16 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     const qty = Math.max(0.01, Number(modalNewMaterialQty) || 1);
     setVariants(prev => prev.map(v => {
       if (v.id !== activeEditingVariant.id) return v;
-      const exists = v.bom.some(b => b.materialId === modalNewMaterialId);
+      const currentEff = getEffectiveVariantBOM(v, bomTemplateItems);
+      const baseBom = (v.bom && v.bom.length > 0) ? v.bom : structuredClone(currentEff);
+      const exists = baseBom.some(b => b.materialId === modalNewMaterialId);
       let updatedBom: BOMItem[];
       if (exists) {
-        updatedBom = v.bom.map(b => b.materialId === modalNewMaterialId ? { ...b, qty: b.qty + qty } : b);
+        updatedBom = baseBom.map(b => b.materialId === modalNewMaterialId ? { ...b, qty: b.qty + qty } : b);
       } else {
-        updatedBom = [...v.bom, { materialId: modalNewMaterialId, qty }];
+        updatedBom = [...baseBom, { materialId: modalNewMaterialId, qty }];
       }
-      return { ...v, bom: updatedBom };
+      return { ...v, isCustomBOM: true, bom: updatedBom };
     }));
     setModalNewMaterialId('');
     setModalNewMaterialQty(1);
@@ -560,6 +801,11 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
+      if (effectiveSingleBom.length === 0) {
+        setErrorMessage('Produk wajib memiliki minimal 1 material dalam Bill of Materials (BOM).');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
     } else {
       if (variants.length === 0) {
         setErrorMessage('Tentukan minimal 1 atribut varian dengan nilai untuk membuat daftar varian.');
@@ -568,6 +814,20 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
       }
       if (variants.some(v => v.price <= 0)) {
         setErrorMessage('Semua varian harus memiliki harga jual lebih besar dari Rp 0.');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      const emptyBOMVariants = variants.filter(v => {
+        const eff = v.isCustomBOM ? (v.bom || []) : getEffectiveVariantBOM(v, bomTemplateItems);
+        return eff.length === 0;
+      });
+      if (emptyBOMVariants.length > 0) {
+        if (emptyBOMVariants.length === 1) {
+          const comboStr = Object.values(emptyBOMVariants[0].combination).join(' / ') || emptyBOMVariants[0].sku;
+          setErrorMessage(`Varian "${comboStr}" belum memiliki material BOM. Setiap varian wajib memiliki minimal 1 material.`);
+        } else {
+          setErrorMessage(`Terdapat ${emptyBOMVariants.length} varian yang belum memiliki material BOM. Setiap varian wajib memiliki minimal 1 material.`);
+        }
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
@@ -587,6 +847,10 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         finalDefaultRoutingId = singleRoutingId || undefined;
         finalDefaultEstimatedHours = singleEstimatedHours || undefined;
         finalVariantTypes = [];
+        const resolvedSingleBom = isSingleCustomBOM
+          ? singleBom
+          : structuredClone(effectiveSingleBom);
+
         finalVariants = [{
           id: initialProduct?.variants?.[0]?.id || `var-${generateId()}`,
           sku: singleSku.trim() || generateSKU(name, {}),
@@ -596,7 +860,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           routingId: singleRoutingId || undefined,
           presetId: singlePresetId || undefined,
           isCustomBOM: isSingleCustomBOM,
-          bom: singleBom,
+          bom: resolvedSingleBom,
           isActive: true,
         }];
       } else {
@@ -604,10 +868,17 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         finalDefaultRoutingId = defaultVariantRoutingId || undefined;
         finalDefaultEstimatedHours = defaultVariantEstimatedHours || undefined;
         finalVariantTypes = variantTypes.filter(vt => vt.name.trim() && vt.values.length > 0);
-        finalVariants = variants.map(v => ({
-          ...v,
-          sku: v.sku.trim() || generateSKU(name, v.combination),
-        }));
+        finalVariants = variants.map(v => {
+          const effectiveBom = getEffectiveVariantBOM(v, bomTemplateItems);
+          const resolvedBom = v.isCustomBOM
+            ? (v.bom || [])
+            : structuredClone(effectiveBom);
+          return {
+            ...v,
+            sku: v.sku.trim() || generateSKU(name, v.combination),
+            bom: resolvedBom,
+          };
+        });
       }
 
       const productPayload: Omit<Product, 'id'> = {
@@ -615,6 +886,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         description: description.trim(),
         category: category.trim(),
         imageIcon,
+        image: visualType === 'image' && image ? image : undefined,
         basePrice: finalBasePrice,
         defaultRoutingId: finalDefaultRoutingId,
         defaultEstimatedHours: finalDefaultEstimatedHours,
@@ -639,7 +911,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   };
 
   return (
-    <form onSubmit={handleSave} className="max-w-5xl mx-auto space-y-6 pb-28">
+    <form onSubmit={handleSave} className="max-w-7xl mx-auto space-y-6 pb-28">
       {/* ── Page Header ── */}
       <PageHeader
         backHref="/products"
@@ -654,7 +926,6 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           Batal
         </Button>
         <Button type="submit" variant="primary" disabled={isSaving}>
-          <Save className="h-4 w-4" />
           {isSaving ? 'Menyimpan...' : isEditMode ? 'Simpan Perubahan' : 'Simpan Produk'}
         </Button>
       </PageHeader>
@@ -670,304 +941,523 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         </div>
       )}
 
-      {/* ── CARD 1: Informasi Dasar Produk & Toggle Varian ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-5">
-        <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <Info className="h-4 w-4 text-indigo-600" />
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-            1. Informasi Dasar Produk
-          </h2>
+      {/* ── BARIS 1: INFORMASI PRODUK & VISUAL PRODUK (2 KOLOM EQUAL HEIGHT) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        {/* Kolom Kiri: Informasi Utama Produk (8 Kolom) */}
+        <div className="lg:col-span-8 flex flex-col">
+          <Card className="flex-1 flex flex-col space-y-4">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Informasi Utama Produk
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Identitas dasar dan klasifikasi produk yang ditampilkan dalam katalog.
+              </p>
+            </div>
+
+            <div className="flex-1 flex flex-col space-y-4">
+              {/* Nama Produk & Kategori (Symmetric with built-in labels) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+                <div className="sm:col-span-2">
+                  <Input
+                    label="Nama Produk"
+                    required
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Contoh: Dipan Minimalis Modern Fabric"
+                    inputSize="sm"
+                  />
+                </div>
+
+                <div>
+                  <Select
+                    label="Kategori"
+                    required
+                    value={category}
+                    onChange={e => setCategory(e.target.value)}
+                    inputSize="sm"
+                    className="w-full"
+                  >
+                    <option value="">-- Pilih Kategori --</option>
+                    {(productCategories || []).map((c: string) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+
+              {/* Deskripsi Produk (Flex to fill card height) */}
+              <div className="flex-1 flex flex-col space-y-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Deskripsi Produk <span className="text-slate-400 font-normal">(Opsional)</span>
+                </label>
+                <textarea
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  placeholder="Spesifikasi umum, material unggulan, dimensi standar, atau catatan perakitan..."
+                  className="w-full flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none min-h-[160px]"
+                />
+              </div>
+            </div>
+          </Card>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2 space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Nama Produk <span className="text-red-500">*</span>
-            </label>
-            <Input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Contoh: Dipan Minimalis Modern Fabric"
-              inputSize="sm"
-              required
-            />
-          </div>
+        {/* Kolom Kanan: Visual Produk (4 Kolom) */}
+        <div className="lg:col-span-4 flex flex-col">
+          <Card className="flex-1 flex flex-col space-y-4">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Visual Produk
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Pilih foto produk asli atau ikon representatif.
+              </p>
+            </div>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Kategori <span className="text-red-500">*</span>
-              </label>
+            {/* Segmented Switcher: Gambar vs Ikon */}
+            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg shrink-0">
               <button
                 type="button"
-                onClick={() => setShowCategoryModal(true)}
-                className="text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                onClick={() => setVisualType('image')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  visualType === 'image'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                }`}
               >
-                + Kelola Kategori
+                Gambar (1:1)
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisualType('icon')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  visualType === 'icon'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                }`}
+              >
+                Ikon
               </button>
             </div>
-            <Select
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              inputSize="sm"
-              placeholder="-- Pilih Kategori Produk --"
-            >
-              {productCategories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-              {!productCategories.includes(category) && category && (
-                <option value={category}>{category}</option>
+
+            {/* Content Body: Flex to fill and center vertically */}
+            <div className="flex-1 flex flex-col justify-center">
+              {/* Mode Gambar (1:1 Square Crop) */}
+              {visualType === 'image' ? (
+                <div className="space-y-2 py-1">
+                  {image ? (
+                    <div className="space-y-2">
+                      <div className="aspect-square w-[170px] h-[170px] mx-auto rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 relative group shadow-sm">
+                        <img
+                          src={image}
+                          alt="Preview Produk"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <label className="p-2 rounded-lg bg-white/95 text-slate-800 hover:bg-white cursor-pointer shadow-md text-xs font-semibold flex items-center gap-1.5 transition-all">
+                            <Upload className="h-3.5 w-3.5" />
+                            <span>Ganti</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleImageFileChange}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setImage('')}
+                            className="p-2 rounded-lg bg-red-600 text-white hover:bg-red-700 shadow-md text-xs font-semibold transition-all"
+                            title="Hapus Gambar"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 px-3">
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">✓ Rasio 1:1 Aktif</span>
+                        <button
+                          type="button"
+                          onClick={() => setImage('')}
+                          className="text-red-500 hover:underline"
+                        >
+                          Hapus Foto
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="aspect-square w-[170px] h-[170px] mx-auto rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-400 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all flex flex-col items-center justify-center p-3 cursor-pointer text-center group">
+                      <div className="p-2.5 rounded-full bg-slate-100 dark:bg-slate-800 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/50 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-1.5">
+                        <Upload className="h-5 w-5" />
+                      </div>
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                        Pilih Foto Produk
+                      </span>
+                      <span className="text-[10px] text-slate-400 mt-0.5">
+                        Rasio 1:1 (Maks. 5MB)
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+              ) : (
+                /* Mode Ikon: Langsung grid pilihan tanpa preview kotak redundant */
+                <div className="grid grid-cols-5 gap-1.5 max-h-[195px] overflow-y-auto pr-0.5 py-1">
+                  {availableIcons.map(ico => {
+                    const Comp = ico.icon;
+                    const active = imageIcon === ico.name;
+                    return (
+                      <button
+                        key={ico.name}
+                        type="button"
+                        onClick={() => setImageIcon(ico.name)}
+                        className={`h-9 rounded-lg border flex items-center justify-center transition-all ${
+                          active
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 font-bold ring-2 ring-indigo-500/20'
+                            : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                        title={ico.label}
+                      >
+                        <Comp className="h-4 w-4" />
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </Select>
-          </div>
-
-          <div className="md:col-span-2 space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Deskripsi Produk <span className="text-slate-400 font-normal">(Opsional)</span>
-            </label>
-            <textarea
-              rows={2}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Spesifikasi umum, material unggulan, atau catatan produksi..."
-              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Ikon Tampilan
-            </label>
-            <div className="flex items-center gap-2">
-              {iconOptions.map(ico => {
-                const Comp = iconMap[ico] || Box;
-                const active = imageIcon === ico;
-                return (
-                  <button
-                    key={ico}
-                    type="button"
-                    onClick={() => setImageIcon(ico)}
-                    className={`flex-1 flex items-center justify-center p-2 rounded-lg border transition-all ${
-                      active
-                        ? 'border-indigo-600 bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400 font-bold shadow-sm'
-                        : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <Comp className="h-5 w-5" />
-                  </button>
-                );
-              })}
             </div>
-          </div>
-        </div>
-
-        {/* ── Toggle Sederhana: Produk Varian ── */}
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
-          <div>
-            <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Produk Varian</span>
-              {hasVariants && (
-                <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 text-[10px] font-bold">
-                  Aktif
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-              Aktifkan jika produk ini memiliki pilihan variasi (seperti ukuran, warna, atau bahan).
-            </p>
-          </div>
-
-          <button
-            type="button"
-            role="switch"
-            aria-checked={hasVariants}
-            onClick={() => setHasVariants(prev => !prev)}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${
-              hasVariants ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
-            }`}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                hasVariants ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
+          </Card>
         </div>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          KONDISI A: PRODUK TUNGGAL (Clean, direct, without complex tables)
-         ════════════════════════════════════════════════════════════════════════ */}
-      {!hasVariants && (
-        <>
-          {/* CARD: Harga & Identifikasi SKU */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-5">
-            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <DollarSign className="h-4 w-4 text-emerald-600" />
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                2. Harga Jual & Identifikasi SKU
-              </h2>
-            </div>
+      {/* ── SECTION BERIKUTNYA KE BAWAH: 1 KOLOM NORMAL PENUH ── */}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {/* Harga Jual */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Harga Jual Produk (Rp) <span className="text-red-500">*</span>
-                </label>
-                <CurrencyInput
-                  value={singlePrice || ''}
-                  onChange={val => setSinglePrice(typeof val === 'number' ? val : 0)}
-                  placeholder="0"
-                  inputSize="sm"
-                />
-              </div>
-            </div>
-
-            {/* Pengaturan Produksi Produk Tunggal */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Alur Routing Produksi <span className="text-[10px] font-normal text-slate-400">(Opsional)</span>
-                </label>
-                <Select
-                  value={singleRoutingId}
-                  onChange={e => setSingleRoutingId(e.target.value)}
-                  inputSize="sm"
-                >
-                  <option value="">Tanpa Routing (Non-SPK Otomatis)</option>
-                  {routings.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Estimasi Jam Kerja Produksi <span className="text-[10px] font-normal text-slate-400">(Jam)</span>
-                </label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={singleEstimatedHours || ''}
-                  onChange={e => setSingleEstimatedHours(parseFloat(e.target.value) || 0)}
-                  placeholder="0"
-                  inputSize="sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* CARD: Blueprint BOM Produk Tunggal */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Layers3 className="h-4 w-4 text-indigo-600" />
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                    3. Blueprint Bill of Materials (BOM)
-                  </h2>
+      {/* CARD: Varian Produk (with Integrated Toggle) */}
+      <Card className="space-y-4">
+            <div className={`flex items-center justify-between gap-4 ${hasVariants ? 'border-b border-slate-100 dark:border-slate-800 pb-3' : ''}`}>
+              <div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Varian Produk</span>
+                  {hasVariants && <Badge variant="info">Aktif</Badge>}
                 </div>
-                <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Estimasi HPP Material: <strong className="text-emerald-600 dark:text-emerald-400 text-sm font-bold ml-1">{formatCurrency(calculateBOMCost(effectiveSingleBom))}</strong>
-                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Aktifkan jika produk memiliki opsi variasi (seperti ukuran, warna, atau bahan).
+                </p>
               </div>
 
-              {/* Control Panel: Master Preset & Custom BOM Toggle */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/40 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-700/80 pb-3">
-                  <div className="space-y-0.5">
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Pilih Master Preset BOM:
-                    </label>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Resep material standar bawaan dari Katalog Preset
+              <Toggle
+                checked={hasVariants}
+                onChange={setHasVariants}
+              />
+            </div>
+
+            {hasVariants && (
+              <>
+                {variantTypes.length === 0 ? (
+                  <div className="text-center py-6 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-500 space-y-1">
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Belum ada atribut varian yang dibuat.</p>
+                    <p className="text-[11px] text-slate-400">
+                      Tambahkan atribut baru atau gunakan dropdown impor dari Master Atribut di bawah.
                     </p>
                   </div>
-                  <select
-                    value={singlePresetId}
-                    onChange={e => setSinglePresetId(e.target.value)}
-                    className="sm:w-64 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="">-- Pilih Master Preset BOM --</option>
-                    {bomTemplates.map(tpl => (
-                      <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Mode Custom BOM Toggle */}
-                <div className="flex items-center justify-between pt-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Mode BOM Produk:</span>
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                      isSingleCustomBOM
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                        : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
-                    }`}>
-                      {isSingleCustomBOM ? (
-                        <><Unlock className="h-3 w-3" /> Custom BoM (Khusus Produk Ini)</>
-                      ) : (
-                        <><Lock className="h-3 w-3" /> Sesuai Preset (Terhubung Live Master)</>
-                      )}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={toggleSingleCustomBOM}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      isSingleCustomBOM ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
-                    }`}
-                    title={isSingleCustomBOM ? 'Beralih ke Mode Sesuai Preset' : 'Beralih ke Mode Custom BoM'}
-                  >
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      isSingleCustomBOM ? 'translate-x-5' : 'translate-x-0'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Information Banner */}
-                {!isSingleCustomBOM ? (
-                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-100 text-indigo-900 dark:bg-indigo-950/30 dark:border-indigo-900/50 dark:text-indigo-300 text-[11px]">
-                    <Info className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />
-                    <div>
-                      <strong className="font-semibold">Mode Sesuai Preset Aktif (Read-Only)</strong> — BOM produk ini terhubung live ke Master Preset. Perubahan pada Master Preset BOM di Katalog akan <strong>otomatis memperbarui</strong> produk ini. Untuk mengubah material khusus produk ini, aktifkan toggle <strong>Mode Custom BoM</strong>.
-                    </div>
-                  </div>
                 ) : (
-                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-900 dark:bg-amber-950/30 dark:border-amber-900/50 dark:text-amber-300 text-[11px]">
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-                    <div>
-                      <strong className="font-semibold">Mode Custom BoM Aktif</strong> — Anda bebas menambah, menghapus, dan mengubah kuantitas bahan baku. Perubahan pada Master Preset BOM di Katalog <strong>tidak akan mempengaruhi</strong> produk ini.
-                    </div>
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {variantTypes.map((vt, idx) => (
+                      <div key={idx} className="py-3.5 first:pt-0 last:pb-1 space-y-2.5">
+                        {/* Header baris: Nama Atribut, Input Nilai Baru, Button Tambah, Button Hapus */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                          <div className="w-full sm:w-48 shrink-0">
+                            <Input
+                              type="text"
+                              value={vt.name}
+                              onChange={e => updateVariantTypeName(idx, e.target.value)}
+                              placeholder="Nama Atribut (Ukuran/Warna)"
+                              inputSize="sm"
+                              className="font-medium"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-1">
+                            <Input
+                              type="text"
+                              value={newAttributeValues[idx] || ''}
+                              onChange={e => setNewAttributeValues(prev => ({ ...prev, [idx]: e.target.value }))}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  addVariantTypeValue(idx);
+                                }
+                              }}
+                              placeholder={vt.values.length === 0 ? "Ketik nilai (misal: 120x200 cm) lalu Enter..." : "Ketik nilai baru lalu Enter..."}
+                              inputSize="sm"
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => addVariantTypeValue(idx)}
+                              disabled={!newAttributeValues[idx]?.trim()}
+                              className="h-8 px-3 text-xs font-semibold shrink-0"
+                            >
+                              <Plus className="h-3.5 w-3.5 mr-1" /> Tambah
+                            </Button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => removeVariantType(idx)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors dark:hover:bg-red-950/40 shrink-0 self-end sm:self-center"
+                            title="Hapus Atribut"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {/* Chips Nilai (Inline, no nested white box) */}
+                        {vt.values.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            {vt.values.map((val, vIdx) => {
+                              const swatchImg = vt.valueImages?.[val];
+                              return (
+                                <span
+                                  key={vIdx}
+                                  className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-xs font-medium dark:bg-slate-800 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700/80 group"
+                                >
+                                  {/* Swatch Thumbnail / Add Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => openSwatchModal(idx, val)}
+                                    className={`w-5 h-5 rounded overflow-hidden shrink-0 flex items-center justify-center transition-all ${
+                                      swatchImg
+                                        ? 'ring-1 ring-slate-300 dark:ring-slate-600 hover:opacity-80 shadow-2xs'
+                                        : 'bg-slate-200/80 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 dark:bg-slate-700/80 dark:hover:bg-indigo-950 dark:hover:text-indigo-400'
+                                    }`}
+                                    title={swatchImg ? `Ubah gambar swatch "${val}"` : `Tambah gambar swatch "${val}"`}
+                                  >
+                                    {swatchImg ? (
+                                      <img src={swatchImg} alt={val} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <ImageIcon className="h-2.5 w-2.5" />
+                                    )}
+                                  </button>
+
+                                  <span>{val}</span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => removeVariantTypeValue(idx, vIdx)}
+                                    className="text-slate-400 hover:text-red-500 rounded transition-colors ml-0.5"
+                                    title={`Hapus ${val}`}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-400 italic pt-0.5">
+                            Belum ada opsi. Ketik nilai di atas lalu klik Tambah atau tekan Enter.
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
 
-              {/* Tabel Material Tunggal */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    size="sm"
+                    onClick={addVariantType}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" /> Tambah Atribut Baru
+                  </Button>
+
+                  {attributes && attributes.length > 0 && (
+                    <div className="flex-1">
+                      <Select
+                        onChange={e => {
+                          if (e.target.value) {
+                            importFromGlobalAttribute(e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                        value=""
+                        inputSize="sm"
+                      >
+                        <option value="" disabled>+ Impor dari Master Atribut...</option>
+                        {attributes.map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </Card>
+
+          {/* ════════════════════════════════════════════════════════════════════
+              KONDISI A: PRODUK TUNGGAL (Clean, direct, without complex tables)
+             ════════════════════════════════════════════════════════════════════ */}
+          {!hasVariants && (
+            <>
+              {/* CARD: Harga & Produksi Produk Tunggal */}
+              <Card className="space-y-4">
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Harga & Produksi
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Penetapan harga komersial, identifikasi SKU, dan alur produksi produk tunggal ini.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Harga Jual */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Harga Jual (Rp) <span className="text-red-500">*</span>
+                    </label>
+                    <CurrencyInput
+                      value={singlePrice || ''}
+                      onChange={val => setSinglePrice(typeof val === 'number' ? val : 0)}
+                      placeholder="0"
+                      inputSize="sm"
+                    />
+                  </div>
+
+                  {/* SKU Single Product */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Kode SKU <span className="text-[10px] font-normal text-slate-400">(Opsional)</span>
+                    </label>
+                    <Input
+                      type="text"
+                      value={singleSku}
+                      onChange={e => {
+                        setSkuManuallyEdited(true);
+                        setSingleSku(e.target.value);
+                      }}
+                      placeholder={generateSKU(name || 'PROD', {})}
+                      inputSize="sm"
+                      className="font-mono uppercase font-bold"
+                    />
+                  </div>
+
+                  {/* Alur Produksi */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Alur Produksi <span className="text-[10px] font-normal text-slate-400">(Opsional)</span>
+                    </label>
+                    <Select
+                      value={singleRoutingId}
+                      onChange={e => setSingleRoutingId(e.target.value)}
+                      inputSize="sm"
+                    >
+                      <option value="">Tanpa Alur Produksi (Non-SPK)</option>
+                      {routings.map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  {/* Estimasi Jam Kerja */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Est. Jam Kerja <span className="text-[10px] font-normal text-slate-400">(Jam)</span>
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={singleEstimatedHours || ''}
+                      onChange={e => setSingleEstimatedHours(parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                      inputSize="sm"
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              {/* CARD: Bill of Materials (BOM) */}
+              <Card className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                      Bill of Materials (BOM)
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Resep kebutuhan bahan baku untuk perakitan produk.
+                    </p>
+                  </div>
+                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400 shrink-0">
+                    Estimasi HPP: <strong className="text-emerald-600 dark:text-emerald-400 text-sm font-bold ml-1">{formatCurrency(calculateBOMCost(effectiveSingleBom))}</strong>
+                  </div>
+                </div>
+
+                {/* Control Bar: Master Preset & Mode BOM */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-2 flex-1 max-w-sm">
+                    <Select
+                      value={singlePresetId}
+                      onChange={e => {
+                        const newPresetId = e.target.value;
+                        setSinglePresetId(newPresetId);
+                        if (newPresetId) {
+                          const tplItems = bomTemplateItems.filter(item => item.templateId === newPresetId);
+                          const cloned = tplItems.map(item => ({ materialId: item.materialId, qty: Number(item.defaultQty) || 1 }));
+                          setSingleBom(cloned);
+                        } else if (!isSingleCustomBOM) {
+                          setSingleBom([]);
+                        }
+                      }}
+                      inputSize="sm"
+                      containerClassName="w-full"
+                    >
+                      <option value="">-- Tanpa Preset (Manual / Kosong) --</option>
+                      {bomTemplates.map(tpl => (
+                        <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      Mode Custom:
+                    </span>
+                    <Toggle
+                      checked={isSingleCustomBOM}
+                      onChange={toggleSingleCustomBOM}
+                      color="indigo"
+                      size="sm"
+                    />
+                  </div>
+                </div>
+
+              {/* Tabel Material Tunggal (Tanpa thead dan tfoot) */}
               {effectiveSingleBom.length === 0 ? (
-                <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/40 text-slate-400">
-                  <Layers className="h-7 w-7 mx-auto mb-1.5 opacity-50 text-slate-400" />
-                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Belum ada bahan baku pada produk ini.</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Pilih preset di atas atau aktifkan Mode Custom BoM untuk membuat resep manual.
+                <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-slate-400">
+                  <Layers className="h-7 w-7 mx-auto mb-1.5 opacity-50 text-slate-400 dark:text-slate-500" />
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-200">Belum ada bahan baku pada produk ini.</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Pilih preset atau tambahkan material untuk menyusun resep BOM.
                   </p>
                 </div>
               ) : (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
-                      <tr>
-                        <th className="px-3 py-2">Bahan Baku</th>
-                        <th className="px-3 py-2 text-right">Biaya Satuan</th>
-                        <th className="px-3 py-2 text-center w-28">Kuantitas</th>
-                        <th className="px-3 py-2 text-center w-20">Satuan</th>
-                        <th className="px-3 py-2 text-right">Subtotal</th>
-                        {isSingleCustomBOM && <th className="px-2 py-2 text-center w-10"></th>}
-                      </tr>
-                    </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {effectiveSingleBom.map((item, idx) => {
                         const mat = materials.find(m => m.id === item.materialId);
@@ -978,7 +1468,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         return (
                           <React.Fragment key={idx}>
                             <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
-                              <td className="px-3 py-2">
+                              <td className="px-3.5 py-2.5">
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold text-slate-900 dark:text-white">{mat?.name || item.materialId}</span>
                                   {mat?.isSubAssembly && (
@@ -997,33 +1487,35 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                 </div>
                                 <div className="text-[10px] text-slate-400">{mat?.code} • {mat?.category}</div>
                               </td>
-                              <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-300 font-medium">
+                              <td className="px-3 py-2.5 text-right text-slate-600 dark:text-slate-300 font-medium">
                                 {formatCurrency(unitCost)}
                               </td>
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-3 py-2.5 text-center w-28">
                                 {isSingleCustomBOM ? (
-                                  <input
+                                  <Input
                                     type="number"
                                     min={0.01}
                                     step={0.01}
                                     value={item.qty}
                                     onChange={e => handleUpdateSingleBomQty(item.materialId, parseFloat(e.target.value) || 0)}
-                                    className="w-20 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-right dark:border-slate-700 dark:bg-slate-800 dark:text-white mx-auto"
+                                    inputSize="sm"
+                                    containerClassName="w-20 mx-auto"
+                                    className="font-bold text-right"
                                   />
                                 ) : (
                                   <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">{item.qty}</span>
                                 )}
                               </td>
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-3 py-2.5 text-center w-20">
                                 <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                                   {mat?.unit || 'unit'}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
+                              <td className="px-3.5 py-2.5 text-right font-bold text-slate-900 dark:text-white">
                                 {formatCurrency(subtotal)}
                               </td>
                               {isSingleCustomBOM && (
-                                <td className="px-2 py-2 text-center">
+                                <td className="px-2 py-2.5 text-center w-10">
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveSingleBomItem(item.materialId)}
@@ -1090,28 +1582,18 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         );
                       })}
                     </tbody>
-                    <tfoot className="bg-slate-50/80 dark:bg-slate-800/60 font-bold border-t border-slate-200 dark:border-slate-700">
-                      <tr>
-                        <td colSpan={4} className="px-3 py-2 text-slate-700 dark:text-slate-300">
-                          Total Estimasi HPP Material Produk
-                        </td>
-                        <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400 text-sm">
-                          {formatCurrency(calculateBOMCost(effectiveSingleBom))}
-                        </td>
-                        {isSingleCustomBOM && <td></td>}
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
               )}
 
-              {/* Tambah Material Manual (Hanya pada Mode Custom BoM) */}
-              {isSingleCustomBOM && (
+              {/* Tambah Material Manual */}
+              {(isSingleCustomBOM || !singlePresetId) && (
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                  <select
+                  <Select
                     value={singleNewMatId}
                     onChange={e => setSingleNewMatId(e.target.value)}
-                    className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+                    inputSize="sm"
+                    containerClassName="flex-1"
                   >
                     <option value="">
                       {availableMaterialsForSingle.length > 0
@@ -1123,10 +1605,10 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         [{m.category}] {m.name} {m.isSubAssembly ? '(Bahan Setengah Jadi) ' : ''}— {formatCurrency(m.unitCost)} / {m.unit}
                       </option>
                     ))}
-                  </select>
+                  </Select>
 
                   <div className="flex items-center gap-2">
-                    <input
+                    <Input
                       type="number"
                       min={0.01}
                       step={0.01}
@@ -1134,319 +1616,153 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                       onChange={e => setSingleNewMatQty(parseFloat(e.target.value) || 1)}
                       placeholder="Qty"
                       disabled={!singleNewMatId}
-                      className="w-20 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-right dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm disabled:opacity-50"
+                      inputSize="sm"
+                      containerClassName="w-20"
+                      className="font-bold text-right"
                     />
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handleAddManualMaterialToSingle}
                       disabled={!singleNewMatId}
+                      size="sm"
                     >
                       <Plus className="h-4 w-4 mr-1" /> Tambah
                     </Button>
                   </div>
                 </div>
               )}
-            </div>
+          </Card>
         </>
       )}
 
       {/* ════════════════════════════════════════════════════════════════════════
-          KONDISI B: PRODUK BERVARIAN (Spesifikasi Atribut + Tabel Kombinasi)
+          KONDISI B: PENGATURAN PRODUKSI & DAFTAR VARIAN FISIK
          ════════════════════════════════════════════════════════════════════════ */}
       {hasVariants && (
         <>
-          {/* CARD: Tipe Atribut Varian (Input -> Add Chip) */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Settings2 className="h-4 w-4 text-indigo-600" />
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                    2. Atribut Spesifikasi Varian
+          {/* CARD: List Daftar Varian & SKU (Industrial Data Table) */}
+          <Card className="space-y-4">
+            {/* Header Card: Title, SKU Counter & Quick Filter Dropdowns */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Daftar Varian & SKU
                   </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Tentukan nama atribut dan tambahkan nilai satu per satu menggunakan input di bawah.
-                  </p>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    {variants.length} SKU
+                  </span>
                 </div>
-              </div>
-            </div>
-
-            {variantTypes.length === 0 ? (
-              <div className="text-center py-7 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/40 text-slate-500 space-y-2">
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Belum ada atribut varian yang dibuat.</p>
-                <p className="text-[11px] text-slate-400 max-w-md mx-auto">
-                  Klik tombol <strong>+ Tambah Atribut Baru</strong> atau gunakan <strong>Impor dari Master Atribut Global</strong> di bawah.
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Konfigurasi SKU, harga komersial, estimasi jam kerja, alur produksi, dan BOM spesifik tiap varian.
                 </p>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {variantTypes.map((vt, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/50 shadow-xs space-y-3"
-                  >
-                    {/* ROW 1: Nama Atribut, Input Nilai Baru + Button Tambah Nilai, and Hapus Atribut (Parallel) */}
-                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
-                      {/* Col 1: Nama Atribut */}
-                      <div className="w-full md:w-56 shrink-0">
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Nama Atribut #{idx + 1}
-                        </label>
-                        <Input
-                          type="text"
-                          value={vt.name}
-                          onChange={e => updateVariantTypeName(idx, e.target.value)}
-                          placeholder="Contoh: Ukuran / Warna"
-                          inputSize="sm"
-                          className="w-full"
-                        />
-                      </div>
 
-                      {/* Col 2: Input Nilai Baru & Button Tambah Nilai (Sejajar) */}
-                      <div className="flex-1 w-full">
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Input Nilai Baru
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="text"
-                            value={newAttributeValues[idx] || ''}
-                            onChange={e => setNewAttributeValues(prev => ({ ...prev, [idx]: e.target.value }))}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                addVariantTypeValue(idx);
-                              }
-                            }}
-                            placeholder={vt.values.length === 0 ? "Ketik nilai (misal: 120x200 cm) lalu Enter..." : "Ketik nilai baru lalu Enter..."}
-                            inputSize="sm"
-                            className="flex-1"
-                          />
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => addVariantTypeValue(idx)}
-                            disabled={!newAttributeValues[idx]?.trim()}
-                            className="h-8 px-3 text-xs font-semibold shrink-0 rounded-md"
-                          >
-                            <Plus className="h-3.5 w-3.5 mr-1" /> Tambah Nilai
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Col 3: Hapus Atribut Button */}
-                      <div className="shrink-0 self-end">
-                        <button
-                          type="button"
-                          onClick={() => removeVariantType(idx)}
-                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors dark:hover:bg-red-950/40 h-8 w-8 flex items-center justify-center border border-transparent"
-                          title="Hapus Seluruh Atribut Ini"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* ROW 2: Hasil nilai yang sudah diinput (Placed Underneath) */}
-                    <div className="pt-2.5 border-t border-slate-200/80 dark:border-slate-800">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Hasil Nilai Di-input ({vt.values.length} Opsi)
-                        </span>
-                      </div>
-
-                      {vt.values.length > 0 ? (
-                        <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-h-[38px]">
-                          {vt.values.map((val, vIdx) => (
-                            <span
-                              key={vIdx}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800 shadow-xs"
-                            >
-                              <span>{val}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeVariantTypeValue(idx, vIdx)}
-                                className="text-indigo-400 hover:text-red-500 rounded transition-colors"
-                                title={`Hapus ${val}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="p-2 rounded-md border border-dashed border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-800/40 text-center">
-                          <span className="text-xs text-slate-400 italic">Belum ada nilai yang diinput. Ketik nilai di atas lalu klik &quot;Tambah Nilai&quot; atau tekan Enter.</span>
-                        </div>
-                      )}
-                    </div>
+              {/* Right: Attribute Filter Dropdowns */}
+              {variants.length > 0 && variantTypes.filter(vt => vt.name.trim() && vt.values.length > 0).length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                    <Filter className="h-3.5 w-3.5" />
+                    <span className="font-medium">Filter:</span>
                   </div>
-                ))}
-              </div>
-            )}
+                  {variantTypes
+                    .filter(vt => vt.name.trim() && vt.values.length > 0)
+                    .map(vt => {
+                      const currentVal = attrFilterSelections[vt.name.trim()] || 'ALL';
+                      const cleanValues = Array.from(new Set(
+                        vt.values
+                          .flatMap(v => (typeof v === 'string' ? v.split(',') : [v]))
+                          .map(v => v.trim())
+                          .filter(Boolean)
+                      ));
 
-            <div className="flex flex-col sm:flex-row gap-3 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                onClick={addVariantType}
-              >
-                <Plus className="h-4 w-4 mr-1.5" /> Tambah Atribut Baru
-              </Button>
+                      return (
+                        <Select
+                          key={vt.name}
+                          value={currentVal}
+                          onChange={e => {
+                            const updated = { ...attrFilterSelections, [vt.name.trim()]: e.target.value };
+                            setAttrFilterSelections(updated);
+                          }}
+                          inputSize="sm"
+                          containerClassName="w-auto min-w-[125px]"
+                        >
+                          <option value="ALL">{vt.name}: Semua</option>
+                          {cleanValues.map(val => (
+                            <option key={val} value={val}>
+                              {vt.name}: {val}
+                            </option>
+                          ))}
+                        </Select>
+                      );
+                    })}
 
-              {attributes && attributes.length > 0 && (
-                <div className="flex-1">
-                  <select
-                    onChange={e => {
-                      if (e.target.value) {
-                        importFromGlobalAttribute(e.target.value);
-                        e.target.value = '';
-                      }
-                    }}
-                    defaultValue=""
-                    className="w-full rounded-md border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer transition-colors shadow-xs"
-                  >
-                    <option value="" disabled>+ Impor dari Master Atribut Global...</option>
-                    {attributes.map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} ({a.values.join(', ')})
-                      </option>
-                    ))}
-                  </select>
+                  {Object.values(attrFilterSelections).some(v => v && v !== 'ALL') && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setAttrFilterSelections({})}
+                      className="text-xs h-8 text-slate-500 hover:text-slate-900 dark:hover:text-white px-2"
+                    >
+                      Reset
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
-          </div>
 
-          {/* CARD: List Daftar Varian & SKU (Tampilan List 2-Baris Standard Industri) */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Layers3 className="h-4 w-4 text-indigo-600" />
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                    3. Daftar Varian Fisik & SKU ({variants.length} Kombinasi)
-                  </h2>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Setiap varian fisik memiliki harga jual, estimasi jam kerja produksi, kode SKU, dan blueprint BOM masing-masing.
-                </p>
-              </div>
-
-              {/* Default Settings Bar for Multi-Variant */}
-              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs shrink-0">
-                <span className="font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5 text-indigo-500" /> Default Jam Kerja:
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={defaultVariantEstimatedHours || ''}
-                  onChange={e => {
-                    const hours = parseFloat(e.target.value) || 0;
-                    setDefaultVariantEstimatedHours(hours);
-                    setVariants(prev => prev.map(v => ({ ...v, estimatedHours: v.estimatedHours || hours })));
-                  }}
-                  placeholder="0"
-                  inputSize="sm"
-                  containerClassName="w-16"
-                  className="font-bold text-center"
-                />
-                <span className="text-slate-400 font-medium">Jam</span>
-              </div>
-            </div>
-
-            {/* Professional Enterprise Batch Actions Bar */}
+            {/* Industrial Batch Action Command Bar (Contextual) */}
             {variants.length > 0 && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/50 space-y-3 text-xs">
-                {/* Baris 1: Filter Seleksi Berdasarkan Atribut / Kombinasi */}
-                {variantTypes.filter(vt => vt.name.trim() && vt.values.length > 0).length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 dark:border-slate-700/80 pb-2.5">
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">Filter Seleksi Varian:</span>
-                    {variantTypes
-                      .filter(vt => vt.name.trim() && vt.values.length > 0)
-                      .map(vt => {
-                        const currentVal = attrFilterSelections[vt.name.trim()] || 'ALL';
-                        return (
-                          <div key={vt.name} className="flex items-center gap-1">
-                            <span className="text-[11px] font-medium text-slate-500">{vt.name.trim()}:</span>
-                            <Select
-                              value={currentVal}
-                              onChange={e => {
-                                const updated = { ...attrFilterSelections, [vt.name.trim()]: e.target.value };
-                                applyAttributeFilterToSelection(updated);
-                              }}
-                              inputSize="sm"
-                              containerClassName="w-auto"
-                            >
-                              <option value="ALL">Semua ({vt.values.length} Nilai)</option>
-                              {vt.values.map(val => (
-                                <option key={val} value={val}>
-                                  {val}
-                                </option>
-                              ))}
-                            </Select>
-                          </div>
-                        );
-                      })}
-
-                    {Object.values(attrFilterSelections).some(v => v && v !== 'ALL') && (
-                      <button
-                        type="button"
-                        onClick={() => applyAttributeFilterToSelection({})}
-                        className="text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400 ml-1"
-                      >
-                        Reset Filter Atribut
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Baris 2: Controls Checkbox & Batch Edit */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <label className="inline-flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-200 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={isAllSelected}
-                        onChange={toggleSelectAll}
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
-                      />
-                      <span>Pilih Semua ({selectedVariantIds.length}/{variants.length} Terpilih)</span>
-                    </label>
+              selectedVariantIds.length > 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800/80 transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                      <Check className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>{selectedVariantIds.length} varian dipilih</span>
+                    </span>
+                    <span className="text-slate-300 dark:text-slate-700">|</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedVariantIds([])}
+                      className="h-7 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-2"
+                    >
+                      Batal Pilihan
+                    </Button>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-600 dark:text-slate-400">Edit Massal:</span>
-                    
-                    {/* Dropdown Field Selector */}
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      Edit Massal:
+                    </span>
+
+                    {/* Field Selector */}
                     <Select
                       value={bulkField}
                       onChange={e => setBulkField(e.target.value as any)}
                       inputSize="sm"
-                      containerClassName="w-auto"
+                      containerClassName="w-auto min-w-[150px]"
                     >
-                      <option value="price">Harga Jual (Nominal Rp)</option>
-                      <option value="price_adjust">Harga Jual (Penyesuaian % / Rp)</option>
-                      <option value="estimatedHours">Estimasi Jam Kerja Produksi (Jam)</option>
-                      <option value="presetId">Master Preset BOM</option>
-                      <option value="isCustomBOM">Mode Custom BoM (ON/OFF)</option>
-                      <option value="routingId">Alur Routing Produksi</option>
-                      <option value="isActive">Status Aktif Varian</option>
+                      <option value="price">Harga Jual (Rp)</option>
+                      <option value="price_adjust">Penyesuaian Harga (% / Rp)</option>
+                      <option value="estimatedHours">Estimasi Jam Kerja</option>
+                      <option value="presetId">Preset BOM</option>
+                      <option value="isCustomBOM">Mode BOM</option>
+                      <option value="routingId">Alur Produksi</option>
+                      <option value="isActive">Status Aktif</option>
                     </Select>
 
-                    {/* Input Dynamic Component according to selected Field */}
+                    {/* Dynamic Field Input */}
                     {bulkField === 'price' && (
                       <CurrencyInput
                         value={bulkValPrice || ''}
                         onChange={val => setBulkValPrice(typeof val === 'number' ? val : 0)}
                         placeholder="0"
                         inputSize="sm"
-                        containerClassName="w-36"
+                        containerClassName="w-32"
                       />
                     )}
 
@@ -1458,27 +1774,27 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                           step={0.5}
                           value={bulkValEstimatedHours || ''}
                           onChange={e => setBulkValEstimatedHours(parseFloat(e.target.value) || 0)}
-                          placeholder="Jam"
+                          placeholder="0"
                           inputSize="sm"
                           containerClassName="w-20"
                           className="font-mono font-bold"
                         />
-                        <span className="text-xs font-semibold text-slate-500">Jam</span>
+                        <span className="text-xs font-medium text-slate-500">Jam</span>
                       </div>
                     )}
 
                     {bulkField === 'price_adjust' && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
                         <Select
                           value={bulkValAdjustType}
                           onChange={e => setBulkValAdjustType(e.target.value as any)}
                           inputSize="sm"
                           containerClassName="w-auto"
                         >
-                          <option value="percent_up">+ Persen (%)</option>
-                          <option value="percent_down">- Persen (%)</option>
-                          <option value="nominal_up">+ Nominal (Rp)</option>
-                          <option value="nominal_down">- Nominal (Rp)</option>
+                          <option value="percent_up">+ (%)</option>
+                          <option value="percent_down">- (%)</option>
+                          <option value="nominal_up">+ (Rp)</option>
+                          <option value="nominal_down">- (Rp)</option>
                         </Select>
                         <Input
                           type="number"
@@ -1487,7 +1803,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                           onChange={e => setBulkValAdjustVal(parseFloat(e.target.value) || 0)}
                           placeholder="0"
                           inputSize="sm"
-                          containerClassName="w-20"
+                          containerClassName="w-24"
                           className="font-mono font-bold"
                         />
                       </div>
@@ -1498,9 +1814,9 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         value={bulkValPresetId}
                         onChange={e => setBulkValPresetId(e.target.value)}
                         inputSize="sm"
-                        containerClassName="max-w-[200px]"
+                        containerClassName="w-auto min-w-[170px]"
                       >
-                        <option value="">-- Pilih Master Preset BOM --</option>
+                        <option value="">-- Tanpa Preset --</option>
                         {bomTemplates.map(tpl => (
                           <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
                         ))}
@@ -1514,8 +1830,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         inputSize="sm"
                         containerClassName="w-auto"
                       >
-                        <option value="false">Sesuai Preset (Master Live)</option>
-                        <option value="true">Custom BoM (Kustom Varian)</option>
+                        <option value="false">Sesuai Preset</option>
+                        <option value="true">Custom BoM</option>
                       </Select>
                     )}
 
@@ -1524,9 +1840,9 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         value={bulkValRoutingId}
                         onChange={e => setBulkValRoutingId(e.target.value)}
                         inputSize="sm"
-                        containerClassName="max-w-[200px]"
+                        containerClassName="w-auto min-w-[170px]"
                       >
-                        <option value="">-- Pilih Alur Routing --</option>
+                        <option value="">-- Tanpa Alur Produksi --</option>
                         {routings.map(r => (
                           <option key={r.id} value={r.id}>{r.name}</option>
                         ))}
@@ -1550,254 +1866,306 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                       variant="primary"
                       size="sm"
                       onClick={handleApplyBatchEdit}
-                      disabled={selectedVariantIds.length === 0}
-                      className="text-xs px-3 font-semibold"
+                      className="text-xs font-semibold px-3 h-8"
                     >
-                      Terapkan ke {selectedVariantIds.length} Varian
+                      Terapkan
                     </Button>
                   </div>
                 </div>
-
-                {batchFeedback && (
-                  <div className="w-full text-emerald-600 dark:text-emerald-400 font-semibold text-xs pt-1">
-                    ✓ {batchFeedback}
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-[11px]">
+                    Centang checkbox pada baris varian untuk menerapkan <strong>Edit Massal</strong> pada harga, jam kerja, alur produksi, atau BOM sekaligus.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedVariantIds(variants.map(v => v.id))}
+                    className="text-xs h-7 px-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700"
+                  >
+                    Pilih Semua ({variants.length})
+                  </Button>
+                </div>
+              )
             )}
 
-            {/* List 2-Baris Varian */}
+            {/* Industrial Data Table for Variant SKUs */}
             {variants.length === 0 ? (
-              <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/40 text-slate-400">
+              <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
                 <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Belum ada kombinasi varian terbentuk.</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Tambahkan nama atribut dan tambahkan nilai-nilai di Bagian 2 di atas.
+                  Tambahkan nama atribut dan nilai-nilainya pada panel Varian Produk di atas.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3.5">
-                {variants.map(variant => {
-                  const comboEntries = Object.entries(variant.combination);
-                  const label = comboEntries.length > 0
-                    ? comboEntries.map(([k, v]) => `${k}: ${v}`).join(' • ')
-                    : 'Standar';
-
-                  const effectiveBom = getEffectiveVariantBOM(variant, bomTemplateItems);
-                  const bomCost = calculateBOMCost(effectiveBom);
-                  const hasBom = effectiveBom.length > 0;
-                  const isSelected = selectedVariantIds.includes(variant.id);
-                  const isCustom = Boolean(variant.isCustomBOM);
-
-                  return (
-                    <div
-                      key={variant.id}
-                      className={`rounded-2xl border transition-all duration-200 p-4 space-y-3.5 shadow-sm ${
-                        isSelected
-                          ? 'border-indigo-500/80 bg-indigo-50/30 dark:border-indigo-500/70 dark:bg-indigo-950/20 ring-1 ring-indigo-500/30'
-                          : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700'
-                      }`}
-                    >
-                      {/* ROW 1: Header (Checkbox, Kombinasi Badge, Kode SKU, & Status Toggle) */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800/80 pb-3">
-                        <div className="flex flex-wrap items-center gap-3 min-w-0 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelectRow(variant.id)}
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer shrink-0"
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 font-semibold uppercase text-[11px] tracking-wider">
+                        <th className="py-2.5 px-3 w-10 text-center">
+                          <Checkbox
+                            checked={isAllFilteredSelected}
+                            indeterminate={isFilteredIndeterminate}
+                            onChange={toggleSelectFiltered}
+                            size="sm"
                           />
-
-                          {/* Badge Kombinasi Spesifikasi */}
-                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200/80 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800/60 text-xs font-bold shrink-0">
-                            <Tag className="h-3.5 w-3.5 text-indigo-500" />
-                            <span>{label}</span>
-                          </div>
-
-                          {/* Field SKU */}
-                          <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-xs">
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0">SKU:</span>
-                            <Input
-                              type="text"
-                              value={variant.sku}
-                              onChange={e => updateVariantField(variant.id, 'sku', e.target.value)}
-                              placeholder="Kode SKU"
-                              inputSize="sm"
-                              className="font-mono font-bold uppercase"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Right Status Switch & Action */}
-                        <div className="flex items-center gap-3 shrink-0">
-                          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Status Varian:</span>
-                            <button
+                        </th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Varian</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Kode SKU</th>
+                        <th className="py-2.5 px-3 min-w-[140px]">Harga Jual</th>
+                        <th className="py-2.5 px-3 min-w-[105px]">Est. Jam</th>
+                        <th className="py-2.5 px-3 min-w-[150px]">Alur Produksi</th>
+                        <th className="py-2.5 px-3 min-w-[170px]">BOM & HPP</th>
+                        <th className="py-2.5 px-3 w-20 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                      {filteredVariants.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                            <p className="text-xs font-medium">Tidak ada varian yang sesuai dengan filter atribut.</p>
+                            <Button
                               type="button"
-                              onClick={() => updateVariantField(variant.id, 'isActive', !variant.isActive)}
-                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                variant.isActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setAttrFilterSelections({})}
+                              className="mt-2 text-xs text-indigo-600 dark:text-indigo-400"
+                            >
+                              Reset Filter
+                            </Button>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredVariants.map(variant => {
+                          const comboEntries = Object.entries(variant.combination);
+                          const effectiveBom = getEffectiveVariantBOM(variant, bomTemplateItems);
+                          const bomCost = calculateBOMCost(effectiveBom);
+                          const hasBom = effectiveBom.length > 0;
+                          const isSelected = selectedVariantIds.includes(variant.id);
+                          const isCustom = Boolean(variant.isCustomBOM);
+
+                          return (
+                            <tr
+                              key={variant.id}
+                              className={`transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40 ${
+                                isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''
                               }`}
                             >
-                              <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                variant.isActive ? 'translate-x-4' : 'translate-x-0'
-                              }`} />
-                            </button>
-                            <span className={`text-xs font-bold ${variant.isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
-                              {variant.isActive ? 'Aktif' : 'Non-Aktif'}
-                            </span>
-                          </label>
-                        </div>
-                      </div>
+                              {/* Col 1: Row Checkbox */}
+                              <td className="py-2 px-3 text-center align-middle">
+                                <Checkbox
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectRow(variant.id)}
+                                  size="sm"
+                                />
+                              </td>
 
-                      {/* ROW 2: Input Grid 4-Column (Harga, Estimasi Jam Kerja, Alur Routing, BOM Blueprint) */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 items-end pt-0.5">
-                        {/* Col 1: Harga Jual */}
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                            <DollarSign className="h-3.5 w-3.5 text-emerald-600" /> Harga Jual (Rp)
-                          </label>
-                          <CurrencyInput
-                            value={variant.price || ''}
-                            onChange={val => updateVariantField(variant.id, 'price', typeof val === 'number' ? val : 0)}
-                            placeholder="0"
-                            inputSize="sm"
-                          />
-                        </div>
+                              {/* Col 2: Varian Combination Chips */}
+                              <td className="py-2 px-3 align-middle">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {comboEntries.map(([k, v]) => {
+                                    const matchedVt = variantTypes.find(vt => vt.name.trim() === k.trim());
+                                    const valImg = matchedVt?.valueImages?.[v];
+                                    return (
+                                      <span
+                                        key={k}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700"
+                                      >
+                                        {valImg && (
+                                          <img
+                                            src={valImg}
+                                            alt={v}
+                                            className="w-3.5 h-3.5 rounded object-cover border border-slate-300 dark:border-slate-600 shrink-0"
+                                          />
+                                        )}
+                                        <span className="text-slate-400 font-normal mr-0.5">{k}:</span>
+                                        {v}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </td>
 
-                        {/* Col 2: Estimasi Jam Kerja Produksi */}
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                            <Clock className="h-3.5 w-3.5 text-indigo-500" /> Est. Jam Kerja (Jam)
-                          </label>
-                          <Input
-                            type="number"
-                            min={0}
-                            step={0.5}
-                            value={variant.estimatedHours ?? ''}
-                            onChange={e => updateVariantField(variant.id, 'estimatedHours', parseFloat(e.target.value) || 0)}
-                            placeholder="0"
-                            inputSize="sm"
-                            className="font-bold"
-                          />
-                        </div>
+                              {/* Col 3: SKU Input */}
+                              <td className="py-2 px-2.5 align-middle">
+                                <Input
+                                  type="text"
+                                  value={variant.sku}
+                                  onChange={e => updateVariantField(variant.id, 'sku', e.target.value)}
+                                  placeholder="SKU"
+                                  inputSize="sm"
+                                  className="font-mono text-xs font-semibold uppercase"
+                                />
+                              </td>
 
-                        {/* Col 3: Alur Routing Produksi */}
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                            <Wrench className="h-3.5 w-3.5 text-slate-500" /> Alur Routing
-                          </label>
-                          <Select
-                            value={variant.routingId || ''}
-                            onChange={e => updateVariantField(variant.id, 'routingId', e.target.value)}
-                            inputSize="sm"
-                          >
-                            <option value="">Tanpa Routing</option>
-                            {routings.map(r => (
-                              <option key={r.id} value={r.id}>{r.name}</option>
-                            ))}
-                          </Select>
-                        </div>
+                              {/* Col 4: Price Input */}
+                              <td className="py-2 px-2.5 align-middle">
+                                <CurrencyInput
+                                  value={variant.price || ''}
+                                  onChange={val => updateVariantField(variant.id, 'price', typeof val === 'number' ? val : 0)}
+                                  placeholder="0"
+                                  inputSize="sm"
+                                />
+                              </td>
 
-                        {/* Col 4: Blueprint BOM & HPP */}
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                            <span className="flex items-center gap-1"><Layers3 className="h-3.5 w-3.5 text-purple-500" /> BOM Material</span>
-                            {hasBom && (
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
-                                HPP: {formatCurrency(bomCost)}
-                              </span>
-                            )}
-                          </label>
-                          <Button
-                            type="button"
-                            variant={hasBom ? 'secondary' : 'outline'}
-                            size="sm"
-                            onClick={() => {
-                              setEditingBOMVariantId(variant.id);
-                              setModalPresetTemplateId(variant.presetId || bomTemplates[0]?.id || '');
-                              setModalCloneFeedback(null);
-                            }}
-                            className={`w-full text-xs h-8 font-semibold justify-between px-3 ${
-                              isCustom
-                                ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
-                                : 'bg-indigo-50/70 text-indigo-900 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
-                            }`}
-                          >
-                            <span className="flex items-center gap-1.5">
-                              {isCustom ? (
-                                <Unlock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                              ) : (
-                                <Lock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                              )}
-                              {hasBom ? `${effectiveBom.length} Material` : 'Atur BOM'}
-                            </span>
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold uppercase ${
-                              isCustom
-                                ? 'bg-amber-200/80 text-amber-900 dark:bg-amber-900/80 dark:text-amber-200'
-                                : 'bg-indigo-200/80 text-indigo-900 dark:bg-indigo-900/80 dark:text-indigo-200'
-                            }`}>
-                              {isCustom ? 'Custom' : 'Preset'}
-                            </span>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                              {/* Col 5: Estimated Hours */}
+                              <td className="py-2 px-2.5 align-middle">
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={0.5}
+                                    value={variant.estimatedHours ?? ''}
+                                    onChange={e => updateVariantField(variant.id, 'estimatedHours', parseFloat(e.target.value) || 0)}
+                                    placeholder="0"
+                                    inputSize="sm"
+                                    className="font-mono text-xs text-right font-medium"
+                                  />
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 shrink-0">jam</span>
+                                </div>
+                              </td>
+
+                              {/* Col 6: Routing Select */}
+                              <td className="py-2 px-2.5 align-middle">
+                                <Select
+                                  value={variant.routingId || ''}
+                                  onChange={e => updateVariantField(variant.id, 'routingId', e.target.value)}
+                                  inputSize="sm"
+                                >
+                                  <option value="">Tanpa Alur Produksi</option>
+                                  {routings.map(r => (
+                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                  ))}
+                                </Select>
+                              </td>
+
+                              {/* Col 7: BOM Trigger Button */}
+                              <td className="py-2 px-2.5 align-middle">
+                                <Button
+                                  type="button"
+                                  variant={hasBom ? 'secondary' : 'outline'}
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingBOMVariantId(variant.id);
+                                    setModalPresetTemplateId(variant.presetId || '');
+                                    setModalCloneFeedback(null);
+                                  }}
+                                  className="w-full text-xs h-8 font-medium justify-between px-2.5"
+                                >
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    {isCustom ? (
+                                      <Unlock className="h-3 w-3 text-amber-500 shrink-0" />
+                                    ) : (
+                                      <Lock className="h-3 w-3 text-slate-400 shrink-0" />
+                                    )}
+                                    <span className="truncate">{hasBom ? `${effectiveBom.length} Mat` : 'BOM'}</span>
+                                  </span>
+                                  {hasBom && (
+                                    <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 ml-1 shrink-0">
+                                      {formatCurrency(bomCost)}
+                                    </span>
+                                  )}
+                                </Button>
+                              </td>
+
+                              {/* Col 8: Status Toggle */}
+                              <td className="py-2 px-2 text-center align-middle">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Toggle
+                                    size="sm"
+                                    color="emerald"
+                                    checked={variant.isActive}
+                                    onChange={() => updateVariantField(variant.id, 'isActive', !variant.isActive)}
+                                  />
+                                  <span className={`text-[10px] font-semibold w-6 text-left ${
+                                    variant.isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+                                  }`}>
+                                    {variant.isActive ? 'Aktif' : 'Off'}
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Table Footer: Summary & Legend */}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-50/80 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      Menampilkan <strong>{filteredVariants.length}</strong> dari <strong>{variants.length}</strong> varian
+                    </span>
+                    {selectedVariantIds.length > 0 && (
+                      <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                        • {selectedVariantIds.length} varian dipilih
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px]">
+                    <span className="flex items-center gap-1">
+                      <Lock className="h-3 w-3 text-slate-400" /> Preset BOM
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Unlock className="h-3 w-3 text-amber-500" /> Custom BOM
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
+          </Card>
         </>
       )}
-
-      {/* ── CARD 4 / 5: Modifier & Add-on Opsional ── */}
+      {/* CARD: Modifier & Add-on Opsional (Full Width) */}
       {masterModifierGroups && masterModifierGroups.length > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
-          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-            <Settings2 className="h-4 w-4 text-purple-600" />
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                {hasVariants ? '4. Modifier & Add-on Tambahan (Opsional)' : '4. Modifier & Add-on Tambahan (Opsional)'}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Opsi tambahan yang dapat dipilih konsumen saat transaksi (misal: penambahan laci atau kain premium).
-              </p>
-            </div>
+        <Card className="space-y-3">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Modifier & Add-on
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Pilih grup modifier atau add-on opsional yang dapat dipilih konsumen saat memesan produk ini.
+            </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {masterModifierGroups.map(group => {
               const isChecked = modifierGroupIds.includes(group.id);
               return (
                 <label
                   key={group.id}
-                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                  className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
                     isChecked
-                      ? 'border-purple-300 bg-purple-50/40 dark:border-purple-800 dark:bg-purple-950/20 shadow-sm'
+                      ? 'border-purple-300 bg-purple-50/50 dark:border-purple-800 dark:bg-purple-950/30'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-800/40'
                   }`}
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={isChecked}
-                    onChange={e => {
-                      if (e.target.checked) setModifierGroupIds(prev => [...prev, group.id]);
+                    onChange={checked => {
+                      if (checked) setModifierGroupIds(prev => [...prev, group.id]);
                       else setModifierGroupIds(prev => prev.filter(id => id !== group.id));
                     }}
-                    className="mt-0.5 rounded border-slate-300 text-purple-600 h-4 w-4 focus:ring-purple-500"
+                    size="sm"
+                    className="mt-0.5"
                   />
-                  <div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">{group.name}</div>
-                    <div className="text-[11px] text-slate-500">{group.options.length} opsi tersedia</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">{group.name}</div>
+                    <div className="text-[10px] text-slate-500">{group.options.length} opsi</div>
                   </div>
                 </label>
               );
             })}
           </div>
-        </div>
+        </Card>
       )}
 
-      {/* ── STICKY BOTTOM SAVE BAR ── */}
-      <div className="sticky bottom-4 z-20 flex items-center justify-between p-4 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 shadow-xl">
+      {/* ── BOTTOM ACTION BAR (Normal Flow) ── */}
+      <div className="flex items-center justify-between p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
         <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
           <span className="font-bold text-slate-900 dark:text-white">{name || 'Produk Baru'}</span>
           <span className="mx-2">•</span>
@@ -1812,60 +2180,17 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           >
             Batal
           </Button>
-          <Button type="submit" variant="primary" disabled={isSaving}>
-            <Save className="h-4 w-4" />
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={isSaving || hasBOMError}
+          >
             {isSaving ? 'Menyimpan...' : isEditMode ? 'Simpan Perubahan' : 'Simpan Produk'}
           </Button>
         </div>
       </div>
 
-      {/* ── MODAL: Kelola Kategori Produk ── */}
-      {showCategoryModal && (
-        <Modal
-          isOpen={true}
-          onClose={() => setShowCategoryModal(false)}
-          title="Kelola Kategori Produk"
-          actions={<Button type="button" onClick={() => setShowCategoryModal(false)}>Selesai</Button>}
-        >
-          <div className="space-y-4 text-xs">
-            <div className="flex gap-2">
-              <Input
-                type="text"
-                value={newCatName}
-                onChange={e => setNewCatName(e.target.value)}
-                placeholder="Nama kategori baru..."
-                inputSize="sm"
-                containerClassName="flex-1"
-              />
-              <Button
-                type="button"
-                onClick={() => {
-                  if (newCatName.trim()) {
-                    addProductCategory(newCatName.trim());
-                    setNewCatName('');
-                  }
-                }}
-              >
-                + Tambah
-              </Button>
-            </div>
-            <div className="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 max-h-56 overflow-y-auto">
-              {productCategories.map(cat => (
-                <div key={cat} className="flex items-center justify-between px-3 py-2">
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{cat}</span>
-                  <button
-                    type="button"
-                    onClick={() => deleteProductCategory(cat)}
-                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/40"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Modal>
-      )}
+
 
       {/* ── MODAL: Kelola BOM Varian Fisik ── */}
       {activeEditingVariant && (() => {
@@ -1895,7 +2220,17 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         const handleModalChangePreset = (newPresetId: string) => {
           setVariants(prev => prev.map(v => {
             if (v.id !== activeEditingVariant.id) return v;
-            return { ...v, presetId: newPresetId };
+            let clonedBom = v.bom;
+            if (newPresetId) {
+              const tplItems = bomTemplateItems.filter(item => item.templateId === newPresetId);
+              clonedBom = tplItems.map(item => ({ materialId: item.materialId, qty: Number(item.defaultQty) || 1 }));
+            }
+            return {
+              ...v,
+              presetId: newPresetId,
+              isCustomBOM: false,
+              bom: clonedBom,
+            };
           }));
         };
 
@@ -1903,16 +2238,15 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           <Modal
             isOpen={true}
             onClose={() => setEditingBOMVariantId(null)}
-            title="Kelola Blueprint BOM Varian"
+            title="Kelola BOM Varian"
             size="xl"
             actions={
               <Button
                 type="button"
                 variant="primary"
                 onClick={() => setEditingBOMVariantId(null)}
-                className="px-5 shadow-sm"
               >
-                Selesai & Simpan Blueprint
+                Selesai
               </Button>
             }
           >
@@ -1921,17 +2255,28 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
               <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900 text-white dark:bg-slate-800 border border-slate-800 dark:border-slate-700 shadow-sm">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 rounded-lg bg-indigo-600/30 text-indigo-400 border border-indigo-500/30">
-                    <Layers3 className="h-4 w-4 text-indigo-400" />
+                    <Box className="h-4 w-4 text-indigo-400" />
                   </div>
                   <div>
                     <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Varian Target</div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                       {Object.entries(activeEditingVariant.combination).length > 0 ? (
-                        Object.entries(activeEditingVariant.combination).map(([k, v]) => (
-                          <span key={k} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-200 border border-slate-700">
-                            <span className="text-slate-400 mr-1">{k}:</span> {v}
-                          </span>
-                        ))
+                        Object.entries(activeEditingVariant.combination).map(([k, v]) => {
+                          const matchedVt = variantTypes.find(vt => vt.name.trim() === k.trim());
+                          const valImg = matchedVt?.valueImages?.[v];
+                          return (
+                            <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-200 border border-slate-700">
+                              {valImg && (
+                                <img
+                                  src={valImg}
+                                  alt={v}
+                                  className="w-3.5 h-3.5 rounded object-cover border border-slate-600 shrink-0"
+                                />
+                              )}
+                              <span className="text-slate-400 mr-0.5">{k}:</span> {v}
+                            </span>
+                          );
+                        })
                       ) : (
                         <span className="font-semibold text-xs text-white">Default Single Variant</span>
                       )}
@@ -1956,75 +2301,32 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                 </div>
               </div>
 
-              {/* Control Panel: Master Preset & Custom BOM Toggle */}
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 min-w-[200px]">
-                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                        Pilih Master Preset BOM Varian:
-                      </label>
-                      <Select
-                        value={activeEditingVariant.presetId || ''}
-                        onChange={e => handleModalChangePreset(e.target.value)}
-                        inputSize="sm"
-                      >
-                        <option value="">-- Pilih Master Preset BOM --</option>
-                        {bomTemplates.map(tpl => (
-                          <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
-                        ))}
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Mode Toggle Switch */}
-                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <div className="flex flex-col text-right">
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        {isModalCustomBOM ? 'Custom BoM' : 'Sesuai Preset'}
-                      </span>
-                      <span className="text-[10px] font-medium text-slate-500 flex items-center justify-end gap-1">
-                        {isModalCustomBOM ? (
-                          <><Unlock className="h-3 w-3 text-amber-600" /> Kustom Varian</>
-                        ) : (
-                          <><Lock className="h-3 w-3 text-emerald-600" /> Live Master</>
-                        )}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleModalToggleCustomBOM}
-                      title={isModalCustomBOM ? 'Beralih ke Mode Sesuai Preset' : 'Beralih ke Mode Custom BoM'}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        isModalCustomBOM ? 'bg-amber-600' : 'bg-slate-300 dark:bg-slate-600'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                          isModalCustomBOM ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
+              {/* Control Panel: Master Preset BOM & Mode BOM dalam 1 Baris */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-800/40">
+                <div className="flex-1 max-w-xs">
+                  <Select
+                    value={activeEditingVariant.presetId || ''}
+                    onChange={e => handleModalChangePreset(e.target.value)}
+                    inputSize="sm"
+                    containerClassName="w-full"
+                  >
+                    <option value="">-- Pilih Preset BOM (Kosong) --</option>
+                    {bomTemplates.map(tpl => (
+                      <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                    ))}
+                  </Select>
                 </div>
 
-                {/* Status Mode Alert */}
-                {!isModalCustomBOM ? (
-                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-300 text-xs">
-                    <Lock className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
-                    <div>
-                      <strong className="font-semibold">Mode Sesuai Preset Aktif (Read-Only)</strong> — BOM varian ini terhubung live ke Master Preset. Perubahan pada Master Preset BOM di Katalog Preset akan <strong>otomatis memperbarui</strong> varian ini. Untuk membuat kustomisasi bahan pada varian ini, aktifkan toggle <strong>Mode Custom BoM</strong>.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-800 dark:bg-amber-950/30 dark:border-amber-900/50 dark:text-amber-300 text-xs">
-                    <Unlock className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                    <div>
-                      <strong className="font-semibold">Mode Custom BoM Aktif</strong> — Anda bebas menambah, menghapus, dan mengubah kuantitas bahan baku pada varian ini. Perubahan pada Master Preset BOM di Katalog <strong>tidak akan mempengaruhi</strong> varian ini.
-                    </div>
-                  </div>
-                )}
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Mode Custom:
+                  </span>
+                  <Toggle
+                    checked={isModalCustomBOM}
+                    onChange={handleModalToggleCustomBOM}
+                    color="indigo"
+                  />
+                </div>
               </div>
 
               {/* Box 2: Material Grid on this Variant */}
@@ -2062,30 +2364,16 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                 </div>
 
                 {effectiveModalBom.length === 0 ? (
-                  <div className="text-center py-7 px-4 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30">
-                    <div className="w-9 h-9 mx-auto mb-2 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
-                      <Layers className="h-5 w-5 opacity-60" />
-                    </div>
+                  <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-slate-400">
+                    <Layers className="h-7 w-7 mx-auto mb-1.5 opacity-50 text-slate-400 dark:text-slate-500" />
                     <p className="font-semibold text-xs text-slate-700 dark:text-slate-200">Belum ada material untuk varian ini.</p>
-                    <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-                      {isModalCustomBOM
-                        ? 'Pilih bahan baku di bawah untuk menambahkan material kustom.'
-                        : 'Pilih Master Preset BOM di atas untuk memuat material standar.'}
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-sm mx-auto">
+                      Pilih preset BOM di atas atau tambahkan material kustom di bawah.
                     </p>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                     <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200 dark:border-slate-700">
-                        <tr>
-                          <th className="px-3.5 py-2.5">Bahan Baku & Kategori</th>
-                          <th className="px-3 py-2.5 text-right">Biaya Satuan</th>
-                          <th className="px-3 py-2.5 text-center w-28">Kuantitas Kebutuhan</th>
-                          <th className="px-3 py-2.5 text-center w-20">Satuan</th>
-                          <th className="px-3.5 py-2.5 text-right">Subtotal HPP</th>
-                          {isModalCustomBOM && <th className="px-2 py-2.5 text-center w-10">Aksi</th>}
-                        </tr>
-                      </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
                         {effectiveModalBom.map((item, idx) => {
                           const mat = materials.find(m => m.id === item.materialId);
@@ -2218,24 +2506,13 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                           );
                         })}
                       </tbody>
-                      <tfoot className="bg-slate-50 dark:bg-slate-800/80 font-bold border-t border-slate-200 dark:border-slate-700">
-                        <tr>
-                          <td colSpan={4} className="px-3.5 py-2.5 text-slate-700 dark:text-slate-200 font-bold text-xs uppercase tracking-wide">
-                            Total Estimasi HPP Material Varian
-                          </td>
-                          <td className="px-3.5 py-2.5 text-right text-emerald-600 dark:text-emerald-400 text-sm font-mono font-black">
-                            {formatCurrency(modalBomCost)}
-                          </td>
-                          {isModalCustomBOM && <td></td>}
-                        </tr>
-                      </tfoot>
                     </table>
                   </div>
                 )}
               </div>
 
-              {/* Box 3: Quick Add Material Manual (Only when Custom BoM is active) */}
-              {isModalCustomBOM && (
+              {/* Box 3: Quick Add Material Manual */}
+              {(isModalCustomBOM || !activeEditingVariant.presetId) && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20 space-y-2">
                   <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
                     <Plus className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -2297,6 +2574,98 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           </Modal>
         );
       })()}
+
+      {/* ── Modal Upload Gambar / Swatch Nilai Atribut ── */}
+      {swatchModalTarget && (
+        <Modal
+          isOpen={Boolean(swatchModalTarget)}
+          onClose={() => setSwatchModalTarget(null)}
+          title={`Gambar Nilai: ${swatchModalTarget.val}`}
+          actions={
+            <div className="flex items-center justify-between w-full">
+              <div>
+                {swatchModalTarget.previewImage ? (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={handleRemoveSwatch}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Hapus
+                  </Button>
+                ) : (
+                  <span />
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSwatchModalTarget(null)}
+                >
+                  Batal
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSaveSwatch}
+                >
+                  Simpan
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+              {swatchModalTarget.previewImage ? (
+                <div className="space-y-3 flex flex-col items-center">
+                  <div className="aspect-square w-36 h-36 rounded-xl overflow-hidden border-2 border-indigo-500/30 dark:border-indigo-400/30 bg-white dark:bg-slate-900 shadow-sm relative group">
+                    <img
+                      src={swatchModalTarget.previewImage}
+                      alt={swatchModalTarget.val}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-xs transition-colors">
+                    <Upload className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Ganti Foto Swatch</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleSwatchFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center w-full py-8 px-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-400 cursor-pointer bg-white dark:bg-slate-900/60 transition-colors group">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/60 transition-colors mb-2">
+                    <ImageIcon className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                    Pilih File Gambar Swatch
+                  </span>
+                  <span className="text-[11px] text-slate-400 mt-0.5">
+                    JPG, PNG, atau WebP (Rasio 1:1)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleSwatchFileChange}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
+              Gambar swatch akan ditampilkan pada sampel varian dan baris SKU untuk mempermudah identifikasi material/warna.
+            </p>
+          </div>
+        </Modal>
+      )}
     </form>
   );
 }

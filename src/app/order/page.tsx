@@ -15,7 +15,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl, SegmentOption } from '@/components/ui/SegmentedControl';
 import { formatCurrency, formatDateTime, formatPhoneDisplay, formatVariantLabel, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel } from '@/lib/utils';
 import { canApproveOrder, canCreateOrder } from '@/lib/roles';
-import type { OrderStatus } from '@/lib/types';
+import type { OrderStatus, SalesOrder } from '@/lib/types';
+import { CustomProcessModal } from '@/components/order/CustomProcessModal';
 import {
   Plus,
   CheckCircle,
@@ -35,7 +36,51 @@ import {
   Settings,
   Layers,
   Check,
+  FileText,
+  Sliders,
+  BedDouble,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
 } from 'lucide-react';
+
+const iconMap: Record<string, React.ElementType> = {
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+};
 
 export function OrderListContent() {
   const router = useRouter();
@@ -44,6 +89,7 @@ export function OrderListContent() {
   const { toast } = useToast();
   const {
     salesOrders,
+    products,
     currentUser,
     processOrder,
     cancelOrder,
@@ -54,6 +100,7 @@ export function OrderListContent() {
   const [cancelReasonInput, setCancelReasonInput] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState('');
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [customProcessOrder, setCustomProcessOrder] = useState<SalesOrder | null>(null);
   const [statusFilter, setStatusFilter] = useUrlTab(['all', 'pending', 'processing', 'ready', 'sent', 'canceled', 'komplain'] as const, 'pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [salesFilter, setSalesFilter] = useState('');
@@ -119,9 +166,13 @@ export function OrderListContent() {
   });
   const handleProcessOrder = (id: string) => {
     setErrorMsg('');
+    const targetOrder = salesOrders.find(o => o.id === id);
     const res = processOrder(id);
     if (res && !res.success) {
       setErrorMsg(res.error || 'Terjadi kesalahan saat memproses order.');
+      toast.error('Gagal Memproses Pesanan', res.error || 'Terjadi kesalahan saat memproses pesanan.');
+    } else {
+      toast.success('Pesanan Diproses', `Pesanan ${targetOrder?.orderNumber || ''} berhasil diproses.`);
     }
   };
 
@@ -281,16 +332,32 @@ export function OrderListContent() {
                   </div>
                   
                   {/* Barang yang dikomplain */}
-                  <div className="text-xs text-slate-700 dark:text-slate-300 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    {complaint.items.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <span className="font-medium text-slate-900 dark:text-slate-100">{item.productName}</span>
-                        {item.variantLabel && (
-                          <span className="text-slate-500">({formatVariantLabel(item.variantLabel)})</span>
-                        )}
-                        <span className="font-bold text-slate-700 dark:text-slate-300">x{item.qty}</span>
-                      </div>
-                    ))}
+                  <div className="text-xs text-slate-700 dark:text-slate-300 space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    {complaint.items.map((item, idx) => {
+                      const product = products.find(p => p.id === item.productId || p.name === item.productName);
+                      const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
+
+                      return (
+                        <div key={idx} className="flex items-center gap-2.5">
+                          {product?.image ? (
+                            <div className="h-8 w-8 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                              <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                              <IconComp className="h-4 w-4" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">{item.productName}</span>
+                            {item.variantLabel && (
+                              <span className="text-slate-500">({formatVariantLabel(item.variantLabel)})</span>
+                            )}
+                            <span className="font-bold text-slate-700 dark:text-slate-300">x{item.qty}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Deskripsi komplain di bawahnya */}
@@ -334,6 +401,11 @@ export function OrderListContent() {
                         <Badge variant={getOrderStatusVariant(order.status)}>
                           {getOrderStatusLabel(order.status, order.cancelledByRole)}
                         </Badge>
+                        {order.items.some(i => i.isBomCustomized) && (
+                          <Badge variant="purple" className="text-[10px] py-0 px-1.5 font-semibold">
+                            Kustom Proses
+                          </Badge>
+                        )}
                         {order.complaints && order.complaints.some(c => c.status !== 'SELESAI') && (
                           <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
                             Dikomplain
@@ -367,38 +439,61 @@ export function OrderListContent() {
 
                   {/* MIDDLE SECTION: Order Items */}
                   <div className="space-y-2">
-                    {order.items.slice(0, expandedOrders[order.id] ? order.items.length : 1).map((item, idx) => (
-                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/80 px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800/80">
-                        {/* KONTAINER KIRI (50%): NAMA ITEM, VARIANT, MODIFIERS & CATATAN */}
-                        <div className="space-y-0.5 min-w-0">
-                          <div className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
-                            <span>{item.productName}</span>
+                    {order.items.slice(0, expandedOrders[order.id] ? order.items.length : 1).map((item, idx) => {
+                      const product = products.find(p => p.id === item.productId || p.name === item.productName);
+                      const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
+
+                      return (
+                        <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/80 px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800/80">
+                          {/* KONTAINER KIRI (50%): VISUAL PRODUK + NAMA ITEM, VARIANT, MODIFIERS & CATATAN */}
+                          <div className="flex items-start gap-3 min-w-0">
+                            {product?.image ? (
+                              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                                <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                                <IconComp className="h-5 w-5 sm:h-6 sm:w-6" />
+                              </div>
+                            )}
+
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                                <span>{item.productName}</span>
+                                {item.isBomCustomized && (
+                                  <Badge variant="purple" className="text-[10px] py-0 px-1.5 font-semibold">
+                                    {item.qty > 1 && item.unitCustomProcesses
+                                      ? `Kustom (${item.unitCustomProcesses.filter(u => u.isBomCustomized).length}/${item.qty} unit)`
+                                      : 'Kustom'}
+                                  </Badge>
+                                )}
+                              </div>
+
+                              {item.variantLabel && (
+                                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                  {formatVariantLabel(item.variantLabel)}
+                                </div>
+                              )}
+
+                              {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.selectedModifiers.map(mGroup => (
+                                    mGroup.selectedOptions.map(opt => (
+                                      <span key={opt.optionId} className="text-xs bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-1.5 py-1 rounded-md font-medium">
+                                        +{opt.name}
+                                      </span>
+                                    ))
+                                  ))}
+                                </div>
+                              )}
+
+                              {item.customNotes && (
+                                <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
+                                  {item.customNotes}
+                                </div>
+                              )}
+                            </div>
                           </div>
-
-                          {item.variantLabel && (
-                            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                              {formatVariantLabel(item.variantLabel)}
-                            </div>
-                          )}
-
-                          {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {item.selectedModifiers.map(mGroup => (
-                                mGroup.selectedOptions.map(opt => (
-                                  <span key={opt.optionId} className="text-xs bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-1.5 py-1 rounded-md font-medium">
-                                    +{opt.name}
-                                  </span>
-                                ))
-                              ))}
-                            </div>
-                          )}
-
-                          {item.customNotes && (
-                            <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
-                              {item.customNotes}
-                            </div>
-                          )}
-                        </div>
 
                         {/* KONTAINER KANAN (50%): FLEX JUSTIFY-BETWEEN (KUANTITAS DI TENGAH CARD, HARGA ITEM DI KANAN CARD) */}
                         <div className="flex items-center justify-between gap-3">
@@ -415,7 +510,8 @@ export function OrderListContent() {
                           </div>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
 
                     {order.items.length > 1 && (
                       <button
@@ -438,13 +534,16 @@ export function OrderListContent() {
                   {/* BOTTOM SECTION: Order Notes (Left side of total price) + Total & Action Buttons */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-8 mt-1">
                     {order.orderNotes ? (
-                      <div className="flex-1 min-w-0 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 px-3 py-2 rounded-md text-xs space-y-0.5">
-                        <span className="font-bold text-[11px] uppercase tracking-wider block text-amber-700 dark:text-amber-400">
-                          Catatan Pesanan:
-                        </span>
-                        <p className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed truncate">
-                          {order.orderNotes}
-                        </p>
+                      <div className="flex-1 min-w-0 flex items-center gap-2.5">
+                        <FileText className="h-8 w-8 text-amber-500 dark:text-amber-400 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block leading-tight">
+                            Catatan Pesanan:
+                          </span>
+                          <p className="text-xs text-slate-700 dark:text-slate-300 font-normal leading-relaxed truncate">
+                            {order.orderNotes}
+                          </p>
+                        </div>
                       </div>
                     ) : (
                       <div className="flex-1 min-w-0" />
@@ -499,18 +598,32 @@ export function OrderListContent() {
                               {isMenuOpen && (
                                 <div className="absolute right-0 bottom-full mb-1 w-44 rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 z-30 py-1.5 text-xs">
                                   {order.status === 'PENDING' && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setOpenActionMenuId(null);
-                                        router.push(`/order/create?edit=${order.id}`);
-                                      }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700 text-left font-medium"
-                                    >
-                                      <Edit className="h-3.5 w-3.5 text-indigo-600" />
-                                      Edit Pesanan
-                                    </button>
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenActionMenuId(null);
+                                          setCustomProcessOrder(order);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700 text-left font-medium"
+                                      >
+                                        <Sliders className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                                        Kustom Proses
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenActionMenuId(null);
+                                          router.push(`/order/create?edit=${order.id}`);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700 text-left font-medium"
+                                      >
+                                        <Edit className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                                        Edit Pesanan
+                                      </button>
+                                    </>
                                   )}
 
                                   <button
@@ -582,6 +695,15 @@ export function OrderListContent() {
           </div>
         </div>
       </Modal>
+
+      {/* CUSTOM PROCESS MODAL */}
+      {customProcessOrder && (
+        <CustomProcessModal
+          isOpen={!!customProcessOrder}
+          onClose={() => setCustomProcessOrder(null)}
+          order={customProcessOrder}
+        />
+      )}
     </div>
   );
 }

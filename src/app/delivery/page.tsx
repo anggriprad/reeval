@@ -52,6 +52,8 @@ export interface ChildUnitItem {
   spkNumber?: string;
   orderCreatedAt: string;
   unitStatus: 'READY' | 'IN_PRODUCTION' | 'SHIPPED';
+  isReplacement?: boolean;
+  complaintId?: string;
 }
 
 export interface QueueOrderGroup {
@@ -173,39 +175,74 @@ function DeliveryContent() {
   const queueOrderGroups = useMemo<QueueOrderGroup[]>(() => {
     const groups: QueueOrderGroup[] = [];
 
-    salesOrders
-      .filter(o => o.status !== 'PENDING' && o.status !== 'CANCELED' && o.status !== 'SENT')
-      .forEach(order => {
-        const allUnits: ChildUnitItem[] = [];
-        let totalOrderUnits = 0;
+    const relevantOrders = salesOrders.filter(o => {
+      if (o.status === 'PENDING' || o.status === 'CANCELED') return false;
+      if (o.status !== 'SENT') return true;
+      return (o.complaints || []).some(
+        c => c.resolution === 'Kirim Barang Pengganti' && c.replacementStatus === 'READY_FOR_DELIVERY'
+      );
+    });
 
+    relevantOrders.forEach(order => {
+      const allUnits: ChildUnitItem[] = [];
+      let totalOrderUnits = 0;
+
+      if (order.status !== 'SENT') {
         order.items.forEach((item, itemIdx) => {
           totalOrderUnits += item.qty;
           const shippedCount = item.shippedQty || 0;
           const availableQty = Math.max(0, (item.producedQty || 0) - shippedCount);
 
-          // Find matching WOs for this product to get SPK numbers
+          // Find matching WOs strictly for this specific item in this Sales Order
           const matchingWOs = (workOrders || []).filter(
             w =>
               w.salesOrderId === order.id &&
               !w.isSubAssembly &&
-              (w.productName === item.productName ||
-                w.productName.includes(item.productName) ||
-                item.productName.includes(w.productName))
+              !w.isComplaintReplacement &&
+              (w.itemIndex !== undefined
+                ? w.itemIndex === itemIdx
+                : (w.productId && item.productId
+                    ? w.productId === item.productId && (w.variantId && item.variantId ? w.variantId === item.variantId : true)
+                    : w.productName === item.productName))
           );
 
           // Generate all ordered units: completed (ready), shipped, or in production
           for (let u = 1; u <= item.qty; u++) {
+            // Find 1-to-1 work order for this unit
+            let unitWO = matchingWOs.find(w => w.unitIndex === u);
+            if (!unitWO) {
+              unitWO = matchingWOs[u - 1];
+            }
+
+            // Determine if this unit has already been shipped
+            const isShippedByDO = (deliveryOrders || []).some(d =>
+              (d.orderItems || []).some(
+                oi =>
+                  oi.orderId === order.id &&
+                  (
+                    (oi.spkNumber && unitWO?.spkNumber ? oi.spkNumber === unitWO.spkNumber : false) ||
+                    (oi.itemIndex === itemIdx && oi.unitIndex === u)
+                  )
+              )
+            );
+            const isShipped = isShippedByDO || u <= shippedCount;
+
             let unitStatus: 'READY' | 'IN_PRODUCTION' | 'SHIPPED';
-            if (u <= shippedCount) {
+            if (isShipped) {
               unitStatus = 'SHIPPED';
+            } else if (unitWO) {
+              // Unit status MUST strictly reflect the actual SPK status
+              if (unitWO.status === 'COMPLETED') {
+                unitStatus = 'READY';
+              } else {
+                unitStatus = 'IN_PRODUCTION';
+              }
             } else if (u <= shippedCount + availableQty) {
               unitStatus = 'READY';
             } else {
               unitStatus = 'IN_PRODUCTION';
             }
 
-            const unitWO = matchingWOs[u - 1];
             allUnits.push({
               key: `${order.id}__${itemIdx}__${u}`,
               orderId: order.id,
@@ -224,28 +261,62 @@ function DeliveryContent() {
             });
           }
         });
+      }
 
-        const readyCount = allUnits.filter(u => u.unitStatus === 'READY').length;
+      // Unit penggantian dari komplain pelanggan yang siap kirim
+      (order.complaints || []).forEach(comp => {
+        if (comp.resolution === 'Kirim Barang Pengganti' && comp.replacementStatus === 'READY_FOR_DELIVERY') {
+          (comp.items || []).forEach((ci, ciIdx) => {
+            totalOrderUnits += ci.qty;
+            const replWO = (workOrders || []).find(
+              w => w.complaintId === comp.id && (w.productId ? w.productId === ci.productId : w.productName === ci.productName)
+            );
 
-        // An SO appears in Antrean Kirim as long as it has at least 1 unit ready to ship!
-        if (readyCount > 0) {
-          groups.push({
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            customerName: order.customer.name,
-            customerPhone: order.customer.phone,
-            customerAddress: order.customer.address || '',
-            orderCreatedAt: order.createdAt,
-            totalOrderUnitsCount: totalOrderUnits,
-            totalReadyUnitsCount: readyCount,
-            childUnits: allUnits,
-            status: order.status,
+            for (let u = 1; u <= ci.qty; u++) {
+              allUnits.push({
+                key: `repl__${comp.id}__${ci.productId || ciIdx}__${u}`,
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                customerName: order.customer.name,
+                customerPhone: order.customer.phone,
+                customerAddress: order.customer.address || '',
+                productName: ci.productName,
+                variantLabel: ci.variantLabel,
+                itemIndex: -1,
+                unitNumber: u,
+                totalOrderedQty: ci.qty,
+                spkNumber: replWO?.spkNumber,
+                orderCreatedAt: comp.resolvedAt || order.createdAt,
+                unitStatus: 'READY',
+                isReplacement: true,
+                complaintId: comp.id,
+              });
+            }
           });
         }
       });
 
+      const readyCount = allUnits.filter(u => u.unitStatus === 'READY').length;
+
+      // An SO appears in Antrean Kirim as long as it has at least 1 unit ready to ship!
+      if (readyCount > 0) {
+        groups.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          customerName: order.customer.name,
+          customerPhone: order.customer.phone,
+          customerAddress: order.customer.address || '',
+          orderCreatedAt: order.createdAt,
+          totalOrderUnitsCount: totalOrderUnits,
+          totalReadyUnitsCount: readyCount,
+          childUnits: allUnits,
+          status: order.status,
+        });
+      }
+    });
+
     return groups;
-  }, [salesOrders, workOrders]);
+  }, [salesOrders, workOrders, deliveryOrders]);
 
   // Groups filtered by search term
   const displayOrderGroups = useMemo(() => {
@@ -338,7 +409,7 @@ function DeliveryContent() {
 
     deliveryOrders.forEach(d => {
       const tripKey = d.tripId || d.id;
-      const tripNumber = d.tripNumber || `KLT-${d.doNumber}`;
+      const tripNumber = d.tripNumber || d.doNumber;
 
       if (!map.has(tripKey)) {
         map.set(tripKey, {
@@ -452,7 +523,7 @@ function DeliveryContent() {
       productName: string;
       variantLabel?: string;
       qty: number;
-      doNumber: string;
+      spkNumber?: string;
       customerName: string;
       customerAddress?: string;
       salesOrderNumber: string;
@@ -461,12 +532,19 @@ function DeliveryContent() {
     loadingTrip.deliveryOrders.forEach(dOrder => {
       if (dOrder.orderItems && dOrder.orderItems.length > 0) {
         dOrder.orderItems.forEach((oi: any, itemIdx: number) => {
+          const fallbackWO = (workOrders || []).find(
+            w =>
+              (w.salesOrderId === dOrder.salesOrderId || w.salesOrderNumber === dOrder.salesOrderNumber) &&
+              (oi.itemIndex !== undefined ? w.itemIndex === oi.itemIndex : w.productName === oi.productName)
+          );
+          const spkNum = oi.spkNumber || fallbackWO?.spkNumber;
+
           items.push({
             key: `${dOrder.id}__item_${itemIdx}`,
             productName: oi.productName,
             variantLabel: oi.variantLabel,
             qty: oi.qty || 1,
-            doNumber: dOrder.doNumber,
+            spkNumber: spkNum,
             customerName: dOrder.customerName,
             customerAddress: dOrder.customerAddress,
             salesOrderNumber: oi.orderNumber || dOrder.salesOrderNumber,
@@ -474,11 +552,16 @@ function DeliveryContent() {
         });
       } else {
         dOrder.items.forEach((itName: string, itemIdx: number) => {
+          const fallbackWO = (workOrders || []).find(
+            w =>
+              (w.salesOrderId === dOrder.salesOrderId || w.salesOrderNumber === dOrder.salesOrderNumber) &&
+              (itName.includes(w.productName) || w.productName.includes(itName))
+          );
           items.push({
             key: `${dOrder.id}__legacy_${itemIdx}`,
             productName: itName,
             qty: 1,
-            doNumber: dOrder.doNumber,
+            spkNumber: fallbackWO?.spkNumber,
             customerName: dOrder.customerName,
             customerAddress: dOrder.customerAddress,
             salesOrderNumber: dOrder.salesOrderNumber,
@@ -488,7 +571,7 @@ function DeliveryContent() {
     });
 
     return items;
-  }, [loadingTrip]);
+  }, [loadingTrip, workOrders]);
 
   const isAllLoadingItemsChecked =
     kloterLoadingItems.length > 0 &&
@@ -644,6 +727,10 @@ function DeliveryContent() {
         variantLabel: u.variantLabel,
         qty: 1, // each row represents 1 finished physical unit
         itemIndex: u.itemIndex,
+        unitIndex: u.unitNumber,
+        spkNumber: u.spkNumber,
+        isReplacement: u.isReplacement,
+        complaintId: u.complaintId,
       })),
       driverId: driverObj?.id,
       driverName: driverObj?.name || 'Driver Pengirim',
@@ -665,7 +752,7 @@ function DeliveryContent() {
   const handleConfirmLoading = () => {
     if (!showLoadingModal) return;
     confirmLoadingDelivery(showLoadingModal, currentUser.name);
-    toast.success('Barang berhasil dimuat! Status kloter kini Sedang di Perjalanan.');
+    toast.success('Barang berhasil dimuat! Status kloter kini Dalam Perjalanan.');
     setShowLoadingModal(null);
     setCheckedLoadingItemKeys({});
     setActiveTab('in-transit');
@@ -730,14 +817,13 @@ function DeliveryContent() {
     },
     {
       key: 'in-transit',
-      label: 'Sedang di Perjalanan',
+      label: 'Dalam Perjalanan',
       count: inTransitTrips.length,
       icon: Truck,
     },
     {
       key: 'delivered',
       label: 'Terkirim',
-      count: deliveredTrips.length,
       icon: CheckCircle2,
     },
   ];
@@ -1017,8 +1103,13 @@ function DeliveryContent() {
                                           {unit.spkNumber}
                                         </span>
                                       )}
-                                      <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
-                                        Unit #{unit.unitNumber}
+                                      <span className={cn(
+                                        "text-[10px] font-medium px-2 py-0.5 rounded border",
+                                        unit.isReplacement
+                                          ? "bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/60 font-semibold"
+                                          : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200/80 dark:border-slate-700"
+                                      )}>
+                                        {unit.isReplacement ? 'Penggantian Komplain' : `Unit #${unit.unitNumber}`}
                                       </span>
                                     </div>
                                   </div>
@@ -1082,9 +1173,6 @@ function DeliveryContent() {
                     {/* Header Kloter */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800">
-                          {trip.tripNumber}
-                        </span>
                         <div className="text-xs">
                           <span className="font-semibold text-slate-900 dark:text-white">
                             {trip.driverName}
@@ -1141,10 +1229,10 @@ function DeliveryContent() {
                             <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-start sm:items-center">
                               <div className="sm:col-span-4 min-w-0">
                                 <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
-                                  {dOrder.doNumber}
+                                  {dOrder.salesOrderNumber}
                                 </span>
-                                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
-                                  SO: {dOrder.salesOrderNumber}
+                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                                  {formatDate(dOrder.createdAt)}
                                 </span>
                               </div>
 
@@ -1206,9 +1294,6 @@ function DeliveryContent() {
                     {/* Header Kloter */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800">
-                          {trip.tripNumber}
-                        </span>
                         <div className="text-xs">
                           <span className="font-semibold text-slate-900 dark:text-white">
                             {trip.driverName}
@@ -1257,10 +1342,10 @@ function DeliveryContent() {
                             <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-start sm:items-center">
                               <div className="sm:col-span-4 min-w-0">
                                 <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
-                                  {dOrder.doNumber}
+                                  {dOrder.salesOrderNumber}
                                 </span>
-                                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
-                                  SO: {dOrder.salesOrderNumber}
+                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                                  {formatDate(dOrder.createdAt)}
                                 </span>
                               </div>
 
@@ -1346,9 +1431,6 @@ function DeliveryContent() {
                     {/* Header Kloter */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800">
-                          {trip.tripNumber}
-                        </span>
                         <div className="text-xs">
                           <span className="font-semibold text-slate-900 dark:text-white">
                             {trip.driverName}
@@ -1390,10 +1472,10 @@ function DeliveryContent() {
                             <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-start sm:items-center">
                               <div className="sm:col-span-4 min-w-0">
                                 <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
-                                  {dOrder.doNumber}
+                                  {dOrder.salesOrderNumber}
                                 </span>
-                                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
-                                  SO: {dOrder.salesOrderNumber}
+                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                                  {formatDate(dOrder.createdAt)}
                                 </span>
                               </div>
 
@@ -1633,32 +1715,48 @@ function DeliveryContent() {
                       className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 h-4 w-4 shrink-0 cursor-pointer"
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span
-                          className={cn(
-                            'font-semibold',
-                            isChecked
-                              ? 'text-slate-900 dark:text-white line-through opacity-80'
-                              : 'text-slate-900 dark:text-white'
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={cn(
+                                'font-semibold',
+                                isChecked
+                                  ? 'text-slate-900 dark:text-white line-through opacity-80'
+                                  : 'text-slate-900 dark:text-white'
+                              )}
+                            >
+                              {item.productName}
+                            </span>
+                            {item.spkNumber && (
+                              <span className="font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800">
+                                {item.spkNumber}
+                              </span>
+                            )}
+                          </div>
+                          {item.variantLabel && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              {item.variantLabel}
+                            </p>
                           )}
-                        >
-                          {item.productName}
-                        </span>
+                        </div>
                         <span className="shrink-0 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                           {item.qty} Unit
                         </span>
                       </div>
-                      {item.variantLabel && (
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          Varian: {item.variantLabel}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
-                        <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold text-[10px]">
-                          {item.doNumber}
+
+                      <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                        <span className="font-mono font-medium text-slate-700 dark:text-slate-300">
+                          Pesanan: {item.salesOrderNumber}
                         </span>
                         <span>•</span>
                         <span className="truncate max-w-[180px]">{item.customerName}</span>
+                        {item.customerAddress && (
+                          <>
+                            <span>•</span>
+                            <span className="truncate max-w-[200px]">{item.customerAddress}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1682,7 +1780,7 @@ function DeliveryContent() {
       <Modal
         isOpen={!!deliveryToConfirm}
         onClose={() => setShowProofModal(null)}
-        title={`Konfirmasi Tiba di Tujuan — ${deliveryToConfirm?.doNumber || ''}`}
+        title={`Konfirmasi Tiba di Tujuan — Pesanan ${deliveryToConfirm?.salesOrderNumber || ''}`}
         description="Input nama penerima di lokasi dan lampirkan bukti foto pengiriman untuk menyelesaikan pesanan."
         size="lg"
         actions={
@@ -1705,6 +1803,10 @@ function DeliveryContent() {
         {deliveryToConfirm && (
           <div className="space-y-4">
             <div className="rounded-xl bg-slate-50 p-3.5 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Nomor Pesanan:</span>
+                <strong className="font-mono text-indigo-600 dark:text-indigo-400">{deliveryToConfirm.salesOrderNumber}</strong>
+              </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Tujuan Pengiriman:</span>
                 <strong className="text-slate-900 dark:text-white">{deliveryToConfirm.customerName}</strong>

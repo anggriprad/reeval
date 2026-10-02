@@ -77,7 +77,7 @@ import {
   initialDrivers,
   initialFinishedGoods,
   initialReturnedGoods,
-} from '@/lib/initial-data';
+} from '@/lib/initial-data-empty';
 import { generateVariantsFromRules } from '@/lib/product-resolver';
 import {
   createOpeningBalanceJournal,
@@ -95,10 +95,10 @@ import {
   createClosingJournal,
   createDividendJournal,
 } from '@/lib/accounting';
-import { generateId, calculateSubAssemblyCost, syncFinishedGoodsWithProducts } from '@/lib/utils';
+import { generateId, calculateSubAssemblyCost, syncFinishedGoodsWithProducts, getEffectiveVariantBOM, generateOrderNumber, generateItemUnitNumber } from '@/lib/utils';
 import { DEFAULT_USER_ID, getUserById, USER_ACCOUNTS, UserAccount } from '@/lib/roles';
 
-const STORAGE_KEY = 'reeval-erp-state-v16'; // v16: Default to populated initial-data with Bahan Setengah Jadi Multi-Level BOM
+const STORAGE_KEY = 'reeval-erp-state-empty'; // Switched temporarily to empty initial data for demo
 
 // ========================================
 // Context Shape
@@ -178,10 +178,11 @@ interface AppContextType extends AppState {
   // Sales & Order Lifecycle
   createSalesOrder: (customer: Customer, items: SalesOrderItem[], orderNotes?: string, shippingCost?: number) => string;
   updateSalesOrder: (orderId: string, customer: Customer, items: SalesOrderItem[], orderNotes?: string, shippingCost?: number) => void;
+  updateOrderCustomProcess: (orderId: string, updatedItems: SalesOrderItem[]) => { success: boolean; error?: string };
   processOrder: (orderId: string) => { success: boolean; error?: string };
   cancelOrder: (orderId: string, cancelReason: string) => void;
   submitOrderComplaint: (orderId: string, complaint: Omit<OrderComplaint, 'id' | 'status' | 'createdAt'>) => void;
-  resolveOrderComplaint: (orderId: string, complaintId: string, resolution: 'Batalkan Pesanan (Refund)' | 'Kirim Barang Pengganti' | 'Perbaikan', resolutionNotes?: string, refundBankAccountId?: string) => void;
+  resolveOrderComplaint: (orderId: string, complaintId: string, resolution: 'Batalkan Pesanan (Refund)' | 'Kirim Barang Pengganti' | 'Perbaikan', resolutionNotes?: string, refundBankAccountId?: string) => { success: boolean; inStock?: boolean; spkNumber?: string } | void;
 
   // Barang Retur
   returnedGoods: ReturnedGood[];
@@ -192,9 +193,10 @@ interface AppContextType extends AppState {
   startJobCard: (workOrderId: string, jobCardId: string) => void;
   pauseJobCard: (workOrderId: string, jobCardId: string) => void;
   completeJobCard: (workOrderId: string, jobCardId: string, completedQty: number, picName: string, actualMinutes?: number, operatorId?: string) => { success: boolean; error?: string };
-  createSubAssemblyWorkOrder: (subAssemblyId: string, targetQty: number) => { success: boolean; error?: string };
+  createSubAssemblyWorkOrder: (subAssemblyId: string, targetQty: number, customNotes?: string) => { success: boolean; error?: string };
+  createNormalWorkOrder: (productId: string, variantId: string | undefined, targetQty: number, customNotes?: string) => { success: boolean; error?: string };
   syncWorkOrderRouting: (workOrderId: string) => void;
-  addOperation: (op: Omit<ProductionOperation, 'id'>) => void;
+  addOperation: (op: Omit<ProductionOperation, 'id'>) => string;
   updateOperation: (id: string, op: Partial<Omit<ProductionOperation, 'id'>>) => void;
   deleteOperation: (id: string) => boolean;
   addRouting: (rt: Omit<ProductionRouting, 'id'>) => void;
@@ -429,6 +431,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             };
           })
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+        deliveryOrders: (saved.deliveryOrders || structuredClone(initialDeliveryOrders)).map(d => {
+          if (d.deliveryProofPhoto) return d;
+          const initDO = initialDeliveryOrders.find(id => id.id === d.id);
+          if (initDO?.deliveryProofPhoto) {
+            return { ...d, deliveryProofPhoto: initDO.deliveryProofPhoto };
+          }
+          return d;
+        }),
         assets: saved.assets || structuredClone(initialAssets),
         assetServiceLogs: saved.assetServiceLogs || structuredClone(initialAssetServiceLogs),
         masterModifierGroups: saved.masterModifierGroups || structuredClone(initialModifierGroups),
@@ -812,9 +822,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addProduct = useCallback((product: Omit<Product, 'id'>) => {
     const id = `prod-${generateId()}`;
     const productWithId = { id, ...product } as Product;
-    const variants = (product.variants && product.variants.length > 0)
+    const rawVariants = (product.variants && product.variants.length > 0)
       ? product.variants
       : generateVariantsFromRules(productWithId, state.materials);
+
+    const variants = rawVariants.map(v => {
+      if ((!v.bom || v.bom.length === 0) && v.presetId) {
+        const eff = getEffectiveVariantBOM(v, state.bomTemplateItems);
+        if (eff.length > 0) {
+          return { ...v, bom: structuredClone(eff) };
+        }
+      }
+      return v;
+    });
 
     const newVariantBoms: VariantBOM[] = variants.map(v => ({
       variantId: v.id,
@@ -833,7 +853,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ],
       };
     });
-  }, [state.materials]);
+  }, [state.materials, state.bomTemplateItems]);
 
   const updateProduct = useCallback((id: string, product: Partial<Omit<Product, 'id'>>) => {
     setState(prev => {
@@ -841,9 +861,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!existingProduct) return prev;
 
       const merged = { ...existingProduct, ...product } as Product;
-      const variants = (product.variants && product.variants.length > 0)
+      const rawVariants = (product.variants && product.variants.length > 0)
         ? product.variants
         : generateVariantsFromRules(merged, prev.materials, existingProduct.variants);
+
+      const variants = rawVariants.map(v => {
+        if ((!v.bom || v.bom.length === 0) && v.presetId) {
+          const eff = getEffectiveVariantBOM(v, prev.bomTemplateItems);
+          if (eff.length > 0) {
+            return { ...v, bom: structuredClone(eff) };
+          }
+        }
+        return v;
+      });
 
       const newVariantBoms: VariantBOM[] = variants.map(v => ({
         variantId: v.id,
@@ -938,21 +968,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getMaterial = useCallback((id: string) => state.materials.find(m => m.id === id), [state.materials]);
 
   const nextOrderNumber = useCallback(() => {
-    const year = new Date().getFullYear();
-    const count = state.salesOrders.length + 1;
-    return `SO-${year}-${String(count).padStart(3, '0')}`;
+    return generateOrderNumber(state.salesOrders.length + 1);
   }, [state.salesOrders.length]);
 
   const nextPONumber = useCallback(() => {
-    const year = new Date().getFullYear();
-    const count = state.purchaseOrders.length + 1;
-    return `PO-${year}-${String(count).padStart(3, '0')}`;
+    return String(state.purchaseOrders.length + 1);
   }, [state.purchaseOrders.length]);
 
   const nextDONumber = useCallback(() => {
-    const year = new Date().getFullYear();
-    const count = state.deliveryOrders.length + 1;
-    return `DO-${year}-${String(count).padStart(3, '0')}`;
+    return String(state.deliveryOrders.length + 1);
   }, [state.deliveryOrders.length]);
 
   // ── Finished Goods CRUD ──────────────────────────────────────────────────
@@ -1606,6 +1630,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, [currentUser.name]);
 
+  const updateOrderCustomProcess = useCallback((orderId: string, updatedItems: SalesOrderItem[]): { success: boolean; error?: string } => {
+    const order = state.salesOrders.find(o => o.id === orderId);
+    if (!order || order.status !== 'PENDING') {
+      return { success: false, error: 'Pesanan tidak ditemukan atau bukan berstatus PENDING.' };
+    }
+
+    const now = new Date().toISOString();
+    const hasCustom = updatedItems.some(i => i.isBomCustomized);
+
+    setState(prev => ({
+      ...prev,
+      salesOrders: prev.salesOrders.map(o => {
+        if (o.id === orderId) {
+          return {
+            ...o,
+            items: updatedItems,
+            isCustomProcess: hasCustom,
+            customProcessAt: hasCustom ? now : undefined,
+            customProcessBy: hasCustom ? currentUser.name : undefined,
+            updatedAt: now,
+            updatedBy: currentUser.name,
+          };
+        }
+        return o;
+      })
+    }));
+
+    return { success: true };
+  }, [state.salesOrders, currentUser.name]);
+
   const cancelOrder = useCallback((orderId: string, cancelReason: string) => {
     const user = getUserById(state.currentUserId || DEFAULT_USER_ID);
     const roleLabel = user.role === 'ADMIN' ? 'admin' : user.role === 'SALES' ? 'sales' : user.role.toLowerCase();
@@ -1760,9 +1814,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...prev,
       salesOrders: prev.salesOrders.map(o => {
         if (o.id !== orderId) return o;
+        const totalComplaints = prev.salesOrders.reduce((sum, so) => sum + (so.complaints?.length || 0), 0);
         const newComplaint: OrderComplaint = {
           ...complaint,
-          id: `CMP-${Date.now()}`,
+          id: String(totalComplaints + 1),
           status: 'DIAJUKAN',
           createdAt: new Date().toISOString(),
         };
@@ -1781,6 +1836,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     resolutionNotes?: string,
     refundBankAccountId?: string
   ) => {
+    let result = { success: true, inStock: false, spkNumber: '' };
+
     setState(prev => {
       const targetOrder = prev.salesOrders.find(o => o.id === orderId);
       if (!targetOrder || !targetOrder.complaints) return prev;
@@ -1790,6 +1847,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const now = new Date().toISOString();
       const isRefund = resolution === 'Batalkan Pesanan (Refund)';
+      const isReplacement = resolution === 'Kirim Barang Pengganti';
       const refundAmount = isRefund
         ? (complaint.items || []).reduce((sum, item) => {
             const price = (item.unitPrice && item.unitPrice > 0)
@@ -1799,26 +1857,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }, 0)
         : 0;
 
-      // 1. Update Sales Order totalAmount & complaint status
-      const newOrderTotal = isRefund ? Math.max(0, targetOrder.totalAmount - refundAmount) : targetOrder.totalAmount;
-      const updatedSOs = prev.salesOrders.map(o => {
-        if (o.id !== orderId) return o;
-        return {
-          ...o,
-          totalAmount: newOrderTotal,
-          complaints: (o.complaints || []).map(c =>
-            c.id === complaintId
-              ? { ...c, status: 'SELESAI' as const, resolution, resolutionNotes, resolvedAt: now }
-              : c
-          ),
-        };
-      });
-
-      // 3. Masukkan item komplain refund ke inventaris Barang Retur
+      // 1. Masukkan item komplain refund atau penggantian ke inventaris Barang Retur
       let updatedReturnedGoods = [...(prev.returnedGoods || [])];
-      if (isRefund) {
+      if (isRefund || isReplacement) {
         const newReturnItems: ReturnedGood[] = (complaint.items || []).map((ci, idx) => {
-          const soItem = targetOrder.items.find(oi => oi.productId === ci.productId);
+          const soItem = targetOrder.items.find(oi => oi.productId === ci.productId && (ci.variantId ? oi.variantId === ci.variantId : true)) || targetOrder.items.find(oi => oi.productId === ci.productId);
           return {
             id: `ret-${Date.now()}-${idx}`,
             complaintId: complaint.id,
@@ -1840,11 +1883,197 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updatedReturnedGoods = [...newReturnItems, ...updatedReturnedGoods];
       }
 
+      let updatedFinishedGoods = [...prev.finishedGoods];
+      let updatedStockMovements = [...prev.stockMovements];
+      let updatedWorkOrders = [...prev.workOrders];
+      let replacementStatus: 'READY_FOR_DELIVERY' | 'WAITING_PRODUCTION' | undefined = undefined;
+      let replacementWOId: string | undefined = undefined;
+
+      if (isReplacement) {
+        const complaintItems = complaint.items || [];
+        let anyItemLacksStock = false;
+
+        for (const ci of complaintItems) {
+          const fg = updatedFinishedGoods.find(item =>
+            (item.productId === ci.productId || item.productName === ci.productName) &&
+            ((ci.variantId && item.variantId === ci.variantId) || (ci.variantLabel && item.variantLabel === ci.variantLabel) || (!ci.variantId && !ci.variantLabel))
+          );
+          if (!fg || fg.stock < ci.qty) {
+            anyItemLacksStock = true;
+            break;
+          }
+        }
+
+        if (!anyItemLacksStock) {
+          // Stok barang jadi ada! Potong stok barang jadi segera (reserve) & langsung siap di antrean kirim
+          complaintItems.forEach(ci => {
+            const fgIdx = updatedFinishedGoods.findIndex(item =>
+              (item.productId === ci.productId || item.productName === ci.productName) &&
+              ((ci.variantId && item.variantId === ci.variantId) || (ci.variantLabel && item.variantLabel === ci.variantLabel) || (!ci.variantId && !ci.variantLabel))
+            );
+            if (fgIdx >= 0) {
+              updatedFinishedGoods[fgIdx] = {
+                ...updatedFinishedGoods[fgIdx],
+                stock: Math.max(0, updatedFinishedGoods[fgIdx].stock - ci.qty),
+              };
+              updatedStockMovements.unshift({
+                id: generateId(),
+                materialId: updatedFinishedGoods[fgIdx].id,
+                materialName: `${updatedFinishedGoods[fgIdx].productName}${updatedFinishedGoods[fgIdx].variantLabel ? ` (${updatedFinishedGoods[fgIdx].variantLabel})` : ''}`,
+                type: 'OUT',
+                qty: ci.qty,
+                reference: `Penggantian Komplain #${targetOrder.orderNumber}`,
+                date: now,
+                stockCategory: 'FINISHED',
+              });
+            }
+          });
+          replacementStatus = 'READY_FOR_DELIVERY';
+          result = { success: true, inStock: true, spkNumber: '' };
+        } else {
+          // Stok tidak mencukupi! Sesuai Opsi B: Buat SPK baru untuk produksi
+          replacementStatus = 'WAITING_PRODUCTION';
+          const newSpkNumbers: string[] = [];
+
+          for (const ci of complaintItems) {
+            const soItem = targetOrder.items.find(oi => oi.productId === ci.productId && (ci.variantId ? oi.variantId === ci.variantId : true)) || targetOrder.items.find(oi => oi.productId === ci.productId);
+            const product = prev.products.find(p => p.id === ci.productId || p.name === ci.productName);
+            const variant = product?.variants?.find(v => (ci.variantId && v.id === ci.variantId) || (ci.variantLabel && Object.values(v.combination || {}).join(' • ') === ci.variantLabel));
+
+            const targetQty = ci.qty;
+            const bomItems = (variant?.bom && variant.bom.length > 0)
+              ? variant.bom
+              : getEffectiveVariantBOM(variant, prev.bomTemplateItems);
+
+            const woId = `wo-${generateId()}`;
+            let spkNumSeq = updatedWorkOrders.length + 1;
+            let spkNumber = generateItemUnitNumber(targetOrder.orderNumber, spkNumSeq);
+            while (updatedWorkOrders.some(w => w.spkNumber === spkNumber)) {
+              spkNumSeq++;
+              spkNumber = generateItemUnitNumber(targetOrder.orderNumber, spkNumSeq);
+            }
+
+            const assignedRouting = (variant?.routingId ? prev.routings.find(r => r.id === variant.routingId) : null)
+              || (product?.defaultRoutingId ? prev.routings.find(r => r.id === product.defaultRoutingId) : null)
+              || prev.routings[0];
+
+            const jobCards: JobCard[] = assignedRouting && assignedRouting.steps.length > 0
+              ? assignedRouting.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
+                const op = prev.operations.find(o => o.id === step.operationId);
+                return {
+                  id: `jc-${generateId()}`,
+                  workOrderId: woId,
+                  operationId: step.operationId,
+                  operationName: op?.name || 'Operasi',
+                  sequence: step.sequence,
+                  targetQty,
+                  completedQty: 0,
+                  picName: '',
+                  plannedMinutes: (op?.durationMinutes || 30) * targetQty,
+                  status: 'PENDING' as const,
+                };
+              })
+              : [
+                {
+                  id: `jc-${generateId()}`,
+                  workOrderId: woId,
+                  operationId: 'op-prod-default',
+                  operationName: 'Produksi Barang Jadi',
+                  sequence: 1,
+                  targetQty,
+                  completedQty: 0,
+                  picName: '',
+                  plannedMinutes: 60 * targetQty,
+                  status: 'PENDING' as const,
+                },
+              ];
+
+            const plannedLaborCost = jobCards.reduce((acc, jc) => {
+              const op = prev.operations.find(o => o.id === jc.operationId);
+              if (!op) return acc;
+              if (op.costingMethod === 'fixed') {
+                return acc + ((op.fixedLaborCost || 0) * targetQty);
+              }
+              const hrs = (jc.plannedMinutes || 30) / 60;
+              return acc + (hrs * (op.laborCostPerHour || 0));
+            }, 0);
+
+            const materialsConsumed = bomItems.map(b => ({
+              materialId: b.materialId,
+              qty: b.qty * targetQty,
+            }));
+
+            const materialCost = materialsConsumed.reduce((acc, b) => {
+              const mat = prev.materials.find(m => m.id === b.materialId);
+              return acc + ((mat?.unitCost || 0) * b.qty);
+            }, 0);
+
+            const variantLabel = ci.variantLabel || (variant ? (Object.values(variant.combination || {}).join(' • ') || variant.sku) : undefined);
+
+            const newWO: WorkOrder = {
+              id: woId,
+              spkNumber,
+              salesOrderId: targetOrder.id,
+              salesOrderNumber: targetOrder.orderNumber,
+              productId: product?.id || ci.productId,
+              variantId: variant?.id || ci.variantId,
+              productName: ci.productName,
+              variantName: variantLabel,
+              status: 'PENDING',
+              jobCards,
+              materialsConsumed,
+              materialCost,
+              plannedLaborCost,
+              actualLaborCost: 0,
+              issuedAt: now,
+              isCustom: Boolean(soItem?.customNotes?.trim()),
+              customNotes: soItem?.customNotes?.trim() || undefined,
+              isSubAssembly: false,
+              isComplaintReplacement: true,
+              complaintId: complaint.id,
+            };
+
+            updatedWorkOrders = [newWO, ...updatedWorkOrders];
+            replacementWOId = woId;
+            newSpkNumbers.push(spkNumber);
+          }
+
+          result = { success: true, inStock: false, spkNumber: newSpkNumbers.join(', ') };
+        }
+      }
+
+      // Update Sales Order totalAmount & complaint status
+      const newOrderTotal = isRefund ? Math.max(0, targetOrder.totalAmount - refundAmount) : targetOrder.totalAmount;
+      const updatedSOs = prev.salesOrders.map(o => {
+        if (o.id !== orderId) return o;
+        return {
+          ...o,
+          totalAmount: newOrderTotal,
+          complaints: (o.complaints || []).map(c =>
+            c.id === complaintId
+              ? {
+                  ...c,
+                  status: isReplacement ? ('DITANGANI' as const) : ('SELESAI' as const),
+                  resolution,
+                  resolutionNotes,
+                  handledAt: now,
+                  resolvedAt: isReplacement ? undefined : now,
+                  replacementStatus: isReplacement ? replacementStatus : c.replacementStatus,
+                  replacementWOId: isReplacement ? replacementWOId : c.replacementWOId,
+                }
+              : c
+          ),
+        };
+      });
+
       if (!isRefund || refundAmount <= 0) {
         return {
           ...prev,
           salesOrders: updatedSOs,
           returnedGoods: updatedReturnedGoods,
+          finishedGoods: updatedFinishedGoods,
+          stockMovements: updatedStockMovements,
+          workOrders: updatedWorkOrders,
         };
       }
 
@@ -1942,6 +2171,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         returnedGoods: updatedReturnedGoods,
       };
     });
+
+    return result;
   }, [currentUser.name]);
 
   const processReturnedGoodAction = useCallback((
@@ -2001,7 +2232,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Bongkar barang: kembalikan bahan baku ke gudang sesuai BOM
         const product = prev.products.find(p => p.id === item.productId);
         const variant = product?.variants.find(v => v.id === item.variantId);
-        const bomItems = variant?.bom || [];
+        const bomItems = (variant?.bom && variant.bom.length > 0)
+          ? variant.bom
+          : getEffectiveVariantBOM(variant, prev.bomTemplateItems);
 
         if (bomItems.length > 0) {
           bomItems.forEach(b => {
@@ -2076,27 +2309,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { success: false, error: 'Order not found or not in PENDING state.' };
     }
 
-    // Check all materials required
+    // Check all materials required (calculated per unit)
     const allMaterialsNeeded = new Map<string, number>();
 
     order.items.forEach(item => {
       const product = state.products.find(p => p.id === item.productId);
-      if (!product) return;
-      const variant = item.variantId ? product.variants.find(v => v.id === item.variantId) : product.variants[0];
-      if (!variant) return;
+      const variant = item.variantId ? product?.variants.find(v => v.id === item.variantId) : product?.variants[0];
 
-      variant.bom.forEach(b => {
-        allMaterialsNeeded.set(b.materialId, (allMaterialsNeeded.get(b.materialId) || 0) + (b.qty * item.qty));
-      });
+      for (let unit = 1; unit <= item.qty; unit++) {
+        const unitCustom = item.unitCustomProcesses?.find(u => u.unitIndex === unit);
+        const isUnitCustomized = unitCustom ? unitCustom.isBomCustomized : item.isBomCustomized;
+        const unitCustomBom = unitCustom?.isBomCustomized ? unitCustom.customBom : (item.isBomCustomized ? item.customBom : undefined);
 
-      if (item.selectedModifiers && item.selectedModifiers.length > 0) {
-        item.selectedModifiers.forEach(group => {
-          group.selectedOptions.forEach(opt => {
-            opt.bom.forEach(b => {
-              allMaterialsNeeded.set(b.materialId, (allMaterialsNeeded.get(b.materialId) || 0) + (b.qty * item.qty));
-            });
+        if (isUnitCustomized && unitCustomBom) {
+          unitCustomBom.forEach(b => {
+            allMaterialsNeeded.set(b.materialId, (allMaterialsNeeded.get(b.materialId) || 0) + b.qty);
           });
-        });
+        } else {
+          if (variant?.bom) {
+            variant.bom.forEach(b => {
+              allMaterialsNeeded.set(b.materialId, (allMaterialsNeeded.get(b.materialId) || 0) + b.qty);
+            });
+          }
+
+          if (item.selectedModifiers && item.selectedModifiers.length > 0) {
+            item.selectedModifiers.forEach(group => {
+              group.selectedOptions.forEach(opt => {
+                opt.bom.forEach(b => {
+                  allMaterialsNeeded.set(b.materialId, (allMaterialsNeeded.get(b.materialId) || 0) + b.qty);
+                });
+              });
+            });
+          }
+        }
       }
     });
 
@@ -2113,52 +2358,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       });
 
-    // Verify stock (with MRP Bahan Setengah Jadi auto-expansion or strict mode check)
+    // Verify stock (with MRP Bahan Setengah Jadi auto-expansion, strict mode check, and Finished Goods support)
     for (const [matId, qtyNeeded] of allMaterialsNeeded.entries()) {
       const mat = state.materials.find(m => m.id === matId);
-      if (!mat) {
-        return { success: false, error: `Bahan baku tidak ditemukan: ${matId}.` };
+      const fg = !mat ? state.finishedGoods.find(f => f.id === matId) : null;
+      if (!mat && !fg) {
+        return { success: false, error: `Bahan / barang jadi tidak ditemukan: ${matId}.` };
       }
 
-      if (state.strictSOStockCheck) {
-        if (mat.stock < qtyNeeded) {
+      if (fg) {
+        if (fg.stock < qtyNeeded) {
           return {
             success: false,
-            error: `Stok ${mat.isSubAssembly ? 'bahan setengah jadi' : 'bahan baku'} "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+            error: `Stok barang jadi "${fg.productName}${fg.variantLabel ? ` (${fg.variantLabel})` : ''}" tidak mencukupi. Stok tersedia: ${fg.stock} ${fg.unit}, kebutuhan: ${qtyNeeded} ${fg.unit}.`,
           };
         }
-      } else {
-        if (mat.isSubAssembly) {
-          const reservedQty = activeReservedSubAssemblyMap.get(matId) || 0;
-          const availableEffective = Math.max(0, (mat.stock || 0) - reservedQty);
-          const deficit = qtyNeeded - availableEffective;
-
-          if (deficit > 0) {
-            // Check child BOM raw materials for the deficit quantity
-            if (!mat.childBom || mat.childBom.length === 0) {
-              return {
-                success: false,
-                error: `Stok barang setengah jadi "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
-              };
-            }
-
-            for (const child of mat.childBom) {
-              const childQtyNeeded = child.qty * deficit;
-              const childMat = state.materials.find(m => m.id === child.materialId);
-              if (!childMat || childMat.stock < childQtyNeeded) {
-                return {
-                  success: false,
-                  error: `Stok bahan baku "${childMat?.name || child.materialId}" tidak mencukupi. Stok tersedia: ${childMat?.stock || 0} ${childMat?.unit || ''}, kebutuhan: ${childQtyNeeded} ${childMat?.unit || ''}.`,
-                };
-              }
-            }
-          }
-        } else {
+      } else if (mat) {
+        if (state.strictSOStockCheck) {
           if (mat.stock < qtyNeeded) {
             return {
               success: false,
-              error: `Stok bahan baku "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+              error: `Stok ${mat.isSubAssembly ? 'bahan setengah jadi' : 'bahan baku'} "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
             };
+          }
+        } else {
+          if (mat.isSubAssembly) {
+            const reservedQty = activeReservedSubAssemblyMap.get(matId) || 0;
+            const availableEffective = Math.max(0, (mat.stock || 0) - reservedQty);
+            const deficit = qtyNeeded - availableEffective;
+
+            if (deficit > 0) {
+              // Check child BOM raw materials for the deficit quantity
+              if (!mat.childBom || mat.childBom.length === 0) {
+                return {
+                  success: false,
+                  error: `Stok barang setengah jadi "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+                };
+              }
+
+              for (const child of mat.childBom) {
+                const childQtyNeeded = child.qty * deficit;
+                const childMat = state.materials.find(m => m.id === child.materialId);
+                if (!childMat || childMat.stock < childQtyNeeded) {
+                  return {
+                    success: false,
+                    error: `Stok bahan baku "${childMat?.name || child.materialId}" tidak mencukupi. Stok tersedia: ${childMat?.stock || 0} ${childMat?.unit || ''}, kebutuhan: ${childQtyNeeded} ${childMat?.unit || ''}.`,
+                  };
+                }
+              }
+            }
+          } else {
+            if (mat.stock < qtyNeeded) {
+              return {
+                success: false,
+                error: `Stok bahan baku "${mat.name}" tidak mencukupi. Stok tersedia: ${mat.stock} ${mat.unit}, kebutuhan: ${qtyNeeded} ${mat.unit}.`,
+              };
+            }
           }
         }
       }
@@ -2172,9 +2427,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const subAssemblyDemands: { subMat: RawMaterial; deficit: number }[] = [];
 
       const updatedMaterialsMap = new Map<string, RawMaterial>(prev.materials.map(m => [m.id, { ...m }]));
+      const updatedFinishedGoodsMap = new Map<string, FinishedGoodStock>(prev.finishedGoods.map(fg => [fg.id, { ...fg }]));
 
       for (const [matId, qtyNeeded] of allMaterialsNeeded.entries()) {
         const mat = updatedMaterialsMap.get(matId);
+        const fg = !mat ? updatedFinishedGoodsMap.get(matId) : null;
+
+        if (fg) {
+          fg.stock = Math.max(0, parseFloat((fg.stock - qtyNeeded).toFixed(4)));
+          newMovements.push({
+            id: generateId(),
+            materialId: fg.id,
+            materialName: `${fg.productName}${fg.variantLabel ? ` (${fg.variantLabel})` : ''}`,
+            type: 'OUT',
+            qty: qtyNeeded,
+            date: now,
+            reference: `SO-${order.orderNumber} (Konsumsi Stok Barang Jadi)`,
+            stockCategory: 'FINISHED',
+          });
+          continue;
+        }
+
         if (!mat) continue;
 
         if (prev.strictSOStockCheck) {
@@ -2231,7 +2504,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
 
         const woId = `wo-sa-${generateId()}`;
-        const spkNumber = `SPK-SA-${String(prev.workOrders.length + newWorkOrders.length + 1).padStart(4, '0')}`;
+        const spkNumber = String(prev.workOrders.length + newWorkOrders.length + 1);
         const materialsConsumed = childBom.map(b => ({
           materialId: b.materialId,
           qty: b.qty * deficit,
@@ -2316,8 +2589,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
         for (let unit = 1; unit <= item.qty; unit++) {
           const woId = `wo-${generateId()}`;
 
-          const jobCards: JobCard[] = routing ? routing.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
+          const unitCustom = item.unitCustomProcesses?.find(u => u.unitIndex === unit);
+          const isUnitCustomized = unitCustom ? unitCustom.isBomCustomized : item.isBomCustomized;
+          const unitCustomBom = unitCustom?.isBomCustomized ? unitCustom.customBom : (item.isBomCustomized ? item.customBom : undefined);
+          const unitCustomOps = unitCustom?.isBomCustomized
+            ? (unitCustom.customOperations || unitCustom.customOperationIds)
+            : (item.isBomCustomized ? (item.customOperations || item.customOperationIds) : undefined);
+
+          let effectiveSteps: {
+            sequence: number;
+            operationId: string;
+            customOp?: import('@/lib/types').CustomOperationItem;
+          }[] = [];
+
+          if (isUnitCustomized && unitCustomOps && unitCustomOps.length > 0) {
+            effectiveSteps = unitCustomOps.map((opItem: any, idx: number) => {
+              const opId = typeof opItem === 'string' ? opItem : opItem.operationId;
+              const customOp = typeof opItem === 'object' ? opItem : undefined;
+              return {
+                sequence: idx + 1,
+                operationId: opId,
+                customOp,
+              };
+            });
+          } else if (routing) {
+            effectiveSteps = routing.steps.map(s => ({ sequence: s.sequence, operationId: s.operationId }));
+          }
+
+          const jobCards: JobCard[] = effectiveSteps.sort((a, b) => a.sequence - b.sequence).map(step => {
             const op = prev.operations.find(o => o.id === step.operationId);
+            const plannedMinutes = step.customOp?.durationMinutes !== undefined
+              ? step.customOp.durationMinutes
+              : (op?.durationMinutes || 0);
+
             return {
               id: `jc-${generateId()}`,
               workOrderId: woId,
@@ -2328,46 +2632,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
               status: 'PENDING' as const,
               completedQty: 0,
               picName: '',
-              plannedMinutes: op?.durationMinutes || 0,
+              plannedMinutes,
             };
-          }) : [];
+          });
 
           let plannedLaborCost = 0;
-          if (routing) {
-            routing.steps.forEach(step => {
-              const op = prev.operations.find(o => o.id === step.operationId);
-              if (!op) return;
-              if (op.costingMethod === 'fixed') {
-                plannedLaborCost += (op.fixedLaborCost || 0);
-              } else {
-                const hours = (op.durationMinutes || 0) / 60;
-                plannedLaborCost += hours * (op.laborCostPerHour || 0);
-              }
-            });
-          }
+          effectiveSteps.forEach(step => {
+            const op = prev.operations.find(o => o.id === step.operationId);
+            if (!op) return;
+            const costingMethod = step.customOp?.costingMethod ?? op.costingMethod ?? 'fixed';
+            const fixedCost = step.customOp?.fixedLaborCost !== undefined ? step.customOp.fixedLaborCost : (op.fixedLaborCost || 0);
+            const hourlyRate = step.customOp?.laborCostPerHour !== undefined ? step.customOp.laborCostPerHour : (op.laborCostPerHour || 0);
+            const duration = step.customOp?.durationMinutes !== undefined ? step.customOp.durationMinutes : (op.durationMinutes || 0);
+
+            if (costingMethod === 'fixed') {
+              plannedLaborCost += fixedCost;
+            } else {
+              const hours = duration / 60;
+              plannedLaborCost += hours * hourlyRate;
+            }
+          });
 
           let materialCost = 0;
           const materialsConsumed: { materialId: string; qty: number }[] = [];
 
-          variant.bom.forEach(b => {
-            const mat = updatedMaterialsMap.get(b.materialId);
-            materialsConsumed.push({ materialId: b.materialId, qty: b.qty });
-            materialCost += (mat?.unitCost || 0) * b.qty;
-          });
+          if (isUnitCustomized && unitCustomBom) {
+            unitCustomBom.forEach(b => {
+              const mat = updatedMaterialsMap.get(b.materialId);
+              const fg = !mat ? updatedFinishedGoodsMap.get(b.materialId) : null;
+              materialsConsumed.push({ materialId: b.materialId, qty: b.qty });
+              if (mat) {
+                materialCost += (mat.unitCost || 0) * b.qty;
+              } else if (fg) {
+                const prod = prev.products.find(p => p.id === fg.productId);
+                const variant = prod?.variants.find(v => v.id === fg.variantId) || prod?.variants[0];
+                const estCost = variant?.price ? variant.price * 0.6 : 0;
+                materialCost += estCost * b.qty;
+              }
+            });
+          } else {
+            variant.bom.forEach(b => {
+              const mat = updatedMaterialsMap.get(b.materialId);
+              materialsConsumed.push({ materialId: b.materialId, qty: b.qty });
+              materialCost += (mat?.unitCost || 0) * b.qty;
+            });
 
-          if (item.selectedModifiers) {
-            item.selectedModifiers.forEach(g => {
-              g.selectedOptions.forEach(opt => {
-                opt.bom.forEach(b => {
-                  const mat = updatedMaterialsMap.get(b.materialId);
-                  materialsConsumed.push({ materialId: b.materialId, qty: b.qty });
-                  materialCost += (mat?.unitCost || 0) * b.qty;
+            if (item.selectedModifiers) {
+              item.selectedModifiers.forEach(g => {
+                g.selectedOptions.forEach(opt => {
+                  opt.bom.forEach(b => {
+                    const mat = updatedMaterialsMap.get(b.materialId);
+                    materialsConsumed.push({ materialId: b.materialId, qty: b.qty });
+                    materialCost += (mat?.unitCost || 0) * b.qty;
+                  });
                 });
               });
-            });
+            }
           }
 
-          const spkNum = `SPK-${order.orderNumber}-${spkCounter}`;
+          const spkNum = generateItemUnitNumber(order.orderNumber, spkCounter);
           spkCounter++;
 
           newWorkOrders.push({
@@ -2375,6 +2698,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             spkNumber: spkNum,
             salesOrderId: order.id,
             salesOrderNumber: order.orderNumber,
+            productId: product.id,
+            variantId: variant.id,
+            itemIndex: idx,
+            unitIndex: unit,
             productName: product.name,
             variantName: variantCombination || undefined,
             selectedModifiers: item.selectedModifiers,
@@ -2385,7 +2712,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             plannedLaborCost,
             actualLaborCost: plannedLaborCost,
             issuedAt: now,
-            isCustom: item.isCustom || false,
+            isCustom: item.isCustom || Boolean(isUnitCustomized),
             customNotes: item.customNotes,
           });
         }
@@ -2394,6 +2721,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...prev,
         materials: Array.from(updatedMaterialsMap.values()),
+        finishedGoods: Array.from(updatedFinishedGoodsMap.values()),
         workOrders: [...newWorkOrders, ...prev.workOrders],
         stockMovements: [...prev.stockMovements, ...newMovements],
         salesOrders: prev.salesOrders.map(o =>
@@ -2404,6 +2732,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               spkIssuedAt: now,
               updatedAt: now,
               updatedBy: currentUser.name,
+              items: o.items.map(it => ({
+                ...it,
+                producedQty: it.producedQty || 0,
+                shippedQty: it.shippedQty || 0,
+                deliveredQty: it.deliveredQty || 0,
+              })),
             }
             : o
         ),
@@ -2502,107 +2836,207 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       // 2. Product WO completion: Deduct consumed Bahan Setengah Jadi stock (Stock OUT) & update SO status
       else if (!targetWO.isSubAssembly && prevWO && prevWO.status !== 'COMPLETED') {
-        const saMaterialsMap = new Map<string, number>();
-        targetWO.materialsConsumed.forEach(b => {
-          const mat = prev.materials.find(m => m.id === b.materialId);
-          if (mat?.isSubAssembly) {
-            saMaterialsMap.set(b.materialId, (saMaterialsMap.get(b.materialId) || 0) + b.qty);
-          }
-        });
+        if (targetWO.salesOrderId === 'INTERNAL-PROD') {
+          const producedQty = targetWO.jobCards[0]?.targetQty || 1;
+          const consumedMap = new Map<string, number>();
+          targetWO.materialsConsumed.forEach(b => {
+            consumedMap.set(b.materialId, (consumedMap.get(b.materialId) || 0) + b.qty);
+          });
 
-        if (saMaterialsMap.size > 0) {
-          const newMovements: StockMovement[] = [];
+          const newOutMovements: StockMovement[] = [];
           updatedMaterials = updatedMaterials.map(m => {
-            const consumedQty = saMaterialsMap.get(m.id);
+            const consumedQty = consumedMap.get(m.id);
             if (consumedQty) {
               return { ...m, stock: parseFloat((m.stock - consumedQty).toFixed(4)) };
             }
             return m;
           });
 
-          saMaterialsMap.forEach((qty, matId) => {
-            const saMat = prev.materials.find(m => m.id === matId);
-            newMovements.push({
+          targetWO.materialsConsumed.forEach(b => {
+            const mat = prev.materials.find(m => m.id === b.materialId);
+            newOutMovements.push({
               id: generateId(),
-              materialId: matId,
-              materialName: saMat?.name || matId,
+              materialId: b.materialId,
+              materialName: mat?.name || b.materialId,
               type: 'OUT',
-              qty,
-              reference: `${targetWO.spkNumber} (Penggunaan Bahan Setengah Jadi)`,
+              qty: b.qty,
+              reference: targetWO.spkNumber,
               date: now,
+              stockCategory: mat?.isSubAssembly ? 'WIP' : 'RAW',
             });
           });
 
-          updatedMovements = [...newMovements, ...updatedMovements];
-        }
+          // Simpan hasil ke stok barang jadi dengan id barang sesuai id SPK-nya
+          const targetFGId = targetWO.spkNumber;
+          const pName = targetWO.productName;
+          const varLabel = targetWO.variantName;
+          const fgIndex = prev.finishedGoods.findIndex(fg => fg.id === targetFGId);
 
-        // Item-level fulfillment: increment producedQty for the matching SO item
-        const soId = targetWO.salesOrderId;
-        updatedFinishedGoods = prev.finishedGoods;
-        const matchingSO = prev.salesOrders.find(s => s.id === soId);
-        const matchingSOItem = matchingSO?.items.find(item =>
-          targetWO.productName === item.productName ||
-          targetWO.productName.includes(item.productName) ||
-          item.productName.includes(targetWO.productName)
-        );
-
-        if (matchingSOItem) {
-          const prodId = matchingSOItem.productId;
-          const varId = matchingSOItem.variantId;
-          const prodObj = prev.products.find(p => p.id === prodId);
-          const varObj = prodObj?.variants?.find(v => v.id === varId);
-          const varLabel = matchingSOItem.variantLabel || (varObj ? Object.values(varObj.combination || {}).join(' • ') || varObj.sku : undefined);
-          const pName = matchingSOItem.productName || prodObj?.name || targetWO.productName;
-
-          const fgIndex = prev.finishedGoods.findIndex(fg => fg.productId === prodId && (fg.variantId || '') === (varId || ''));
-          let targetFGId = '';
           if (fgIndex >= 0) {
-            targetFGId = prev.finishedGoods[fgIndex].id;
             updatedFinishedGoods = prev.finishedGoods.map((fg, idx) =>
-              idx === fgIndex ? { ...fg, stock: fg.stock + 1 } : fg
+              idx === fgIndex ? { ...fg, stock: fg.stock + producedQty } : fg
             );
           } else {
-            targetFGId = `fg-${generateId()}`;
             const newFG: FinishedGoodStock = {
               id: targetFGId,
-              productId: prodId,
-              variantId: varId,
+              productId: targetWO.productId || '',
+              variantId: targetWO.variantId,
               productName: pName,
               variantLabel: varLabel,
-              stock: 1,
+              stock: producedQty,
               minStock: 0,
               unit: 'unit',
             };
             updatedFinishedGoods = [newFG, ...prev.finishedGoods];
           }
 
-          updatedMovements = [{
+          const newInMovement: StockMovement = {
             id: generateId(),
             materialId: targetFGId,
             materialName: `${pName}${varLabel ? ` (${varLabel})` : ''}`,
             type: 'IN',
-            qty: 1,
+            qty: producedQty,
             reference: `${targetWO.spkNumber} (Produksi Selesai)`,
             date: now,
             stockCategory: 'FINISHED',
-          }, ...updatedMovements];
-        }
+          };
 
-        updatedSOs = (updatedSOs === prev.salesOrders ? [...prev.salesOrders] : updatedSOs).map(so => {
-          if (so.id !== soId) return so;
-          // Find matching SO item by productName
-          const updatedItems = so.items.map(item => {
-            const isMatch = targetWO.productName === item.productName ||
-              targetWO.productName.includes(item.productName) ||
-              item.productName.includes(targetWO.productName);
-            if (isMatch && (item.producedQty || 0) < item.qty) {
-              return { ...item, producedQty: (item.producedQty || 0) + 1 };
+          updatedMovements = [newInMovement, ...newOutMovements, ...updatedMovements];
+        } else {
+          // Regular Sales Order WO completion
+          const saMaterialsMap = new Map<string, number>();
+          targetWO.materialsConsumed.forEach(b => {
+            const mat = prev.materials.find(m => m.id === b.materialId);
+            if (mat?.isSubAssembly) {
+              saMaterialsMap.set(b.materialId, (saMaterialsMap.get(b.materialId) || 0) + b.qty);
             }
-            return item;
           });
-          const updatedSO = { ...so, items: updatedItems };
-          return { ...updatedSO, status: computeSOStatus(updatedSO) };
-        });
+
+          if (saMaterialsMap.size > 0) {
+            const newMovements: StockMovement[] = [];
+            updatedMaterials = updatedMaterials.map(m => {
+              const consumedQty = saMaterialsMap.get(m.id);
+              if (consumedQty) {
+                return { ...m, stock: parseFloat((m.stock - consumedQty).toFixed(4)) };
+              }
+              return m;
+            });
+
+            saMaterialsMap.forEach((qty, matId) => {
+              const saMat = prev.materials.find(m => m.id === matId);
+              newMovements.push({
+                id: generateId(),
+                materialId: matId,
+                materialName: saMat?.name || matId,
+                type: 'OUT',
+                qty,
+                reference: `${targetWO.spkNumber} (Penggunaan Bahan Setengah Jadi)`,
+                date: now,
+              });
+            });
+
+            updatedMovements = [...newMovements, ...updatedMovements];
+          }
+
+          if (targetWO.isComplaintReplacement && targetWO.complaintId) {
+            // Complaint replacement WO completion:
+            // Check if all WOs for this complaint are now completed
+            const otherUnfinishedWOs = updatedWOs.filter(
+              w => w.complaintId === targetWO.complaintId && w.id !== targetWO.id && w.status !== 'COMPLETED'
+            );
+            if (otherUnfinishedWOs.length === 0) {
+              // All replacement WOs completed! Transition complaint replacementStatus to 'READY_FOR_DELIVERY'
+              updatedSOs = (updatedSOs === prev.salesOrders ? [...prev.salesOrders] : updatedSOs).map(so => {
+                if (so.id !== targetWO.salesOrderId && so.orderNumber !== targetWO.salesOrderNumber) return so;
+                return {
+                  ...so,
+                  complaints: (so.complaints || []).map(c =>
+                    c.id === targetWO.complaintId
+                      ? { ...c, replacementStatus: 'READY_FOR_DELIVERY' as const }
+                      : c
+                  ),
+                };
+              });
+            }
+          } else {
+            // Regular Sales Order WO completion: Item-level fulfillment: increment producedQty for the matching SO item
+            const soId = targetWO.salesOrderId;
+            updatedFinishedGoods = prev.finishedGoods;
+            const matchingSO = prev.salesOrders.find(s => s.id === soId);
+
+            // Determine target SO item index accurately
+            let targetItemIndex = -1;
+            if (targetWO.itemIndex !== undefined && matchingSO && matchingSO.items[targetWO.itemIndex]) {
+              targetItemIndex = targetWO.itemIndex;
+            } else if (matchingSO) {
+              targetItemIndex = matchingSO.items.findIndex(item => {
+                if (targetWO.productId && item.productId) {
+                  const prodMatch = targetWO.productId === item.productId;
+                  const varMatch = targetWO.variantId && item.variantId ? targetWO.variantId === item.variantId : true;
+                  return prodMatch && varMatch;
+                }
+                return targetWO.productName === item.productName;
+              });
+            }
+
+            const matchingSOItem = targetItemIndex >= 0 && matchingSO ? matchingSO.items[targetItemIndex] : undefined;
+
+            if (matchingSOItem) {
+              const prodId = matchingSOItem.productId;
+              const varId = matchingSOItem.variantId;
+              const prodObj = prev.products.find(p => p.id === prodId);
+              const varObj = prodObj?.variants?.find(v => v.id === varId);
+              const varLabel = matchingSOItem.variantLabel || (varObj ? Object.values(varObj.combination || {}).join(' • ') || varObj.sku : undefined);
+              const pName = matchingSOItem.productName || prodObj?.name || targetWO.productName;
+
+              const fgIndex = prev.finishedGoods.findIndex(fg => fg.productId === prodId && (fg.variantId || '') === (varId || ''));
+              let targetFGId = '';
+              if (fgIndex >= 0) {
+                targetFGId = prev.finishedGoods[fgIndex].id;
+                updatedFinishedGoods = prev.finishedGoods.map((fg, idx) =>
+                  idx === fgIndex ? { ...fg, stock: fg.stock + 1 } : fg
+                );
+              } else {
+                targetFGId = `fg-${generateId()}`;
+                const newFG: FinishedGoodStock = {
+                  id: targetFGId,
+                  productId: prodId,
+                  variantId: varId,
+                  productName: pName,
+                  variantLabel: varLabel,
+                  stock: 1,
+                  minStock: 0,
+                  unit: 'unit',
+                };
+                updatedFinishedGoods = [newFG, ...prev.finishedGoods];
+              }
+
+              updatedMovements = [{
+                id: generateId(),
+                materialId: targetFGId,
+                materialName: `${pName}${varLabel ? ` (${varLabel})` : ''}`,
+                type: 'IN',
+                qty: 1,
+                reference: `${targetWO.spkNumber} (Produksi Selesai)`,
+                date: now,
+                stockCategory: 'FINISHED',
+              }, ...updatedMovements];
+            }
+
+            updatedSOs = (updatedSOs === prev.salesOrders ? [...prev.salesOrders] : updatedSOs).map(so => {
+              if (so.id !== soId) return so;
+              // Increment producedQty ONLY for the single targeted item
+              const updatedItems = so.items.map((item, idx) => {
+                if (idx === targetItemIndex && (item.producedQty || 0) < item.qty) {
+                  return { ...item, producedQty: (item.producedQty || 0) + 1 };
+                }
+                return item;
+              });
+              const updatedSO = { ...so, items: updatedItems };
+              return { ...updatedSO, status: computeSOStatus(updatedSO) };
+            });
+          }
+        }
       }
     }
     return {
@@ -2615,7 +3049,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   };
 
-  const createSubAssemblyWorkOrder = useCallback((subAssemblyId: string, targetQty: number) => {
+  const createSubAssemblyWorkOrder = useCallback((subAssemblyId: string, targetQty: number, customNotes?: string) => {
     let result = { success: true, error: '' };
     const now = new Date().toISOString();
 
@@ -2630,21 +3064,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return prev;
       }
 
-      // Check stock availability
-      for (const item of subMat.childBom) {
-        const reqQty = item.qty * targetQty;
-        const rawMat = prev.materials.find(m => m.id === item.materialId);
-        if (!rawMat || rawMat.stock < reqQty) {
-          result = {
-            success: false,
-            error: `Stok bahan mentah "${rawMat?.name || item.materialId}" kurang! Butuh ${reqQty} ${rawMat?.unit || ''}, tersedia ${rawMat?.stock || 0}.`,
-          };
-          return prev;
+      // Check stock availability if strict check enabled
+      if (prev.strictSOStockCheck) {
+        for (const item of subMat.childBom) {
+          const reqQty = item.qty * targetQty;
+          const rawMat = prev.materials.find(m => m.id === item.materialId);
+          if (!rawMat || rawMat.stock < reqQty) {
+            result = {
+              success: false,
+              error: `Stok bahan mentah "${rawMat?.name || item.materialId}" kurang! Butuh ${reqQty} ${rawMat?.unit || ''}, tersedia ${rawMat?.stock || 0}.`,
+            };
+            return prev;
+          }
         }
       }
 
       const woId = `wo-sa-${generateId()}`;
-      const spkNumber = `SPK-SA-${String(prev.workOrders.length + 1).padStart(4, '0')}`;
+      const spkNumber = String(prev.workOrders.length + 1);
       const materialsConsumed = subMat.childBom.map(b => ({
         materialId: b.materialId,
         qty: b.qty * targetQty,
@@ -2710,9 +3146,157 @@ export function AppProvider({ children }: { children: ReactNode }) {
         plannedLaborCost,
         actualLaborCost: 0,
         issuedAt: now,
-        isCustom: false,
+        isCustom: Boolean(customNotes?.trim()),
+        customNotes: customNotes?.trim() || undefined,
         isSubAssembly: true,
         subAssemblyId: subMat.id,
+      };
+
+      return {
+        ...prev,
+        workOrders: [newWO, ...prev.workOrders],
+      };
+    });
+
+    return result;
+  }, []);
+
+  const createNormalWorkOrder = useCallback((productId: string, variantId: string | undefined, targetQty: number, customNotes?: string) => {
+    let result = { success: true, error: '' };
+    const now = new Date().toISOString();
+
+    setState(prev => {
+      const product = prev.products.find(p => p.id === productId);
+      if (!product) {
+        result = { success: false, error: 'Produk tidak ditemukan.' };
+        return prev;
+      }
+      if (targetQty <= 0) {
+        result = { success: false, error: 'Jumlah rencana produksi harus lebih dari 0.' };
+        return prev;
+      }
+
+      // Tentukan varian
+      let variant = product.variants?.find(v => v.id === variantId);
+      if (!variant && (!product.variants || product.variants.length === 0)) {
+        variant = undefined;
+      } else if (!variant && product.variants && product.variants.length > 0) {
+        if (!variantId && product.variants.length === 1) {
+          variant = product.variants[0];
+        } else if (!variantId) {
+          result = { success: false, error: 'Silakan pilih varian produk terlebih dahulu.' };
+          return prev;
+        } else {
+          result = { success: false, error: 'Varian produk yang dipilih tidak valid.' };
+          return prev;
+        }
+      }
+
+      const bomItems = (variant?.bom && variant.bom.length > 0)
+        ? variant.bom
+        : getEffectiveVariantBOM(variant, prev.bomTemplateItems);
+
+      // Validasi ketersediaan stok bahan baku jika strict check diaktifkan
+      if (prev.strictSOStockCheck) {
+        for (const item of bomItems) {
+          const reqQty = item.qty * targetQty;
+          const mat = prev.materials.find(m => m.id === item.materialId);
+          if (!mat || mat.stock < reqQty) {
+            result = {
+              success: false,
+              error: `Stok "${mat?.name || item.materialId}" kurang! Butuh ${reqQty} ${mat?.unit || ''}, tersedia ${mat?.stock || 0}.`,
+            };
+            return prev;
+          }
+        }
+      }
+
+      const woId = `wo-${generateId()}`;
+      let spkNumSeq = prev.workOrders.length + 1;
+      let spkNumber = String(spkNumSeq);
+      while (prev.workOrders.some(w => w.spkNumber === spkNumber)) {
+        spkNumSeq++;
+        spkNumber = String(spkNumSeq);
+      }
+
+      const assignedRouting = (variant?.routingId ? prev.routings.find(r => r.id === variant.routingId) : null)
+        || (product.defaultRoutingId ? prev.routings.find(r => r.id === product.defaultRoutingId) : null)
+        || prev.routings[0];
+
+      const jobCards: JobCard[] = assignedRouting && assignedRouting.steps.length > 0
+        ? assignedRouting.steps.sort((a, b) => a.sequence - b.sequence).map(step => {
+          const op = prev.operations.find(o => o.id === step.operationId);
+          return {
+            id: `jc-${generateId()}`,
+            workOrderId: woId,
+            operationId: step.operationId,
+            operationName: op?.name || 'Operasi',
+            sequence: step.sequence,
+            targetQty,
+            completedQty: 0,
+            picName: '',
+            plannedMinutes: (op?.durationMinutes || 30) * targetQty,
+            status: 'PENDING' as const,
+          };
+        })
+        : [
+          {
+            id: `jc-${generateId()}`,
+            workOrderId: woId,
+            operationId: 'op-prod-default',
+            operationName: 'Produksi Barang Jadi',
+            sequence: 1,
+            targetQty,
+            completedQty: 0,
+            picName: '',
+            plannedMinutes: 60 * targetQty,
+            status: 'PENDING' as const,
+          },
+        ];
+
+      const plannedLaborCost = jobCards.reduce((acc, jc) => {
+        const op = prev.operations.find(o => o.id === jc.operationId);
+        if (!op) return acc;
+        if (op.costingMethod === 'fixed') {
+          return acc + ((op.fixedLaborCost || 0) * targetQty);
+        }
+        const hrs = (jc.plannedMinutes || 30) / 60;
+        return acc + (hrs * (op.laborCostPerHour || 0));
+      }, 0);
+
+      const materialsConsumed = bomItems.map(b => ({
+        materialId: b.materialId,
+        qty: b.qty * targetQty,
+      }));
+
+      const materialCost = materialsConsumed.reduce((acc, b) => {
+        const mat = prev.materials.find(m => m.id === b.materialId);
+        return acc + ((mat?.unitCost || 0) * b.qty);
+      }, 0);
+
+      const variantLabel = variant
+        ? (Object.values(variant.combination || {}).join(' • ') || variant.sku)
+        : undefined;
+
+      const newWO: WorkOrder = {
+        id: woId,
+        spkNumber,
+        salesOrderId: 'INTERNAL-PROD',
+        salesOrderNumber: 'Stok Barang Jadi',
+        productId: product.id,
+        variantId: variant?.id,
+        productName: product.name,
+        variantName: variantLabel,
+        status: 'PENDING',
+        jobCards,
+        materialsConsumed,
+        materialCost,
+        plannedLaborCost,
+        actualLaborCost: 0,
+        issuedAt: now,
+        isCustom: Boolean(customNotes?.trim()),
+        customNotes: customNotes?.trim() || undefined,
+        isSubAssembly: false,
       };
 
       return {
@@ -2897,8 +3481,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const addOperation = useCallback((op: Omit<ProductionOperation, 'id'>) => {
-    setState(prev => ({ ...prev, operations: [...prev.operations, { ...op, id: generateId() }] }));
+  const addOperation = useCallback((op: Omit<ProductionOperation, 'id'>): string => {
+    const id = `op-${generateId()}`;
+    setState(prev => ({ ...prev, operations: [...prev.operations, { ...op, id }] }));
+    return id;
   }, []);
 
   const updateOperation = useCallback((id: string, op: Partial<Omit<ProductionOperation, 'id'>>) => {
@@ -2986,9 +3572,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const targetSOs = prev.salesOrders.filter(o => salesOrderIds.includes(o.id));
       if (targetSOs.length === 0) return prev;
 
-      const year = new Date().getFullYear();
       const existingTripNumbers = new Set(prev.deliveryOrders.map(d => d.tripNumber).filter(Boolean));
-      const tripNumber = `KLT-${year}-${String(existingTripNumbers.size + 1).padStart(3, '0')}`;
+      const tripNumber = String(existingTripNumbers.size + 1);
       const tripId = `trip-${generateId()}`;
       const now = new Date().toISOString();
 
@@ -3011,7 +3596,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         const doIndex = prev.deliveryOrders.length + newDOs.length + 1;
-        const doNumber = `DO-${year}-${String(doIndex).padStart(3, '0')}`;
+        const doNumber = String(doIndex);
 
         const dOrder: DeliveryOrder = {
           id: generateId(),
@@ -3036,20 +3621,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
           status: 'READY_TO_SHIP',
           notes,
           createdAt: now,
+          isReplacement: soSelectedItems.some(si => si.isReplacement),
+          complaintId: soSelectedItems.find(si => si.complaintId)?.complaintId,
         };
 
         newDOs.push(dOrder);
       });
 
-      // Update shippedQty for each SO item included in this delivery
+      // Update shippedQty for each regular SO item and mark complaint replacementStatus as SHIPPED
       let updatedSalesOrders = prev.salesOrders;
       if (selectedItems && selectedItems.length > 0) {
         updatedSalesOrders = prev.salesOrders.map(so => {
           if (!salesOrderIds.includes(so.id)) return so;
           const relevantItems = selectedItems!.filter(si => si.orderId === so.id);
           if (relevantItems.length === 0) return so;
+
+          const regularItems = relevantItems.filter(si => !si.isReplacement);
+          const replacementItems = relevantItems.filter(si => si.isReplacement && si.complaintId);
+
           const updatedItems = so.items.map((item, idx) => {
-            const matchingItems = relevantItems.filter(si =>
+            const matchingItems = regularItems.filter(si =>
               si.itemIndex === idx || (
                 si.productName === item.productName &&
                 (si.variantLabel || '') === (item.variantLabel || '')
@@ -3061,8 +3652,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
             return item;
           });
-          const updatedSO = { ...so, items: updatedItems };
-          return { ...updatedSO, status: computeSOStatus(updatedSO) };
+
+          const updatedComplaints = (so.complaints || []).map(c => {
+            if (replacementItems.some(ri => ri.complaintId === c.id)) {
+              return { ...c, replacementStatus: 'SHIPPED' as const };
+            }
+            return c;
+          });
+
+          const updatedSO = { ...so, items: updatedItems, complaints: updatedComplaints };
+          const newStatus = so.status === 'SENT' ? 'SENT' : computeSOStatus(updatedSO);
+          return { ...updatedSO, status: newStatus };
         });
       }
 
@@ -3160,8 +3760,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (deliveredItems.length > 0) {
           const relevantItems = deliveredItems.filter(di => di.orderId === so.id);
           if (relevantItems.length === 0) return so;
+
+          const regularDeliveredItems = relevantItems.filter(di => !di.isReplacement);
+          const replacementDeliveredItems = relevantItems.filter(di => di.isReplacement && di.complaintId);
+
           const updatedItems = so.items.map((item, idx) => {
-            const matchingItems = relevantItems.filter(di =>
+            const matchingItems = regularDeliveredItems.filter(di =>
               di.itemIndex === idx || (
                 di.productName === item.productName &&
                 (di.variantLabel || '') === (item.variantLabel || '')
@@ -3173,12 +3777,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
             return item;
           });
-          const updatedSO = { ...so, items: updatedItems };
-          const newStatus = computeSOStatus(updatedSO);
+
+          const updatedComplaints = (so.complaints || []).map(c => {
+            if (replacementDeliveredItems.some(ri => ri.complaintId === c.id)) {
+              return {
+                ...c,
+                status: 'SELESAI' as const,
+                replacementStatus: 'DELIVERED' as const,
+                resolvedAt: now,
+              };
+            }
+            return c;
+          });
+
+          const updatedSO = { ...so, items: updatedItems, complaints: updatedComplaints };
+          const newStatus = so.status === 'SENT' ? 'SENT' : computeSOStatus(updatedSO);
           return {
             ...updatedSO,
             status: newStatus,
-            deliveredAt: newStatus === 'SENT' ? now : so.deliveredAt,
+            deliveredAt: newStatus === 'SENT' ? (so.deliveredAt || now) : so.deliveredAt,
           };
         }
         // Fallback for legacy DOs without orderItems: mark fully delivered
@@ -3188,40 +3805,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let updatedInvoices = [...prev.invoices];
       let newJournalEntries = [...prev.journalEntries];
 
-      // Only create invoice when SO becomes fully delivered (SENT)
-      for (const soId of targetSOIds) {
-        const updatedSO = updatedSOs.find(o => o.id === soId);
-        if (!updatedSO || updatedSO.status !== 'SENT') continue;
+      // Only create invoice when SO becomes fully delivered (SENT) and NOT a replacement DO
+      if (!dOrder.isReplacement) {
+        for (const soId of targetSOIds) {
+          const updatedSO = updatedSOs.find(o => o.id === soId);
+          if (!updatedSO || updatedSO.status !== 'SENT') continue;
 
-        const existingInv = updatedInvoices.find(i => i.salesOrderId === soId);
-        if (!existingInv) {
-          const originalSO = prev.salesOrders.find(o => o.id === soId);
-          const newInvoice: Invoice = {
-            id: generateId(),
-            invoiceNumber: `INV-${new Date().getFullYear()}-${String(updatedInvoices.length + 1).padStart(3, '0')}`,
-            salesOrderId: updatedSO.id,
-            salesOrderNumber: updatedSO.orderNumber,
-            salesName: updatedSO.createdBy,
-            customerName: updatedSO.customer.name,
-            totalAmount: updatedSO.totalAmount,
-            paidAmount: 0,
-            status: 'UNPAID',
-            payments: [],
-            issuedAt: now,
-            createdAt: now,
-          };
-          updatedInvoices.push(newInvoice);
-          const invJournal = createInvoiceIssuedJournal(newInvoice, newJournalEntries.length, now, prev.chartOfAccounts);
-          newJournalEntries = [invJournal, ...newJournalEntries];
+          const existingInv = updatedInvoices.find(i => i.salesOrderId === soId);
+          if (!existingInv) {
+            const originalSO = prev.salesOrders.find(o => o.id === soId);
+            const newInvoice: Invoice = {
+              id: generateId(),
+              invoiceNumber: String(updatedInvoices.length + 1),
+              salesOrderId: updatedSO.id,
+              salesOrderNumber: updatedSO.orderNumber,
+              salesName: updatedSO.createdBy,
+              customerName: updatedSO.customer.name,
+              totalAmount: updatedSO.totalAmount,
+              paidAmount: 0,
+              status: 'UNPAID',
+              payments: [],
+              issuedAt: now,
+              createdAt: now,
+            };
+            updatedInvoices.push(newInvoice);
+            const invJournal = createInvoiceIssuedJournal(newInvoice, newJournalEntries.length, now, prev.chartOfAccounts);
+            newJournalEntries = [invJournal, ...newJournalEntries];
+          }
         }
       }
 
-      // Deduct delivered items from Finished Goods stock
+      // Deduct delivered items from Finished Goods stock (only regular non-replacement items, as replacements are reserved upon resolution or produced)
       let updatedFinishedGoods = [...prev.finishedGoods];
       const newFGMovs: StockMovement[] = [];
 
-      if (deliveredItems.length > 0) {
-        deliveredItems.forEach(di => {
+      const regularDeliveredOnly = deliveredItems.filter(di => !di.isReplacement);
+      if (regularDeliveredOnly.length > 0) {
+        regularDeliveredOnly.forEach(di => {
           const qty = di.qty || 1;
           const idx = updatedFinishedGoods.findIndex(fg =>
             (di.productId && fg.productId === di.productId && (di.variantLabel ? fg.variantLabel === di.variantLabel : true)) ||
@@ -3694,39 +4314,84 @@ export function AppProvider({ children }: { children: ReactNode }) {
         : product.variants[0];
       if (!variant) return;
 
-      // Estimate material cost from variant BOM
-      variant.bom.forEach(b => {
-        const mat = state.materials.find(m => m.id === b.materialId);
-        estMaterialCost += (mat?.unitCost || 0) * b.qty * item.qty;
-      });
-
-      // Estimate material cost from selected modifiers BOM
-      if (item.selectedModifiers) {
-        item.selectedModifiers.forEach(group => {
-          group.selectedOptions.forEach(opt => {
-            opt.bom.forEach(b => {
-              const mat = state.materials.find(m => m.id === b.materialId);
-              estMaterialCost += (mat?.unitCost || 0) * b.qty * item.qty;
-            });
-          });
-        });
-      }
-
-      // Estimate labor cost from routing (per unit x qty)
       const routing = variant.routingId ? state.routings.find(r => r.id === variant.routingId) : null;
-      if (routing) {
-        let laborPerUnit = 0;
-        routing.steps.forEach(step => {
-          const op = state.operations.find(o => o.id === step.operationId);
-          if (!op) return;
-          if (op.costingMethod === 'fixed') {
-            laborPerUnit += op.fixedLaborCost || 0;
-          } else {
-            const hours = (op.durationMinutes || 0) / 60;
-            laborPerUnit += hours * (op.laborCostPerHour || 0);
+
+      for (let unit = 1; unit <= item.qty; unit++) {
+        const unitCustom = item.unitCustomProcesses?.find(u => u.unitIndex === unit);
+        const isUnitCustomized = unitCustom ? unitCustom.isBomCustomized : item.isBomCustomized;
+        const unitCustomBom = unitCustom?.isBomCustomized ? unitCustom.customBom : (item.isBomCustomized ? item.customBom : undefined);
+        const unitCustomOps = unitCustom?.isBomCustomized
+          ? (unitCustom.customOperations || unitCustom.customOperationIds)
+          : (item.isBomCustomized ? (item.customOperations || item.customOperationIds) : undefined);
+
+        if (isUnitCustomized && unitCustomBom) {
+          unitCustomBom.forEach(b => {
+            const mat = state.materials.find(m => m.id === b.materialId);
+            const fg = !mat ? state.finishedGoods.find(f => f.id === b.materialId) : null;
+            if (mat) {
+              estMaterialCost += (mat.unitCost || 0) * b.qty;
+            } else if (fg) {
+              const prod = state.products.find(p => p.id === fg.productId);
+              const variant = prod?.variants.find(v => v.id === fg.variantId) || prod?.variants[0];
+              const estCost = variant?.price ? variant.price * 0.6 : 0;
+              estMaterialCost += estCost * b.qty;
+            }
+          });
+        } else {
+          // Estimate material cost from variant BOM
+          variant.bom.forEach(b => {
+            const mat = state.materials.find(m => m.id === b.materialId);
+            estMaterialCost += (mat?.unitCost || 0) * b.qty;
+          });
+
+          // Estimate material cost from selected modifiers BOM
+          if (item.selectedModifiers) {
+            item.selectedModifiers.forEach(group => {
+              group.selectedOptions.forEach(opt => {
+                opt.bom.forEach(b => {
+                  const mat = state.materials.find(m => m.id === b.materialId);
+                  estMaterialCost += (mat?.unitCost || 0) * b.qty;
+                });
+              });
+            });
           }
-        });
-        estLaborCost += laborPerUnit * item.qty;
+        }
+
+        // Estimate labor cost from routing or custom operations
+        if (isUnitCustomized && unitCustomOps && unitCustomOps.length > 0) {
+          let laborForUnit = 0;
+          unitCustomOps.forEach((opItem: any) => {
+            const opId = typeof opItem === 'string' ? opItem : opItem.operationId;
+            const customOp = typeof opItem === 'object' ? opItem : undefined;
+            const op = state.operations.find(o => o.id === opId);
+            if (!op) return;
+            const costingMethod = customOp?.costingMethod ?? op.costingMethod ?? 'fixed';
+            const fixedCost = customOp?.fixedLaborCost !== undefined ? customOp.fixedLaborCost : (op.fixedLaborCost || 0);
+            const hourlyRate = customOp?.laborCostPerHour !== undefined ? customOp.laborCostPerHour : (op.laborCostPerHour || 0);
+            const duration = customOp?.durationMinutes !== undefined ? customOp.durationMinutes : (op.durationMinutes || 0);
+
+            if (costingMethod === 'fixed') {
+              laborForUnit += fixedCost;
+            } else {
+              const hours = duration / 60;
+              laborForUnit += hours * hourlyRate;
+            }
+          });
+          estLaborCost += laborForUnit;
+        } else if (routing) {
+          let laborForUnit = 0;
+          routing.steps.forEach(step => {
+            const op = state.operations.find(o => o.id === step.operationId);
+            if (!op) return;
+            if (op.costingMethod === 'fixed') {
+              laborForUnit += op.fixedLaborCost || 0;
+            } else {
+              const hours = (op.durationMinutes || 0) / 60;
+              laborForUnit += hours * (op.laborCostPerHour || 0);
+            }
+          });
+          estLaborCost += laborForUnit;
+        }
       }
     });
 
@@ -3850,6 +4515,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deletePO,
     createSalesOrder,
     updateSalesOrder,
+    updateOrderCustomProcess,
     processOrder,
     cancelOrder,
     submitOrderComplaint,
@@ -3861,6 +4527,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     pauseJobCard,
     completeJobCard,
     createSubAssemblyWorkOrder,
+    createNormalWorkOrder,
     syncWorkOrderRouting,
     addOperation,
     updateOperation,

@@ -1,5 +1,6 @@
 import React, { forwardRef, useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronDown, Check, Search, X } from 'lucide-react';
 
 export interface SelectOption {
   value: string | number;
@@ -23,7 +24,20 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
   align?: 'left' | 'right';
   activeHighlight?: boolean;
   direction?: 'auto' | 'up' | 'down';
+  dropdownClassName?: string;
+  searchable?: boolean;
+  search?: boolean;
+  searchPlaceholder?: string;
 }
+
+// Helper to recursively extract plain text from React nodes (avoids array join commas)
+const extractText = (node: any): string => {
+  if (node === null || node === undefined) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (node?.props?.children) return extractText(node.props.children);
+  return String(node);
+};
 
 const heightClasses = {
   sm: 'h-8 text-xs px-2.5',
@@ -56,45 +70,92 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
   align = 'left',
   activeHighlight,
   direction = 'auto',
+  dropdownClassName,
   name,
+  searchable = false,
+  search = false,
+  searchPlaceholder = 'Cari opsi...',
   ...props
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [coords, setCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    openUpward: boolean;
+  } | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const isSearchable = Boolean(searchable || search);
   const [internalValue, setInternalValue] = useState<string>(
     value !== undefined ? String(value) : defaultValue !== undefined ? String(defaultValue) : ''
   );
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && isSearchable) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+    } else {
+      setSearchTerm('');
+    }
+  }, [isOpen, isSearchable]);
+
   const currentValue = value !== undefined ? String(value) : internalValue;
 
   const calcPosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const dropdownMaxHeight = 245;
+
+    let isUpward = false;
     if (direction === 'up') {
-      setOpenUpward(true);
-      return;
-    }
-    if (direction === 'down') {
-      setOpenUpward(false);
-      return;
+      isUpward = true;
+    } else if (direction === 'down') {
+      isUpward = false;
+    } else {
+      isUpward = spaceBelow < dropdownMaxHeight && spaceAbove > spaceBelow;
     }
 
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const spaceBelow = viewportHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const dropdownMaxHeight = 245;
+    setOpenUpward(isUpward);
 
-      if (spaceBelow < dropdownMaxHeight && spaceAbove > spaceBelow) {
-        setOpenUpward(true);
-      } else {
-        setOpenUpward(false);
-      }
+    const width = rect.width;
+    const left = align === 'right'
+      ? Math.max(8, rect.right - width)
+      : Math.min(Math.max(8, rect.left), viewportWidth - width - 8);
+
+    if (isUpward) {
+      setCoords({
+        bottom: viewportHeight - rect.top + 6,
+        left,
+        width,
+        openUpward: true,
+      });
+    } else {
+      setCoords({
+        top: rect.bottom + 6,
+        left,
+        width,
+        openUpward: false,
+      });
     }
-  }, [direction]);
+  }, [direction, align]);
 
   // Synchronous layout effect before browser paint to prevent flicker
   useLayoutEffect(() => {
@@ -115,20 +176,27 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
     };
   }, [isOpen, calcPosition]);
 
-  // Extract options from options prop or React children <option> elements
+  // Extract options from options prop or React children <option> elements (including optgroup)
   const parsedOptions: SelectOption[] = useMemo(() => {
     let res: SelectOption[] = [];
     if (options && options.length > 0) {
       res = [...options];
     } else {
-      React.Children.forEach(children, (child) => {
-        if (React.isValidElement(child) && child.type === 'option') {
-          const val = (child.props as any).value ?? '';
-          const lbl = (child.props as any).children ?? String(val);
-          const dis = (child.props as any).disabled;
-          res.push({ value: val, label: typeof lbl === 'string' ? lbl : String(lbl), disabled: dis });
-        }
-      });
+      const extractOptions = (nodes: React.ReactNode) => {
+        React.Children.forEach(nodes, (child) => {
+          if (!React.isValidElement(child)) return;
+          if (child.type === 'option') {
+            const val = (child.props as any).value ?? '';
+            const rawChildren = (child.props as any).children;
+            const lbl = rawChildren !== undefined ? extractText(rawChildren) : String(val);
+            const dis = (child.props as any).disabled;
+            res.push({ value: val, label: lbl, disabled: dis });
+          } else if ((child.props as any)?.children) {
+            extractOptions((child.props as any).children);
+          }
+        });
+      };
+      extractOptions(children);
     }
 
     // Auto-inject placeholder as selectable option if provided and no empty option already exists
@@ -140,9 +208,23 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
     return res;
   }, [options, children, placeholder]);
 
+  // Filtered options based on search term
+  const displayedOptions = useMemo(() => {
+    if (!isSearchable || !searchTerm.trim()) return parsedOptions;
+    const term = searchTerm.toLowerCase();
+    return parsedOptions.filter(opt =>
+      opt.label.toLowerCase().includes(term) ||
+      (opt.value !== '' && String(opt.value).toLowerCase().includes(term))
+    );
+  }, [parsedOptions, isSearchable, searchTerm]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -319,51 +401,127 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
           <ChevronDown className={`shrink-0 text-slate-400 transition-transform duration-200 ${iconSizes[inputSize]} ${isOpen ? 'rotate-180' : ''}`} />
         </button>
 
-        {/* Popover Dropdown Menu (Auto opens upward or downward) */}
-        {isOpen && (
+        {/* Popover Dropdown Menu (Rendered via Portal to completely avoid container overflow clipping) */}
+        {isOpen && mounted && coords && createPortal(
           <div
-            className={`absolute z-50 min-w-full w-max max-w-[320px] rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 p-1 max-h-60 overflow-y-auto ${
-              openUpward ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-            } ${align === 'right' ? 'right-0' : 'left-0'}`}
+            ref={dropdownRef}
+            style={{
+              position: 'fixed',
+              ...(coords.openUpward ? { bottom: `${coords.bottom}px` } : { top: `${coords.top}px` }),
+              left: `${coords.left}px`,
+              width: `${Math.max(coords.width, isSearchable ? 220 : coords.width)}px`,
+              zIndex: 9999,
+            }}
+            className={`rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 flex flex-col max-h-64 overflow-hidden animate-in fade-in zoom-in-95 duration-100 ${dropdownClassName || ''}`}
           >
-            {parsedOptions.length === 0 ? (
-              <div className="px-3.5 py-2.5 text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic">
-                tidak ada opsi ditemukan
-              </div>
-            ) : (
-              <>
-                {parsedOptions.map((opt, index) => {
-                  const isSelected = String(opt.value) === currentValue;
-                  const isFocused = index === focusedIndex;
-                  return (
+            {isSearchable && (
+              <div className="p-1.5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="relative flex items-center">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 pointer-events-none" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchTerm}
+                    onChange={e => {
+                      setSearchTerm(e.target.value);
+                      setFocusedIndex(0);
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    onKeyDown={e => {
+                      e.stopPropagation();
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setFocusedIndex(prev => {
+                          let next = prev + 1;
+                          while (next < displayedOptions.length && displayedOptions[next].disabled) {
+                            next++;
+                          }
+                          return next < displayedOptions.length ? next : prev;
+                        });
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setFocusedIndex(prev => {
+                          let next = prev - 1;
+                          while (next >= 0 && displayedOptions[next].disabled) {
+                            next--;
+                          }
+                          return next >= 0 ? next : prev;
+                        });
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (displayedOptions.length > 0 && focusedIndex >= 0 && focusedIndex < displayedOptions.length) {
+                          const opt = displayedOptions[focusedIndex];
+                          if (!opt.disabled) {
+                            handleSelect(opt.value);
+                          }
+                        }
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setIsOpen(false);
+                      }
+                    }}
+                    placeholder={searchPlaceholder}
+                    className="w-full bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white rounded-md pl-7 pr-6 py-1 border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-400"
+                  />
+                  {searchTerm && (
                     <button
-                      key={String(opt.value)}
-                      ref={el => { optionRefs.current[index] = el; }}
                       type="button"
-                      disabled={opt.disabled}
-                      onClick={() => handleSelect(opt.value)}
-                      onMouseEnter={() => setFocusedIndex(index)}
-                      className={`w-full text-left text-xs rounded-md px-3 py-2 font-medium flex items-center justify-between gap-3 ${
-                        isSelected
-                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold'
-                          : isFocused
-                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
-                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                      } ${opt.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setSearchTerm('');
+                        searchInputRef.current?.focus();
+                      }}
+                      className="absolute right-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5 rounded cursor-pointer"
+                      tabIndex={-1}
                     >
-                      <span className="truncate">{opt.label}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />}
+                      <X className="w-3 h-3" />
                     </button>
-                  );
-                })}
-                {realOptions.length === 0 && (
-                  <div className="px-3.5 py-2 text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
-                    tidak ada opsi ditemukan
-                  </div>
-                )}
-              </>
+                  )}
+                </div>
+              </div>
             )}
-          </div>
+
+            <div className="p-1 overflow-y-auto flex-1 max-h-56">
+              {displayedOptions.length === 0 ? (
+                <div className="px-3.5 py-2.5 text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic">
+                  tidak ada opsi ditemukan
+                </div>
+              ) : (
+                <>
+                  {displayedOptions.map((opt, index) => {
+                    const isSelected = String(opt.value) === currentValue;
+                    const isFocused = index === focusedIndex;
+                    return (
+                      <button
+                        key={String(opt.value)}
+                        ref={el => { optionRefs.current[index] = el; }}
+                        type="button"
+                        disabled={opt.disabled}
+                        onClick={() => handleSelect(opt.value)}
+                        onMouseEnter={() => setFocusedIndex(index)}
+                        className={`w-full text-left text-xs rounded-md px-3 py-2 font-medium flex items-center justify-between gap-3 ${
+                          isSelected
+                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold'
+                            : isFocused
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        } ${opt.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <span className="truncate">{opt.label}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                  {!isSearchable && realOptions.length === 0 && (
+                    <div className="px-3.5 py-2 text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
+                      tidak ada opsi ditemukan
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>,
+          document.body
         )}
       </div>
 

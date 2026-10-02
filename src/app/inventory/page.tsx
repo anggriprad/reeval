@@ -52,7 +52,47 @@ import {
   Box,
   Layers,
   RotateCcw,
+  BedDouble,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
 } from 'lucide-react';
+
+const iconMap: Record<string, React.ElementType> = {
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+};
 
 export default function InventoryPage() {
   return (
@@ -109,7 +149,7 @@ export function InventoryContent() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryFilter, setInventoryFilter] = useState('');
-  const [activeTab, setActiveTab] = useUrlTab(['raw', 'finished', 'returns', 'movements', 'procurement', 'assets'] as const, 'raw');
+  const [activeTab, setActiveTab] = useUrlTab(['raw', 'finished', 'movements', 'procurement', 'assets', 'returns'] as const, 'raw');
 
   // Modal SPK Bahan Setengah Jadi (WIP)
   const [showSaModal, setShowSaModal] = useState(false);
@@ -869,20 +909,27 @@ export function InventoryContent() {
           filterOptions = assetCategories.map(c => ({ value: c, label: c }));
         }
 
+        const pendingReturnsCount = (returnedGoods || []).filter(rg => rg.status === 'PENDING').length;
+
         return (
           <SegmentedControl
             value={activeTab}
             onChange={(tab) => {
-              setActiveTab(tab as 'raw' | 'finished' | 'returns' | 'movements' | 'procurement' | 'assets');
+              setActiveTab(tab as 'raw' | 'finished' | 'movements' | 'procurement' | 'assets' | 'returns');
               setInventoryFilter('');
             }}
             options={[
               { key: 'raw', label: 'Stok Bahan Baku', icon: Warehouse },
               { key: 'finished', label: 'Stok Barang Jadi', icon: PackageCheck },
-              { key: 'returns', label: 'Barang Retur', icon: RotateCcw },
               { key: 'movements', label: 'Mutasi Stok', icon: ArrowDownCircle },
               { key: 'procurement', label: 'Pengadaan', icon: ShoppingCart },
               { key: 'assets', label: 'Aset & Alat Kerja', icon: Wrench },
+              {
+                key: 'returns',
+                label: 'Barang Retur',
+                icon: RotateCcw,
+                count: pendingReturnsCount > 0 ? pendingReturnsCount : undefined,
+              },
             ]}
             filterValue={inventoryFilter}
             onFilterChange={setInventoryFilter}
@@ -1056,13 +1103,32 @@ export function InventoryContent() {
                   {filteredFinishedGoods.map(fg => {
                     const prod = products.find(p => p.id === fg.productId);
                     const variant = prod?.variants?.find(v => v.id === fg.variantId);
+                    const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
                     const level = getStockLevel(fg.stock, fg.minStock);
                     const variantText = variant ? (Object.values(variant.combination || {}).join(' • ') || variant.sku) : '';
                     const displayName = fg.productName ? `${fg.productName}${fg.variantLabel ? ` (${fg.variantLabel})` : ''}` : (prod ? (variantText ? `${prod.name} (${variantText})` : prod.name) : 'Produk Tidak Ditemukan');
                     return (
                       <tr key={fg.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                         <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
-                          <span className="font-semibold">{displayName}</span>
+                          <div className="flex items-center gap-3">
+                            {prod?.image ? (
+                              <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                                <img src={prod.image} alt={displayName} className="w-full h-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                                <IconComp className="h-5 w-5" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <span className="font-semibold block truncate">{displayName}</span>
+                              {prod?.category && (
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
+                                  {prod.category}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{fg.stock}</td>
                         <td className="py-3.5 pr-3 text-slate-500 dark:text-slate-400 text-xs">{fg.unit}</td>
@@ -1130,6 +1196,8 @@ export function InventoryContent() {
                 </thead>
                 <tbody>
                   {filteredReturnedGoods.map(rg => {
+                    const prod = products.find(p => p.id === rg.productId || p.name === rg.productName);
+                    const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
                     const soItem = salesOrders
                       .find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber)
                       ?.items.find(i => i.productId === rg.productId && (!rg.variantId || i.variantId === rg.variantId));
@@ -1138,17 +1206,30 @@ export function InventoryContent() {
                     return (
                       <tr key={rg.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                         <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
-                          <div className="font-semibold text-xs text-slate-900 dark:text-white">{rg.productName}</div>
-                          {rg.variantLabel && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                              {formatVariantLabel(rg.variantLabel)}
+                          <div className="flex items-start gap-3">
+                            {prod?.image ? (
+                              <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                                <img src={prod.image} alt={rg.productName} className="w-full h-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                                <IconComp className="h-5 w-5" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-semibold text-xs text-slate-900 dark:text-white">{rg.productName}</div>
+                              {rg.variantLabel && (
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {formatVariantLabel(rg.variantLabel)}
+                                </div>
+                              )}
+                              {orderItemNotes && (
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                                  Catatan: {orderItemNotes}
+                                </div>
+                              )}
                             </div>
-                          )}
-                          {orderItemNotes && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                              Catatan: {orderItemNotes}
-                            </div>
-                          )}
+                          </div>
                         </td>
                         <td className="py-3.5 pr-3 whitespace-nowrap">
                           <Link
@@ -2739,19 +2820,34 @@ export function InventoryContent() {
         {selectedReturnItem && (
           <div className="space-y-4 text-xs text-slate-700 dark:text-slate-300">
             {/* Ringkasan Item */}
-            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3.5 space-y-2 border border-slate-200/80 dark:border-slate-700/80">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 dark:text-slate-400">Produk</span>
-                <span className="font-semibold text-slate-900 dark:text-white text-right">
-                  {selectedReturnItem.productName}
-                  {selectedReturnItem.variantLabel ? ` (${formatVariantLabel(selectedReturnItem.variantLabel)})` : ''}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 dark:text-slate-400">Jumlah Retur</span>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  {selectedReturnItem.qty} unit
-                </span>
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3.5 space-y-2.5 border border-slate-200/80 dark:border-slate-700/80">
+              <div className="flex items-start gap-3">
+                {(() => {
+                  const prod = products.find(p => p.id === selectedReturnItem.productId || p.name === selectedReturnItem.productName);
+                  const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
+                  return prod?.image ? (
+                    <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                      <img src={prod.image} alt={selectedReturnItem.productName} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                      <IconComp className="h-6 w-6" />
+                    </div>
+                  );
+                })()}
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm text-slate-900 dark:text-white truncate">
+                    {selectedReturnItem.productName}
+                  </div>
+                  {selectedReturnItem.variantLabel && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {formatVariantLabel(selectedReturnItem.variantLabel)}
+                    </div>
+                  )}
+                  <div className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    Jumlah Retur: {selectedReturnItem.qty} unit
+                  </div>
+                </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 dark:text-slate-400">Referensi</span>

@@ -74,6 +74,7 @@ export interface AttributeMaster {
   id: string;
   name: string;          // e.g. "Ukuran", "Bahan Cover", "Ketebalan"
   values: string[];      // e.g. ["120x200 cm", "160x200 cm", "180x200 cm"]
+  valueImages?: Record<string, string>; // mapping value -> image URL / base64 swatch
 }
 
 // --- Product Attribute (Product-level reference to global attribute) ---
@@ -88,6 +89,7 @@ export interface ProductAttribute {
 export interface VariantType {
   name: string;     // e.g. "Warna", "Ukuran"
   values: string[]; // e.g. ["Hitam", "Putih", "Abu"]
+  valueImages?: Record<string, string>; // mapping value -> image URL / base64 swatch
 }
 
 export interface ProductVariantSKU {
@@ -221,6 +223,7 @@ export interface Product {
   description: string;
   category: string;             // Dynamic category string
   imageIcon: string;
+  image?: string;
 
   // --- Dynamic Pricing & BOM Engine ---
   useFormulaPricing?: boolean;            // Toggles formula-based pricing
@@ -250,6 +253,28 @@ export interface Customer {
 
 // --- Sales Order Item ---
 
+export interface CustomBomItem {
+  materialId: string;
+  qty: number;
+  itemType?: 'RAW_MATERIAL' | 'SUB_ASSEMBLY' | 'FINISHED_GOOD';
+}
+
+export interface CustomOperationItem {
+  operationId: string;
+  costingMethod?: 'hourly' | 'fixed';
+  fixedLaborCost?: number;
+  laborCostPerHour?: number;
+  durationMinutes?: number;
+}
+
+export interface UnitCustomProcess {
+  unitIndex: number; // 1-indexed (1..qty)
+  isBomCustomized: boolean;
+  customBom?: CustomBomItem[];
+  customOperationIds?: string[];
+  customOperations?: CustomOperationItem[];
+}
+
 export interface SalesOrderItem {
   productId: string;
   variantId?: string;       // ID of the specific ProductVariantSKU selected
@@ -264,7 +289,15 @@ export interface SalesOrderItem {
   producedQty?: number;      // Jumlah unit yang sudah selesai produksi
   shippedQty?: number;       // Jumlah unit yang sudah masuk Surat Jalan
   deliveredQty?: number;     // Jumlah unit yang sudah diterima pelanggan
-}export type OrderComplaintStatus = 'DIAJUKAN' | 'DITANGANI' | 'SELESAI';
+  // Kustom Proses (BOM & Alur Operasi)
+  isBomCustomized?: boolean;
+  customBom?: CustomBomItem[];
+  customOperationIds?: string[];
+  customOperations?: CustomOperationItem[];
+  unitCustomProcesses?: UnitCustomProcess[];
+}
+
+export type OrderComplaintStatus = 'DIAJUKAN' | 'DITANGANI' | 'SELESAI';
 
 export interface OrderComplaintItem {
   productId: string;
@@ -294,6 +327,9 @@ export interface OrderComplaint {
   resolutionNotes?: string;
   createdAt: string;
   resolvedAt?: string;
+  handledAt?: string;
+  replacementStatus?: 'READY_FOR_DELIVERY' | 'WAITING_PRODUCTION' | 'SHIPPED' | 'DELIVERED';
+  replacementWOId?: string;
 }
 
 // --- Sales Order ---
@@ -321,6 +357,9 @@ export interface SalesOrder {
   paidAt?: string;
   adminNotes?: string;      // Admin notes on review
   complaints?: OrderComplaint[];
+  isCustomProcess?: boolean;
+  customProcessAt?: string;
+  customProcessBy?: string;
 }
 
 export interface JobCard {
@@ -345,6 +384,10 @@ export interface WorkOrder {
   spkNumber: string;
   salesOrderId: string;
   salesOrderNumber: string;
+  productId?: string;
+  variantId?: string;
+  itemIndex?: number;            // Index item di salesOrder.items (0-indexed)
+  unitIndex?: number;            // Nomor unit spesifik (1-indexed)
   productName: string;
   variantName?: string;
   selectedModifiers?: SelectedModifierGroup[];
@@ -360,6 +403,8 @@ export interface WorkOrder {
   customNotes?: string;
   isSubAssembly?: boolean;
   subAssemblyId?: string;
+  isComplaintReplacement?: boolean;
+  complaintId?: string;
 }
 
 // --- Purchase Order ---
@@ -459,6 +504,10 @@ export interface DeliveryOrderItem {
   variantLabel?: string;
   qty: number;
   itemIndex: number;        // Index item di SO.items untuk tracking fulfillment
+  unitIndex?: number;
+  spkNumber?: string;
+  isReplacement?: boolean;
+  complaintId?: string;
 }
 
 export interface DeliveryOrder {
@@ -490,6 +539,8 @@ export interface DeliveryOrder {
   deliveryProofPhoto?: string;  // Uploaded proof photo (base64 data URL or photo URL)
   deliveredAt?: string;
   createdAt: string;
+  isReplacement?: boolean;
+  complaintId?: string;
 }
 
 // --- Delivery Configuration ---

@@ -24,10 +24,48 @@ import {
   FileText,
   BedDouble,
   Layers,
-  Box
+  Box,
+  Armchair,
+  Sofa,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+  Image as ImageIcon
 } from 'lucide-react';
 
-const iconMap: Record<string, React.ElementType> = { BedDouble, Layers, Box };
+const iconMap: Record<string, React.ElementType> = {
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+};
 
 export function CreateOrderContent() {
   const router = useRouter();
@@ -387,22 +425,37 @@ export function CreateOrderContent() {
         </div>
       ) : (
         <div className="space-y-3">
-          {orderItems.map((item, idx) => (
-            <div
-              key={idx}
-              className="p-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/50 shadow-sm space-y-3"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                <div className="space-y-1 flex-1 min-w-0">
-                  {/* Line 1: Pure Main Product Title */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-1.5 py-0.5 rounded">
-                      #{idx + 1}
-                    </span>
-                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
-                      {item.productName}
-                    </h4>
-                  </div>
+          {orderItems.map((item, idx) => {
+            const product = products.find(p => p.id === item.productId || p.name === item.productName);
+            const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
+
+            return (
+              <div
+                key={idx}
+                className="p-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/50 shadow-sm space-y-3"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    {product?.image ? (
+                      <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                        <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                        <IconComp className="h-6 w-6" />
+                      </div>
+                    )}
+
+                    <div className="space-y-1 flex-1 min-w-0">
+                      {/* Line 1: Pure Main Product Title */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-1.5 py-0.5 rounded">
+                          #{idx + 1}
+                        </span>
+                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                          {item.productName}
+                        </h4>
+                      </div>
 
                   {/* Line 2: Distinct Sub-Line Underneath for Variant Attributes */}
                   {item.variantLabel && (
@@ -423,6 +476,7 @@ export function CreateOrderContent() {
                     </div>
                   )}
                 </div>
+              </div>
 
                 <div className="flex items-center gap-4 shrink-0">
                   {/* Qty controls */}
@@ -479,7 +533,8 @@ export function CreateOrderContent() {
                 />
               </div>
             </div>
-          ))}
+          );
+        })}
 
         </div>
       )}
@@ -837,9 +892,15 @@ export function CreateOrderContent() {
                       onClick={() => openProductSelector(prod)}
                       className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/40 cursor-pointer transition-all flex items-start gap-3 group"
                     >
-                      <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center shrink-0 dark:bg-indigo-950 dark:text-indigo-400 group-hover:scale-105 transition-transform">
-                        <IconComp className="h-6 w-6" />
-                      </div>
+                      {prod.image ? (
+                        <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 group-hover:scale-105 transition-transform">
+                          <img src={prod.image} alt={prod.name} className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center shrink-0 dark:bg-indigo-950 dark:text-indigo-400 group-hover:scale-105 transition-transform">
+                          <IconComp className="h-6 w-6" />
+                        </div>
+                      )}
 
                       <div className="flex-1 min-w-0">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -868,9 +929,15 @@ export function CreateOrderContent() {
               const IconComp = iconMap[selectedProduct.imageIcon || 'BedDouble'] || BedDouble;
               return (
                 <div className="p-3.5 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/40 flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center shrink-0 dark:bg-indigo-950 dark:text-indigo-400">
-                    <IconComp className="h-5 w-5" />
-                  </div>
+                  {selectedProduct.image ? (
+                    <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0">
+                      <img src={selectedProduct.image} alt={selectedProduct.name} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center shrink-0 dark:bg-indigo-950 dark:text-indigo-400">
+                      <IconComp className="h-6 w-6" />
+                    </div>
+                  )}
 
                   <div className="flex-1 min-w-0">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -884,33 +951,91 @@ export function CreateOrderContent() {
               );
             })()}
 
-            {/* Render Variant Attributes One-by-One as Pill Buttons */}
-            {(selectedProduct.variantTypes || []).map(vt => (
-              <div key={vt.name} className="space-y-2">
-                <label className="text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 block">
-                  {vt.name}
-                </label>
+            {/* Render Variant Attributes One-by-One with Swatch Images Preview if Available */}
+            {(selectedProduct.variantTypes || []).map(vt => {
+              const matchedMasterAttr = attributes.find(a => a.name.trim().toLowerCase() === vt.name.trim().toLowerCase());
+              const hasAnyImage = vt.values.some(val => Boolean(vt.valueImages?.[val] || matchedMasterAttr?.valueImages?.[val]));
 
-                <div className="flex flex-wrap gap-2">
-                  {vt.values.map(val => {
-                    const isSelected = selectedAttributeValues[vt.name] === val;
-                    return (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setSelectedAttributeValues({ ...selectedAttributeValues, [vt.name]: val })}
-                        className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-all ${isSelected
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+              return (
+                <div key={vt.name} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 block">
+                      {vt.name}
+                    </label>
+                    {selectedAttributeValues[vt.name] && (
+                      <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                        {selectedAttributeValues[vt.name]}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2.5">
+                    {vt.values.map(val => {
+                      const isSelected = selectedAttributeValues[vt.name] === val;
+                      const imgUrl = vt.valueImages?.[val] || matchedMasterAttr?.valueImages?.[val];
+
+                      if (hasAnyImage) {
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setSelectedAttributeValues({ ...selectedAttributeValues, [vt.name]: val })}
+                            className={`group relative flex flex-col items-center p-2 rounded-xl border-2 transition-all text-center min-w-[76px] sm:min-w-[88px] max-w-[120px] ${
+                              isSelected
+                                ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 shadow-sm ring-2 ring-indigo-500/20 dark:border-indigo-500 dark:bg-indigo-950/40 dark:text-indigo-100'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600'
+                            }`}
+                          >
+                            {/* Preview Gambar Atribut di atas label */}
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 shrink-0 mb-1.5 flex items-center justify-center">
+                              {imgUrl ? (
+                                <img
+                                  src={imgUrl}
+                                  alt={val}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+                                  <ImageIcon className="h-5 w-5" />
+                                  <span className="text-[9px] mt-0.5">Polos</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Label Pilihan Atribut */}
+                            <span className="text-xs font-semibold leading-tight line-clamp-2 break-words">
+                              {val}
+                            </span>
+
+                            {/* Active Check Indicator */}
+                            {isSelected && (
+                              <div className="absolute top-1.5 right-1.5 h-4 w-4 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-sm z-10">
+                                <Check className="h-2.5 w-2.5 stroke-[3]" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setSelectedAttributeValues({ ...selectedAttributeValues, [vt.name]: val })}
+                          className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-all ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                           }`}
-                      >
-                        {val}
-                      </button>
-                    );
-                  })}
+                        >
+                          {val}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Optional Modifiers Selection */}
             {selectedProduct.modifierGroupIds && selectedProduct.modifierGroupIds.length > 0 && (

@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   X,
   Copy,
+  FolderTree,
 } from 'lucide-react';
 
 interface ConfigSectionProps {
@@ -339,6 +340,10 @@ function ProductsConfigContent() {
   const { toast, confirm } = useToast();
   const {
     currentUser,
+    products = [],
+    productCategories = [],
+    addProductCategory,
+    deleteProductCategory,
     bomTemplates = [],
     bomTemplateItems = [],
     attributes = [],
@@ -359,9 +364,50 @@ function ProductsConfigContent() {
   const seeCosts = canSeeCosts(currentUser.role);
 
   // Search terms per section
+  const [categorySearch, setCategorySearch] = useState('');
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [bomSearch, setBomSearch] = useState('');
   const [attrSearch, setAttrSearch] = useState('');
   const [modSearch, setModSearch] = useState('');
+
+  // Category handlers
+  const handleAddCategory = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) {
+      toast.error('Gagal', 'Nama kategori tidak boleh kosong.');
+      return;
+    }
+    if (productCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error('Sudah Ada', `Kategori "${trimmed}" sudah terdaftar.`);
+      return;
+    }
+    addProductCategory(trimmed);
+    setNewCategoryName('');
+    toast.success('Berhasil', `Kategori "${trimmed}" berhasil ditambahkan.`);
+  };
+
+  const handleDeleteCategory = async (cat: string) => {
+    const isOk = await confirm({
+      title: 'Hapus Kategori Produk?',
+      message: `Apakah Anda yakin ingin menghapus kategori "${cat}"? Kategori yang sedang digunakan oleh produk aktif tidak dapat dihapus.`,
+      confirmText: 'Hapus Kategori',
+      cancelText: 'Batal',
+      variant: 'danger',
+    });
+    if (!isOk) return;
+
+    const success = deleteProductCategory(cat);
+    if (success) {
+      toast.success('Berhasil Dihapus', `Kategori "${cat}" berhasil dihapus.`);
+    } else {
+      toast.error('Gagal Menghapus', `Kategori "${cat}" tidak dapat dihapus karena masih digunakan oleh produk di katalog.`);
+    }
+  };
+
+  const filteredCategories = productCategories.filter(c =>
+    c.toLowerCase().includes(categorySearch.toLowerCase())
+  );
 
   // Preset BOM Modal State
   const [showBomTemplateModal, setShowBomTemplateModal] = useState(false);
@@ -661,13 +707,102 @@ function ProductsConfigContent() {
       </PageHeader>
 
       <div className="space-y-4">
-        {/* SECTION 1: MASTER PRESET BOM */}
+        {/* SECTION 1: MASTER KATEGORI PRODUK */}
+        <ConfigSection
+          title="Master Kategori Produk"
+          description="Kelola daftar kategori untuk pengelompokan produk di katalog."
+          icon={FolderTree}
+          iconWrapperClass="bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400"
+          defaultExpanded={true}
+        >
+          <div className="space-y-4 pt-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  type="text"
+                  placeholder="Cari kategori produk..."
+                  value={categorySearch}
+                  onChange={e => setCategorySearch(e.target.value)}
+                  className="pl-9 text-xs"
+                />
+              </div>
+              {canManage && (
+                <form onSubmit={handleAddCategory} className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    placeholder="Nama kategori baru..."
+                    value={newCategoryName}
+                    onChange={e => setNewCategoryName(e.target.value)}
+                    className="text-xs w-48 sm:w-60"
+                  />
+                  <Button type="submit" size="sm" disabled={!newCategoryName.trim()}>
+                    <Plus className="h-4 w-4" /> Tambah
+                  </Button>
+                </form>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-left font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                    <th className="px-4 py-3">Nama Kategori</th>
+                    <th className="px-4 py-3 text-center">Jumlah Produk Terkait</th>
+                    {canManage && <th className="px-4 py-3 text-right">Aksi</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredCategories.length === 0 ? (
+                    <tr>
+                      <td colSpan={canManage ? 3 : 2} className="py-10 text-center text-slate-400 dark:text-slate-500">
+                        {categorySearch ? 'Tidak ada kategori yang cocok dengan pencarian.' : 'Belum ada kategori produk terdaftar.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCategories.map(cat => {
+                      const count = products.filter(p => p.category?.toLowerCase() === cat.toLowerCase()).length;
+                      return (
+                        <tr key={cat} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
+                            <div className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                              <span>{cat}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <Badge variant={count > 0 ? 'info' : 'default'}>
+                              {count} Produk
+                            </Badge>
+                          </td>
+                          {canManage && (
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                onClick={() => handleDeleteCategory(cat)}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                                title="Hapus Kategori"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </ConfigSection>
+
+        {/* SECTION 2: MASTER PRESET BOM */}
         <ConfigSection
           title="Master Preset BOM"
           description="Kelola resep material standar yang dapat di-clone ke varian produk saat pembuatan katalog."
           icon={FileSpreadsheet}
           iconWrapperClass="bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400"
-          defaultExpanded={true}
+          defaultExpanded={false}
         >
           <div className="space-y-4 pt-4">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
