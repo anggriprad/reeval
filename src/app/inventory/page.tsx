@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { useUrlTab } from '@/lib/useUrlTab';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
@@ -16,10 +17,11 @@ import { Select } from '@/components/ui/Select';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Table } from '@/components/ui/Table';
 import { Toggle } from '@/components/ui/Toggle';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { ActionMenu, type ActionMenuItem } from '@/components/ui/ActionMenu';
-import { formatCurrency, formatDateTime, getStockLevel, getStockLevelColor, getStockLevelTextColor, calculateSubAssemblyCost, formatVariantLabel } from '@/lib/utils';
+import { formatCurrency, formatDateTime, getStockLevel, getStockLevelColor, getStockLevelTextColor, getStockLevelBadgeVariant, getStockLevelDescription, calculateSubAssemblyCost, calculateRollupBOMCost, getEffectiveVariantBOM, formatVariantLabel, getPOStatusLabel, getPOStatusVariant } from '@/lib/utils';
 import { canCreatePO, canManageInventory, canRequestPO, canManageProduction } from '@/lib/roles';
-import type { RawMaterial, CompanyAsset, CompanyAssetServiceLog, BOMItem, FinishedGoodStock, PurchaseOrder, ReturnedGood, ReturnedGoodAction, ReturnedGoodStatus } from '@/lib/types';
+import type { RawMaterial, CompanyAsset, CompanyAssetServiceLog, BOMItem, PurchaseOrder, ReturnedGood, ReturnedGoodAction, ReturnedGoodStatus, AssetAcquisitionType, AssetStatus } from '@/lib/types';
 import Link from 'next/link';
 import {
   Plus,
@@ -49,6 +51,8 @@ import {
   ChevronRight,
   Check,
   X,
+  XCircle,
+  Ban,
   Box,
   Layers,
   RotateCcw,
@@ -103,6 +107,7 @@ export default function InventoryPage() {
 }
 
 export function InventoryContent() {
+  const router = useRouter();
   const { toast, confirm } = useToast();
   const {
     materials,
@@ -118,20 +123,19 @@ export function InventoryContent() {
     addAsset,
     updateAsset,
     deleteAsset,
+    canDeleteAsset,
     assetCategories,
     addAssetCategory,
     deleteAssetCategory,
     assetServiceLogs,
+    assetDepreciations = [],
     recordAssetService,
     deleteAssetServiceLog,
     bankAccounts,
     routings = [],
     operations = [],
+    bomTemplateItems = [],
     finishedGoods,
-    addFinishedGood,
-    updateFinishedGood,
-    deleteFinishedGood,
-    adjustFinishedGoodStock,
     products,
     productCategories,
     purchaseOrders,
@@ -140,7 +144,8 @@ export function InventoryContent() {
     orderPO,
     receivePO,
     rejectPO,
-    deletePO,
+    cancelPO,
+    cancelRemainingPO,
     createSubAssemblyWorkOrder,
     salesOrders = [],
     returnedGoods = [],
@@ -149,6 +154,7 @@ export function InventoryContent() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryFilter, setInventoryFilter] = useState('');
+  const [rawStatusFilter, setRawStatusFilter] = useState('');
   const [activeTab, setActiveTab] = useUrlTab(['raw', 'finished', 'movements', 'procurement', 'assets', 'returns'] as const, 'raw');
 
   // Modal SPK Bahan Setengah Jadi (WIP)
@@ -159,7 +165,7 @@ export function InventoryContent() {
 
   // Pengadaan (PO & Pembelian Langsung) state
   const [showPOModal, setShowPOModal] = useState(false);
-  const [selectedProcurementDetail, setSelectedProcurementDetail] = useState<PurchaseOrder | null>(null);
+  const [targetPOForCancel, setTargetPOForCancel] = useState<PurchaseOrder | null>(null);
   const [purchaseType, setPurchaseType] = useState<'PO' | 'DIRECT'>('PO');
   const [selectedBankAccountId, setSelectedBankAccountId] = useState('');
   const [additionalCost, setAdditionalCost] = useState(0);
@@ -170,10 +176,18 @@ export function InventoryContent() {
   const [selectedQty, setSelectedQty] = useState(0);
   const [showAddItemRow, setShowAddItemRow] = useState(false);
 
-  // Cancellation PO modal state
+  // Cancellation / Rejection PO modal state
   const [showCancelPOModal, setShowCancelPOModal] = useState(false);
+  const [cancelPOMode, setCancelPOMode] = useState<'REJECT' | 'CANCEL_DRAFT' | 'CANCEL_ORDERED'>('CANCEL_ORDERED');
   const [cancelPOReason, setCancelPOReason] = useState('');
   const [cancelPOError, setCancelPOError] = useState('');
+
+  // Modal Terima Barang state
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [receivePOData, setReceivePOData] = useState<PurchaseOrder | null>(null);
+  const [receiveSelections, setReceiveSelections] = useState<Record<string, { checked: boolean; receivedQty: number | '' }>>({});
+  const [receiveError, setReceiveError] = useState('');
+
 
   // Master Material / Barang Jadi CRUD state
   const [showMaterialModal, setShowMaterialModal] = useState(false);
@@ -192,15 +206,6 @@ export function InventoryContent() {
   const [childMatQty, setChildMatQty] = useState<string>('');
   const [crudError, setCrudError] = useState('');
 
-  // Finished Goods CRUD state
-  const [showFGModal, setShowFGModal] = useState(false);
-  const [editFGId, setEditFGId] = useState<string | null>(null);
-  const [fgProductId, setFGProductId] = useState('');
-  const [fgVariantId, setFGVariantId] = useState('');
-  const [fgStock, setFGStock] = useState<string>('0');
-  const [fgMinStock, setFGMinStock] = useState(0);
-  const [fgUnit, setFGUnit] = useState('unit');
-  const [fgError, setFGError] = useState('');
   const [showEmptyStock, setShowEmptyStock] = useState(false);
 
   // Barang Retur Action state
@@ -211,14 +216,17 @@ export function InventoryContent() {
   // Master Asset CRUD state
   const [showAssetModal, setShowAssetModal] = useState(false);
   const [editAssetId, setEditAssetId] = useState<string | null>(null);
+  const [astAcquisitionType, setAstAcquisitionType] = useState<AssetAcquisitionType>('EXISTING');
+  const [astCashAccountId, setAstCashAccountId] = useState('');
   const [astCode, setAstCode] = useState('');
   const [astName, setAstName] = useState('');
   const [astCategory, setAstCategory] = useState('');
   const [astPurchaseDate, setAstPurchaseDate] = useState('');
-  const [astPurchaseCost, setAstPurchaseCost] = useState(0);
-  const [astUsefulLifeYears, setAstUsefulLifeYears] = useState(5);
+  const [astPurchaseCost, setAstPurchaseCost] = useState<number | ''>('');
+  const [astUsefulLifeMonths, setAstUsefulLifeMonths] = useState<number | ''>(60);
+  const [astSalvageValue, setAstSalvageValue] = useState<number | ''>(0);
   const [astAccumulatedServiceCost, setAstAccumulatedServiceCost] = useState(0);
-  const [astStatus, setAstStatus] = useState<'AKTIF' | 'MAINTENANCE' | 'RUSAK'>('AKTIF');
+  const [astStatus, setAstStatus] = useState<AssetStatus>('ACTIVE');
 
   // Service History Log state
   const [showServiceModal, setShowServiceModal] = useState(false);
@@ -371,42 +379,48 @@ export function InventoryContent() {
   const handleDeleteMaterial = async (id: string, name: string) => {
     const isOk = await confirm({
       title: 'Hapus Bahan Baku',
-      message: `Apakah Anda yakin ingin menghapus bahan baku "${name}" dari master katalog?`,
+      message: `Apakah Anda yakin ingin menghapus bahan baku "${name}"? Bahan hanya dapat dihapus jika belum pernah memiliki transaksi operasional.`,
       confirmText: 'Hapus Material',
       variant: 'danger',
     });
     if (isOk) {
-      const success = deleteMaterial(id);
-      if (!success) {
-        toast.error('Gagal Menghapus', 'Bahan baku ini sudah digunakan dalam transaksi SPK atau Purchase Order.');
+      const result = deleteMaterial(id);
+      if (!result.success) {
+        toast.error('Gagal Menghapus', result.reason || 'Bahan baku tidak dapat dihapus.');
       } else {
-        toast.success('Bahan Baku Dihapus', `Bahan baku "${name}" berhasil dihapus.`);
+        toast.success('Bahan Baku Dihapus', `Bahan baku "${name}" berhasil dinonaktifkan.`);
       }
     }
   };
 
   const openAddAsset = () => {
     setEditAssetId(null);
+    setAstAcquisitionType('EXISTING');
+    setAstCashAccountId(bankAccounts[0]?.id || '');
     setAstCode('');
     setAstName('');
     setAstCategory(assetCategories[0] || '');
     setAstPurchaseDate(new Date().toISOString().split('T')[0]);
-    setAstPurchaseCost(0);
-    setAstUsefulLifeYears(5);
+    setAstPurchaseCost('');
+    setAstUsefulLifeMonths(60);
+    setAstSalvageValue(0);
     setAstAccumulatedServiceCost(0);
-    setAstStatus('AKTIF');
+    setAstStatus('ACTIVE');
     setCrudError('');
     setShowAssetModal(true);
   };
 
   const openEditAsset = (ast: CompanyAsset) => {
     setEditAssetId(ast.id);
+    setAstAcquisitionType(ast.acquisitionType || 'EXISTING');
+    setAstCashAccountId(ast.cashAccountId || bankAccounts[0]?.id || '');
     setAstCode(ast.code);
     setAstName(ast.name);
     setAstCategory(ast.category);
     setAstPurchaseDate(ast.purchaseDate);
     setAstPurchaseCost(ast.purchaseCost);
-    setAstUsefulLifeYears(ast.usefulLifeYears);
+    setAstUsefulLifeMonths(ast.usefulLifeMonths || (ast.usefulLifeYears * 12));
+    setAstSalvageValue(ast.salvageValue ?? 0);
     setAstAccumulatedServiceCost(ast.accumulatedServiceCost);
     setAstStatus(ast.status);
     setCrudError('');
@@ -423,8 +437,29 @@ export function InventoryContent() {
       setCrudError('Kategori aset wajib diisi. Silakan tambah kategori terlebih dahulu.');
       return;
     }
-    if (astPurchaseCost <= 0 || astUsefulLifeYears <= 0) {
-      setCrudError('Harga perolehan dan umur ekonomis harus lebih besar dari 0.');
+    const cost = Number(astPurchaseCost) || 0;
+    const months = Number(astUsefulLifeMonths) || 0;
+    if (cost <= 0) {
+      setCrudError('Harga perolehan harus lebih besar dari 0.');
+      return;
+    }
+    if (months <= 0) {
+      setCrudError('Masa manfaat harus lebih besar dari 0 bulan.');
+      return;
+    }
+
+    const salvage = Number(astSalvageValue) || 0;
+    if (salvage < 0) {
+      setCrudError('Nilai sisa / residual value tidak boleh negatif.');
+      return;
+    }
+    if (salvage >= cost) {
+      setCrudError('Nilai sisa tidak boleh melebihi atau sama dengan harga perolehan.');
+      return;
+    }
+
+    if (!editAssetId && astAcquisitionType === 'NEW_PURCHASE' && !astCashAccountId) {
+      setCrudError('Pilih Sumber Dana untuk pembelian baru.');
       return;
     }
 
@@ -432,10 +467,14 @@ export function InventoryContent() {
       code: astCode.trim().toUpperCase(),
       name: astName.trim(),
       category: astCategory,
+      acquisitionType: astAcquisitionType,
       purchaseDate: astPurchaseDate || new Date().toISOString().split('T')[0],
-      purchaseCost: Number(astPurchaseCost) || 0,
-      usefulLifeYears: Number(astUsefulLifeYears) || 5,
+      purchaseCost: cost,
+      usefulLifeMonths: months,
+      usefulLifeYears: Math.round((months / 12) * 10) / 10,
+      salvageValue: salvage,
       status: astStatus,
+      cashAccountId: astAcquisitionType === 'NEW_PURCHASE' ? astCashAccountId : undefined,
     };
 
     if (editAssetId) {
@@ -443,28 +482,38 @@ export function InventoryContent() {
       toast.success('Aset Diperbarui', `Data aset "${payload.name}" berhasil diperbarui.`);
     } else {
       // Check duplicate code
-      const isDuplicate = assets.some(a => a.code === payload.code);
+      const isDuplicate = assets.some(a => a.code.toUpperCase() === payload.code.toUpperCase());
       if (isDuplicate) {
         setCrudError(`Aset dengan kode "${payload.code}" sudah terdaftar.`);
         return;
       }
       addAsset(payload);
-      toast.success('Aset Ditambahkan', `Aset "${payload.name}" berhasil ditambahkan.`);
+      toast.success('Aset Ditambahkan', `Aset "${payload.name}" berhasil didaftarkan.`);
     }
 
     setShowAssetModal(false);
   };
 
   const handleDeleteAsset = async (id: string, name: string) => {
+    const check = canDeleteAsset ? canDeleteAsset(id) : { canDelete: true };
+    if (!check.canDelete) {
+      toast.error('Gagal Menghapus Aset', check.reason || 'Aset tidak dapat dihapus karena memiliki keterkaitan data operasional.');
+      return;
+    }
+
     const isOk = await confirm({
       title: 'Hapus Aset Perusahaan',
-      message: `Apakah Anda yakin ingin menghapus aset "${name}" dari sistem?`,
+      message: `Apakah Anda yakin ingin menghapus aset "${name}" dari sistem? Data master aset akan dihapus secara permanen.`,
       confirmText: 'Hapus Aset',
       variant: 'danger',
     });
     if (isOk) {
-      deleteAsset(id);
-      toast.success('Aset Dihapus', `Aset "${name}" berhasil dihapus.`);
+      const res = deleteAsset(id);
+      if (res && typeof res === 'object' && !res.success) {
+        toast.error('Gagal Menghapus Aset', res.reason || 'Terjadi kesalahan saat menghapus aset.');
+      } else {
+        toast.success('Aset Dihapus', `Aset "${name}" berhasil dihapus.`);
+      }
     }
   };
 
@@ -537,26 +586,38 @@ export function InventoryContent() {
   });
 
   const filteredRawMaterials = materials.filter(m => {
-    const matchesFilter = !inventoryFilter || m.category === inventoryFilter;
+    if (m.isActive === false) return false;
+    const level = getStockLevel(m.stock, m.minStock);
+    const matchesCategory = !inventoryFilter || m.category === inventoryFilter;
+    const matchesStatus = !rawStatusFilter || level === rawStatusFilter;
+    const q = searchTerm.toLowerCase();
     const matchesSearch = !searchTerm ||
-      m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.category.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesFilter && matchesSearch;
+      m.name.toLowerCase().includes(q) ||
+      m.code.toLowerCase().includes(q) ||
+      m.category.toLowerCase().includes(q) ||
+      level.toLowerCase().includes(q);
+    return matchesCategory && matchesStatus && matchesSearch;
   });
+
 
   const filteredPOs = purchaseOrders.filter(po => {
     const matchesFilter = !inventoryFilter || po.status === inventoryFilter;
+    const q = searchTerm.toLowerCase();
+    const statusLabel = getPOStatusLabel(po.status).toLowerCase();
     const matchesSearch = !searchTerm ||
-      po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      po.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (po.createdBy && po.createdBy.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      po.items.some(i => i.materialName.toLowerCase().includes(searchTerm.toLowerCase()));
+      po.poNumber.toLowerCase().includes(q) ||
+      po.supplier.toLowerCase().includes(q) ||
+      (po.createdBy && po.createdBy.toLowerCase().includes(q)) ||
+      statusLabel.includes(q) ||
+      po.items.some(i => i.materialName.toLowerCase().includes(q));
     return matchesFilter && matchesSearch;
   });
 
+
   const filteredFinishedGoods = finishedGoods.filter(fg => {
+    if (fg.isActive === false) return false;
     const p = products.find(prod => prod.id === fg.productId);
+    if (p && p.isActive === false) return false;
     const matchesCategory = !inventoryFilter || (p && p.category === inventoryFilter);
     const q = searchTerm.toLowerCase();
     const matchesSearch = !searchTerm ||
@@ -565,12 +626,47 @@ export function InventoryContent() {
       (fg.productName && fg.productName.toLowerCase().includes(q)) ||
       (fg.variantLabel && fg.variantLabel.toLowerCase().includes(q));
 
-    // Default: hanya tampilkan barang yang memiliki stok (stok > 0).
-    // Jika toggle aktif (showEmptyStock = true), barang dengan stok 0 juga ditampilkan.
     const matchesStock = showEmptyStock ? true : fg.stock > 0;
 
     return matchesCategory && matchesSearch && matchesStock;
   });
+
+  // Helper: Hitung HPP (Material + Produksi) dan Potensi Omzet untuk Barang Jadi
+  const getFinishedGoodHPP = (fg: { productId: string; variantId?: string; stock: number }) => {
+    const prod = products.find(p => p.id === fg.productId);
+    const variant = prod?.variants?.find(v => v.id === fg.variantId) || prod?.variants?.[0];
+
+    // 1. Biaya Material (Rollup BOM)
+    const effectiveBom = getEffectiveVariantBOM(variant, bomTemplateItems);
+    const materialCost = calculateRollupBOMCost(effectiveBom, materials, routings, operations);
+
+    // 2. Biaya Produksi (Tenaga Kerja / Routing)
+    let laborCost = 0;
+    const routingId = variant?.routingId || prod?.defaultRoutingId;
+    if (routingId && routings.length > 0 && operations.length > 0) {
+      const routing = routings.find(r => r.id === routingId);
+      if (routing) {
+        laborCost = routing.steps.reduce((acc, step) => {
+          const op = operations.find(o => o.id === step.operationId);
+          if (!op) return acc;
+          if (op.costingMethod === 'fixed') {
+            return acc + (op.fixedLaborCost || 0);
+          }
+          const hours = (op.durationMinutes || 0) / 60;
+          return acc + (hours * (op.laborCostPerHour || 0));
+        }, 0);
+      }
+    }
+
+    const unitHPP = materialCost + laborCost;
+    const totalHPP = unitHPP * (fg.stock || 0);
+
+    // 3. Potensi Omzet (Harga Jual x Stok)
+    const unitPrice = variant?.price ?? prod?.basePrice ?? 0;
+    const potentialRevenue = unitPrice * (fg.stock || 0);
+
+    return { unitHPP, totalHPP, potentialRevenue };
+  };
 
   const filteredReturnedGoods = (returnedGoods || []).filter(rg => {
     const matchesStatus = !inventoryFilter || rg.status === inventoryFilter;
@@ -597,91 +693,10 @@ export function InventoryContent() {
     setSelectedReturnItem(null);
   };
 
-  // Finished Goods handlers
-  const openAddFinishedGood = () => {
-    setEditFGId(null);
-    setFGProductId('');
-    setFGVariantId('');
-    setFGStock('0');
-    setFGMinStock(0);
-    setFGUnit('unit');
-    setFGError('');
-    setShowFGModal(true);
-  };
-
-  const openEditFinishedGood = (fg: FinishedGoodStock) => {
-    setEditFGId(fg.id);
-    setFGProductId(fg.productId);
-    setFGVariantId(fg.variantId || '');
-    setFGStock(fg.stock.toString());
-    setFGMinStock(fg.minStock);
-    setFGUnit(fg.unit || 'unit');
-    setFGError('');
-    setShowFGModal(true);
-  };
-
-  const handleSaveFinishedGood = () => {
-    if (!fgProductId) {
-      setFGError('Produk wajib dipilih.');
-      return;
-    }
-    const stockNum = Number(fgStock) || 0;
-    const minStockNum = Number(fgMinStock) || 0;
-
-    const prod = products.find(p => p.id === fgProductId);
-    const variant = prod?.variants?.find(v => v.id === fgVariantId);
-    const variantLabel = variant ? (Object.values(variant.combination || {}).join(' • ') || variant.sku) : undefined;
-    const productName = prod?.name || 'Produk';
-
-    if (editFGId) {
-      updateFinishedGood(editFGId, {
-        productId: fgProductId,
-        variantId: fgVariantId || undefined,
-        productName,
-        variantLabel,
-        stock: stockNum,
-        minStock: minStockNum,
-        unit: fgUnit,
-      });
-    } else {
-      addFinishedGood({
-        productId: fgProductId,
-        variantId: fgVariantId || undefined,
-        productName,
-        variantLabel,
-        stock: stockNum,
-        minStock: minStockNum,
-        unit: fgUnit,
-      });
-    }
-    setShowFGModal(false);
-  };
-
-  const handleDeleteFinishedGood = async (id: string, name: string) => {
-    const targetFG = finishedGoods.find(item => item.id === id);
-    const isCatalog = targetFG ? products.some(p => p.id === targetFG.productId) : false;
-
-    const isOk = await confirm({
-      title: isCatalog ? 'Reset Stok Barang Jadi' : 'Hapus Barang Jadi',
-      message: isCatalog
-        ? `Barang "${name}" terdaftar pada katalog produk. Apakah Anda yakin ingin mereset jumlah stoknya menjadi 0?`
-        : `Apakah Anda yakin ingin menghapus stok barang jadi "${name}"?`,
-      confirmText: isCatalog ? 'Reset ke 0' : 'Hapus',
-      variant: 'danger',
-    });
-    if (isOk) {
-      deleteFinishedGood(id);
-      toast.success(
-        isCatalog ? 'Stok Direset' : 'Berhasil Dihapus',
-        isCatalog ? `Stok ${name} berhasil direset menjadi 0.` : `Stok barang jadi ${name} berhasil dihapus.`
-      );
-    }
-  };
-
   // ---- Pengadaan Handlers ----
   const addPOItem = () => {
     const mat = materials.find(m => m.id === selectedMat);
-    if (!mat || selectedQty <= 0) return;
+    if (!mat || mat.isActive === false || selectedQty <= 0) return;
     setPOItems(prev => [...prev, {
       materialId: mat.id,
       materialName: mat.name,
@@ -770,26 +785,137 @@ export function InventoryContent() {
       setPOItems([]);
       setSelectedSupplier('');
       setShowPOModal(false);
-      toast.success('Pengadaan Berhasil Dibuat');
+      toast.success('Pengadaan Berhasil Diajukan');
     }
   };
 
-  const handleDeletePO = async (id: string, poNumber: string) => {
+
+
+  // ---- Procurement PO Action Handlers ----
+  const handleOrderPO = (poId: string, poNumber: string) => {
+    orderPO(poId);
+    toast.success('Pengadaan Disetujui', `PO ${poNumber} telah disetujui dan dipesan.`);
+  };
+
+  const openReceiveModal = (po: PurchaseOrder) => {
+    setReceivePOData(po);
+    setReceiveError('');
+    const selections: Record<string, { checked: boolean; receivedQty: number | '' }> = {};
+    po.items.forEach(item => {
+      const remaining = Math.max(0, item.qty - (item.receivedQty || 0));
+      selections[item.materialId] = {
+        checked: false,
+        receivedQty: remaining,
+      };
+    });
+    setReceiveSelections(selections);
+    setShowReceiveModal(true);
+  };
+
+  const handleConfirmReceive = () => {
+    if (!receivePOData) return;
+    setReceiveError('');
+
+    const checkedEntries = Object.entries(receiveSelections).filter(([_, val]) => val.checked);
+    if (checkedEntries.length === 0) {
+      setReceiveError('Pilih minimal satu barang yang diterima.');
+      return;
+    }
+
+    const itemsToReceive: { materialId: string; qty: number }[] = [];
+    for (const [matId, val] of checkedEntries) {
+      const poItem = receivePOData.items.find(i => i.materialId === matId);
+      const remaining = poItem ? Math.max(0, poItem.qty - (poItem.receivedQty || 0)) : 0;
+      const qtyNum = typeof val.receivedQty === 'number' ? val.receivedQty : parseFloat(String(val.receivedQty || 0));
+
+      if (isNaN(qtyNum) || qtyNum <= 0) {
+        setReceiveError(`Kuantitas untuk item "${poItem?.materialName}" harus lebih besar dari 0.`);
+        return;
+      }
+      if (qtyNum > remaining) {
+        setReceiveError(`Kuantitas untuk "${poItem?.materialName}" (${qtyNum}) melebihi sisa yang belum diterima (${remaining}).`);
+        return;
+      }
+      itemsToReceive.push({ materialId: matId, qty: qtyNum });
+    }
+
+    const res = receivePO(receivePOData.id, itemsToReceive);
+    if (!res.success) {
+      setReceiveError(res.error || 'Gagal mencatat penerimaan barang.');
+      return;
+    }
+
+    setShowReceiveModal(false);
+
+    if (res.isPartial) {
+      toast.success('Diterima Sebagian', `Penerimaan barang PO ${receivePOData.poNumber} berhasil dicatat.`);
+    } else {
+      toast.success('Penerimaan Selesai', `Seluruh barang PO ${receivePOData.poNumber} telah lengkap diterima.`);
+    }
+  };
+
+  const handleCancelRemainingPO = async (po: PurchaseOrder) => {
     const isOk = await confirm({
-      title: 'Hapus Purchase Order',
-      message: `Apakah Anda yakin ingin menghapus PO ${poNumber}?`,
-      confirmText: 'Hapus PO',
+      title: 'Batalkan Sisa PO',
+      message: `Apakah Anda yakin ingin membatalkan sisa barang yang belum diterima pada PO ${po.poNumber}? Sisa pesanan akan dihapus dari rencana PO dan status PO akan diselesaikan menjadi 'Diterima'.`,
+      confirmText: 'Batalkan Sisa PO',
       variant: 'danger',
     });
     if (isOk) {
-      const success = deletePO(id);
-      if (!success) {
-        toast.error('Gagal Menghapus PO', 'PO yang sudah diterima atau lunas tidak bisa dihapus.');
+      const res = cancelRemainingPO(po.id);
+      if (res.success) {
+        toast.success('Sisa PO Dibatalkan', `Sisa pesanan dihapus. Status PO ${po.poNumber} kini Diterima.`);
       } else {
-        toast.success('PO Berhasil Dihapus');
+        toast.error('Gagal Membatalkan Sisa PO', res.error);
       }
     }
   };
+
+  const openRejectPOModal = (po: PurchaseOrder) => {
+    setTargetPOForCancel(po);
+    setCancelPOReason('');
+    setCancelPOError('');
+    setCancelPOMode('REJECT');
+    setShowCancelPOModal(true);
+  };
+
+  const openCancelPOModal = (po: PurchaseOrder, mode: 'DRAFT' | 'ORDERED') => {
+    setTargetPOForCancel(po);
+    setCancelPOReason('');
+    setCancelPOError('');
+    setCancelPOMode(mode === 'DRAFT' ? 'CANCEL_DRAFT' : 'CANCEL_ORDERED');
+    setShowCancelPOModal(true);
+  };
+
+  const handleCancelOrRejectSubmit = () => {
+    if (!targetPOForCancel) return;
+    if (!cancelPOReason.trim()) {
+      setCancelPOError('Alasan wajib diisi.');
+      return;
+    }
+
+    if (cancelPOMode === 'REJECT') {
+      const res = rejectPO(targetPOForCancel.id, cancelPOReason.trim());
+      if (!res.success) {
+        setCancelPOError(res.error || 'Gagal menolak pengajuan.');
+        return;
+      }
+      toast.success('PO Ditolak', `Pengadaan ${targetPOForCancel.poNumber} berhasil ditolak.`);
+    } else {
+      const res = cancelPO(targetPOForCancel.id, cancelPOReason.trim());
+      if (!res.success) {
+        setCancelPOError(res.error || 'Gagal membatalkan pengadaan.');
+        return;
+      }
+      toast.success(
+        cancelPOMode === 'CANCEL_DRAFT' ? 'PO Dibatalkan' : 'PO Dibatalkan',
+        `Pengadaan ${targetPOForCancel.poNumber} berhasil dibatalkan.`
+      );
+    }
+    setShowCancelPOModal(false);
+    setTargetPOForCancel(null);
+  };
+
 
   // ---- SPK Bahan Setengah Jadi (WIP) Handlers ----
   const openCreateSaWorkOrder = (materialId?: string) => {
@@ -847,12 +973,6 @@ export function InventoryContent() {
               Register Bahan
             </Button>
           )}
-          {activeTab === 'finished' && canManageInventory(currentUser.role) && (
-            <Button onClick={openAddFinishedGood}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Tambah Barang Jadi
-            </Button>
-          )}
           {activeTab === 'procurement' && canRequestPO(currentUser.role) && (
             <Button onClick={() => openAddProcurement()}>
               <Plus className="h-4 w-4 mr-1.5" />
@@ -893,16 +1013,20 @@ export function InventoryContent() {
           filterPlaceholder = "Semua Status";
           filterOptions = [
             { value: '', label: 'Semua Status' },
-            { value: 'DRAFT', label: 'Pengajuan' },
+            { value: 'DRAFT', label: 'Diajukan' },
             { value: 'ORDERED', label: 'Dipesan' },
+            { value: 'PARTIALLY_RECEIVED', label: 'Diterima Sebagian' },
             { value: 'RECEIVED', label: 'Diterima' },
-            { value: 'REJECTED', label: 'Dibatalkan' },
+            { value: 'REJECTED', label: 'Ditolak' },
+            { value: 'CANCELED', label: 'Dibatalkan' },
           ];
+
         } else if (activeTab === 'movements') {
-          filterPlaceholder = "Semua Tipe Mutasi";
+          filterPlaceholder = "Semua Jenis";
           filterOptions = [
-            { value: 'IN', label: 'Masuk (PO / Pembelian)' },
-            { value: 'OUT', label: 'Keluar (SPK / Konsumsi)' },
+            { value: 'IN', label: 'Masuk' },
+            { value: 'OUT', label: 'Keluar' },
+            { value: 'INIT', label: 'Inisiasi' },
           ];
         } else if (activeTab === 'assets') {
           filterPlaceholder = "Semua Kategori Aset";
@@ -917,6 +1041,7 @@ export function InventoryContent() {
             onChange={(tab) => {
               setActiveTab(tab as 'raw' | 'finished' | 'movements' | 'procurement' | 'assets' | 'returns');
               setInventoryFilter('');
+              setRawStatusFilter('');
             }}
             options={[
               { key: 'raw', label: 'Stok Bahan Baku', icon: Warehouse },
@@ -931,6 +1056,30 @@ export function InventoryContent() {
                 count: pendingReturnsCount > 0 ? pendingReturnsCount : undefined,
               },
             ]}
+            filters={
+              activeTab === 'raw'
+                ? [
+                    {
+                      id: 'raw-cat',
+                      value: inventoryFilter,
+                      onChange: setInventoryFilter,
+                      options: categories.map(c => ({ value: c, label: c })),
+                      placeholder: 'Semua Kategori',
+                    },
+                    {
+                      id: 'raw-status',
+                      value: rawStatusFilter,
+                      onChange: setRawStatusFilter,
+                      options: [
+                        { value: 'Aman', label: 'Status: Aman' },
+                        { value: 'Kritis', label: 'Status: Kritis' },
+                        { value: 'Habis', label: 'Status: Habis' },
+                      ],
+                      placeholder: 'Semua Status',
+                    },
+                  ]
+                : undefined
+            }
             filterValue={inventoryFilter}
             onFilterChange={setInventoryFilter}
             filterPlaceholder={filterPlaceholder}
@@ -960,210 +1109,288 @@ export function InventoryContent() {
       {/* Raw Materials Stock Table */}
       {activeTab === 'raw' && (
         <Card>
-          {filteredRawMaterials.length === 0 ? (
-            <EmptyState
-              title="Belum ada bahan baku"
-              description={
-                searchTerm || inventoryFilter
-                  ? "Tidak ada bahan baku yang cocok dengan pencarian atau filter."
-                  : "Register bahan baku baru untuk mulai mengelola stok inventaris gudang."
-              }
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kode</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Nama Bahan</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kategori</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Stok</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Satuan</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">HPP Satuan</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Total Nilai</th>
-                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Batas Min</th>
-                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Status</th>
-                    {(canManageInventory(currentUser.role) || canRequestPO(currentUser.role)) && (
-                      <th className="pb-3 text-center font-medium text-slate-500 w-[180px] whitespace-nowrap">Aksi</th>
+          <Table
+            data={filteredRawMaterials}
+            keyExtractor={(mat) => mat.id}
+            emptyTitle="Belum ada bahan baku"
+            emptyDescription={
+              searchTerm || inventoryFilter
+                ? "Tidak ada bahan baku yang cocok dengan pencarian atau filter."
+                : "Register bahan baku baru untuk mulai mengelola stok inventaris gudang."
+            }
+            columns={[
+              {
+                key: 'code',
+                header: 'Kode',
+                align: 'left',
+                cell: (mat) => (
+                  <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    {mat.code}
+                  </span>
+                ),
+              },
+              {
+                key: 'name',
+                header: 'Nama Bahan',
+                align: 'left',
+                cell: (mat) => (
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900 dark:text-white">{mat.name}</span>
+                    {mat.isSubAssembly && (
+                      <Badge variant="purple">WIP</Badge>
                     )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRawMaterials.map(mat => {
-                    const level = getStockLevel(mat.stock, mat.minStock);
-                    return (
-                      <tr key={mat.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3.5 pr-3 font-mono text-xs font-semibold text-slate-600 dark:text-slate-400">{mat.code}</td>
-                        <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{mat.name}</span>
-                            {mat.isSubAssembly && (
-                              <Badge variant="purple">WIP</Badge>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3.5 pr-3">
-                          <Badge>{mat.category}</Badge>
-                        </td>
-                        <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{mat.stock}</td>
-                        <td className="py-3.5 pr-3 text-slate-500 dark:text-slate-400 text-xs">{mat.unit}</td>
-                        <td className="py-3.5 pr-3 text-right font-mono text-slate-700 dark:text-slate-300">{formatCurrency(mat.unitCost)}</td>
-                        <td className="py-3.5 pr-3 text-right font-mono text-emerald-600 dark:text-emerald-400">{formatCurrency(mat.stock * mat.unitCost)}</td>
-                        <td className="py-3.5 pr-3 text-center text-slate-500">{mat.minStock}</td>
-                        <td className={`py-3.5 pr-3 text-center text-xs font-semibold ${getStockLevelTextColor(level)}`}>
-                          {level}
-                        </td>
-                        {(canManageInventory(currentUser.role) || canRequestPO(currentUser.role)) && (
-                          <td className="py-3.5 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {!mat.isSubAssembly ? (
-                                canRequestPO(currentUser.role) && (
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => openAddProcurement(mat.id)}
-                                    title={`Buat pengadaan untuk ${mat.name}`}
-                                  >
-                                    Buat Pengadaan
-                                  </Button>
-                                )
-                              ) : (
-                                (canManageProduction(currentUser.role) || canManageInventory(currentUser.role)) && (
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => openCreateSaWorkOrder(mat.id)}
-                                    title={`Buat SPK untuk ${mat.name}`}
-                                  >
-                                    Buat SPK
-                                  </Button>
-                                )
-                              )}
+                  </div>
+                ),
+              },
+              {
+                key: 'category',
+                header: 'Kategori',
+                align: 'left',
+                cell: (mat) => <Badge>{mat.category}</Badge>,
+              },
+              {
+                key: 'stock',
+                header: 'Stok',
+                align: 'right',
+                cell: (mat) => (
+                  <span className="font-semibold text-slate-900 dark:text-white">{mat.stock}</span>
+                ),
+              },
+              {
+                key: 'unit',
+                header: 'Satuan',
+                align: 'left',
+                cell: (mat) => (
+                  <span className="text-slate-500 dark:text-slate-400 text-xs">{mat.unit}</span>
+                ),
+              },
+              {
+                key: 'unitCost',
+                header: 'HPP Satuan',
+                align: 'right',
+                cell: (mat) => (
+                  <span className="font-mono text-slate-700 dark:text-slate-300">
+                    {formatCurrency(mat.unitCost)}
+                  </span>
+                ),
+              },
+              {
+                key: 'totalValue',
+                header: 'Total Nilai',
+                align: 'right',
+                cell: (mat) => (
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(mat.stock * mat.unitCost)}
+                  </span>
+                ),
+              },
+              {
+                key: 'minStock',
+                header: 'Batas Min',
+                align: 'center',
+                cell: (mat) => <span className="text-slate-500">{mat.minStock}</span>,
+              },
+              {
+                key: 'status',
+                header: 'Status',
+                align: 'center',
+                cell: (mat) => {
+                  const level = getStockLevel(mat.stock, mat.minStock);
+                  return (
+                    <Badge
+                      variant={getStockLevelBadgeVariant(level)}
+                      title={getStockLevelDescription(level)}
+                      className="cursor-default"
+                    >
+                      {level}
+                    </Badge>
+                  );
+                },
+              },
+              ...((canManageInventory(currentUser.role) || canRequestPO(currentUser.role))
+                ? [
+                    {
+                      key: 'actions',
+                      header: 'Aksi',
+                      align: 'center' as const,
+                      width: '190px',
+                      headerClassName: 'w-[190px] whitespace-nowrap',
+                      className: 'w-[190px] whitespace-nowrap',
+                      cell: (mat: RawMaterial) => (
+                        <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+                          {!mat.isSubAssembly ? (
+                            canRequestPO(currentUser.role) && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => openAddProcurement(mat.id)}
+                                title={`Buat pengadaan untuk ${mat.name}`}
+                              >
+                                Buat Pengadaan
+                              </Button>
+                            )
+                          ) : (
+                            (canManageProduction(currentUser.role) || canManageInventory(currentUser.role)) && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => openCreateSaWorkOrder(mat.id)}
+                                title={`Buat SPK untuk ${mat.name}`}
+                              >
+                                Buat SPK
+                              </Button>
+                            )
+                          )}
 
-                              {canManageInventory(currentUser.role) && (
-                                <ActionMenu
-                                  items={[
-                                    {
-                                      label: 'Edit',
-                                      icon: <Edit2 className="h-3.5 w-3.5" />,
-                                      onClick: () => openEditMaterial(mat),
-                                    },
-                                    {
-                                      label: 'Delete',
-                                      icon: <Trash2 className="h-3.5 w-3.5" />,
-                                      variant: 'danger',
-                                      onClick: () => handleDeleteMaterial(mat.id, mat.name),
-                                    },
-                                  ]}
-                                />
-                              )}
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          {canManageInventory(currentUser.role) && (
+                            <ActionMenu
+                              items={[
+                                {
+                                  label: 'Edit',
+                                  icon: <Edit2 className="h-3.5 w-3.5" />,
+                                  onClick: () => openEditMaterial(mat),
+                                },
+                                {
+                                  label: 'Delete',
+                                  icon: <Trash2 className="h-3.5 w-3.5" />,
+                                  variant: 'danger',
+                                  onClick: () => handleDeleteMaterial(mat.id, mat.name),
+                                },
+                              ]}
+                            />
+                          )}
+                        </div>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </Card>
       )}
 
       {/* Finished Goods Table */}
       {activeTab === 'finished' && (
-        <Card>
-          {filteredFinishedGoods.length === 0 ? (
-            <EmptyState
-              title="Belum ada barang jadi"
-              description={
-                searchTerm || inventoryFilter || !showEmptyStock
-                  ? (!showEmptyStock && finishedGoods.length > 0
-                      ? 'Tidak ada barang jadi dengan stok tersedia. Aktifkan toggle "Tampilkan barang dengan stok kosong" untuk menampilkan produk dengan stok 0.'
-                      : 'Tidak ada barang jadi yang cocok dengan pencarian atau filter.')
-                  : 'Tambahkan stok barang jadi untuk mencatat hasil produksi.'
-              }
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Produk</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Stok</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Satuan</th>
-                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Min Stok</th>
-                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Status</th>
-                    {canManageInventory(currentUser.role) && (
-                      <th className="pb-3 text-center font-medium text-slate-500 w-[140px] whitespace-nowrap">Aksi</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredFinishedGoods.map(fg => {
+        <Card className="p-0 overflow-hidden">
+          <Table
+            data={filteredFinishedGoods}
+            keyExtractor={(fg) => fg.id}
+            emptyTitle="Belum ada barang jadi"
+            emptyDescription={
+              searchTerm || inventoryFilter || !showEmptyStock
+                ? (!showEmptyStock && finishedGoods.length > 0
+                    ? 'Tidak ada barang jadi dengan stok tersedia. Aktifkan toggle "Tampilkan barang dengan stok kosong" untuk melihat semua item.'
+                    : 'Tidak ada barang jadi yang cocok dengan pencarian atau filter.')
+                : 'Barang jadi terdaftar otomatis saat menambahkan produk di Katalog Produk.'
+            }
+              columns={[
+                {
+                  key: 'visual',
+                  header: 'Visual',
+                  align: 'center',
+                  cell: (fg) => {
+                    const prod = products.find(p => p.id === fg.productId);
+                    const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
+
+                    return prod?.image ? (
+                      <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 mx-auto">
+                        <img src={prod.image} alt={prod.name} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60 mx-auto">
+                        <IconComp className="h-5 w-5" />
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: 'productName',
+                  header: 'Nama Produk',
+                  cell: (fg) => {
                     const prod = products.find(p => p.id === fg.productId);
                     const variant = prod?.variants?.find(v => v.id === fg.variantId);
-                    const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
-                    const level = getStockLevel(fg.stock, fg.minStock);
-                    const variantText = variant ? (Object.values(variant.combination || {}).join(' • ') || variant.sku) : '';
-                    const displayName = fg.productName ? `${fg.productName}${fg.variantLabel ? ` (${fg.variantLabel})` : ''}` : (prod ? (variantText ? `${prod.name} (${variantText})` : prod.name) : 'Produk Tidak Ditemukan');
+                    const variantText = fg.variantLabel || (variant ? (Object.values(variant.combination || {}).join(' • ') || variant.sku) : '');
+                    const productName = fg.productName || prod?.name || 'Produk Tidak Ditemukan';
+
                     return (
-                      <tr key={fg.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
-                          <div className="flex items-center gap-3">
-                            {prod?.image ? (
-                              <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                                <img src={prod.image} alt={displayName} className="w-full h-full object-cover" />
-                              </div>
-                            ) : (
-                              <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                                <IconComp className="h-5 w-5" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <span className="font-semibold block truncate">{displayName}</span>
-                              {prod?.category && (
-                                <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
-                                  {prod.category}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3.5 pr-3 text-right font-semibold text-slate-900 dark:text-white">{fg.stock}</td>
-                        <td className="py-3.5 pr-3 text-slate-500 dark:text-slate-400 text-xs">{fg.unit}</td>
-                        <td className="py-3.5 pr-3 text-center text-slate-500">{fg.minStock}</td>
-                        <td className={`py-3.5 pr-3 text-center text-xs font-semibold ${getStockLevelTextColor(level)}`}>
-                          {level}
-                        </td>
-                        {canManageInventory(currentUser.role) && (
-                          <td className="py-3.5 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <ActionMenu
-                                items={[
-                                  {
-                                    label: 'Edit',
-                                    icon: <Edit2 className="h-3.5 w-3.5" />,
-                                    onClick: () => openEditFinishedGood(fg),
-                                  },
-                                  {
-                                    label: 'Delete',
-                                    icon: <Trash2 className="h-3.5 w-3.5" />,
-                                    variant: 'danger',
-                                    onClick: () => handleDeleteFinishedGood(fg.id, displayName),
-                                  },
-                                ]}
-                              />
-                            </div>
-                          </td>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {productName}
+                        </span>
+                        {variantText && (
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatVariantLabel(variantText)}
+                          </span>
                         )}
-                      </tr>
+                      </div>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  },
+                },
+                {
+                  key: 'category',
+                  header: 'Kategori',
+                  cell: (fg) => {
+                    const prod = products.find(p => p.id === fg.productId);
+                    const categoryName = prod?.category || '-';
+
+                    return (
+                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {categoryName}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: 'stock',
+                  header: 'Stok Gudang',
+                  align: 'right',
+                  cell: (fg) => (
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      {fg.stock}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'unitHPP',
+                  header: 'HPP Satuan',
+                  align: 'right',
+                  cell: (fg) => {
+                    const { unitHPP } = getFinishedGoodHPP(fg);
+                    return (
+                      <span className="font-mono text-slate-700 dark:text-slate-300">
+                        {formatCurrency(unitHPP)}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: 'totalHPP',
+                  header: 'Total Nilai HPP',
+                  align: 'right',
+                  cell: (fg) => {
+                    const { totalHPP } = getFinishedGoodHPP(fg);
+                    return (
+                      <span className="font-mono font-medium text-indigo-600 dark:text-indigo-400">
+                        {formatCurrency(totalHPP)}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: 'potentialRevenue',
+                  header: 'Potensi Omzet',
+                  align: 'right',
+                  cell: (fg) => {
+                    const { potentialRevenue } = getFinishedGoodHPP(fg);
+                    return (
+                      <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(potentialRevenue)}
+                      </span>
+                    );
+                  },
+                },
+              ]}
+            />
         </Card>
       )}
 
@@ -1273,72 +1500,131 @@ export function InventoryContent() {
       {/* Stock Movements */}
       {activeTab === 'movements' && (
         <Card>
-          {filteredMovements.length === 0 ? (
-            <EmptyState title="Belum ada mutasi stok" description={searchTerm ? "Tidak ada mutasi stok yang cocok dengan pencarian." : "Mutasi stok otomatis dicatat saat menerima PO atau pemotongan bahan SPK"} />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Waktu</th>
-                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Jenis</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Material</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Jumlah</th>
-                    <th className="pb-3 text-left font-medium text-slate-500">Referensi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMovements.map(mv => (
-                    <tr key={mv.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
-                      <td className="py-3 pr-3 text-xs text-slate-500 dark:text-slate-400">{formatDateTime(mv.date)}</td>
-                      <td className="py-3 pr-3 text-center">
-                        {mv.type === 'IN' ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                            <ArrowDownCircle className="h-3.5 w-3.5" /> MASUK (PO)
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
-                            <ArrowUpCircle className="h-3.5 w-3.5" /> KELUAR (SPK)
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 pr-3 text-slate-800 dark:text-slate-200">{mv.materialName}</td>
-                      <td className="py-3 pr-3 text-right font-semibold text-slate-900 dark:text-white">{mv.qty}</td>
-                      <td className="py-3 font-mono text-xs text-slate-500">{mv.reference}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <Table
+            data={filteredMovements}
+            emptyTitle="Belum ada mutasi stok"
+            emptyDescription={
+              searchTerm
+                ? "Tidak ada mutasi stok yang cocok dengan pencarian."
+                : "Mutasi stok otomatis dicatat saat inisiasi stok awal, penerimaan PO, atau pemotongan bahan SPK."
+            }
+            columns={[
+              {
+                key: 'date',
+                header: 'Waktu',
+                cell: (mv) => (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-mono whitespace-nowrap">
+                    {formatDateTime(mv.date)}
+                  </span>
+                ),
+              },
+              {
+                key: 'type',
+                header: 'Jenis',
+                cell: (mv) => {
+                  if (mv.type === 'INIT') {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                        <PackageCheck className="h-3.5 w-3.5" />
+                        Inisiasi
+                      </span>
+                    );
+                  }
+                  if (mv.type === 'IN') {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        <ArrowDownCircle className="h-3.5 w-3.5" />
+                        Masuk
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400">
+                      <ArrowUpCircle className="h-3.5 w-3.5" />
+                      Keluar
+                    </span>
+                  );
+                },
+              },
+              {
+                key: 'materialName',
+                header: 'Item / Material',
+                cell: (mv) => (
+                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                    {mv.materialName}
+                  </span>
+                ),
+              },
+              {
+                key: 'qty',
+                header: 'Jumlah',
+                align: 'right',
+                cell: (mv) => (
+                  <span className="font-semibold text-slate-900 dark:text-white font-mono">
+                    {mv.qty}
+                  </span>
+                ),
+              },
+              {
+                key: 'reference',
+                header: 'Referensi',
+                cell: (mv) => {
+                  const matchedPO = purchaseOrders.find(
+                    (po) =>
+                      po.poNumber === mv.reference ||
+                      mv.reference.startsWith(`${po.poNumber} `) ||
+                      po.id === mv.reference
+                  );
+
+                  if (matchedPO) {
+                    return (
+                      <Link
+                        href={`/inventory/procurement/${matchedPO.id}`}
+                        className="font-mono text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline inline-flex items-center gap-1 group"
+                        title={`Lihat detail pengadaan ${matchedPO.poNumber}`}
+                      >
+                        <span>{mv.reference}</span>
+                      </Link>
+                    );
+                  }
+
+                  return (
+                    <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+                      {mv.reference}
+                    </span>
+                  );
+                },
+              },
+            ]}
+          />
         </Card>
       )}
 
       {/* Procurement (Pengadaan) Table */}
       {activeTab === 'procurement' && (
         <Card>
-          {filteredPOs.length === 0 ? (
-            <EmptyState
-              title="Belum ada pengadaan"
-              description={
-                searchTerm || inventoryFilter
-                  ? "Tidak ada data pengadaan yang sesuai dengan pencarian atau filter."
-                  : "Buat pengadaan baru untuk memesan bahan baku ke vendor."
-              }
-            />
-          ) : (
-            <Table
-              data={[...filteredPOs].reverse()}
-              onRowClick={(po) => setSelectedProcurementDetail(po)}
+          <Table
+            data={[...filteredPOs].reverse()}
+            emptyTitle="Belum ada pengadaan"
+            emptyDescription={
+              searchTerm || inventoryFilter
+                ? "Tidak ada data pengadaan yang sesuai dengan pencarian atau filter."
+                : "Buat pengadaan baru untuk memesan bahan baku ke vendor."
+            }
+            onRowClick={(po) => router.push(`/inventory/procurement/${po.id}`)}
               columns={[
                 {
                   key: 'poNumber',
                   header: 'No. Pengadaan',
                   cell: (po) => (
                     <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
+                      <Link
+                        href={`/inventory/procurement/${po.id}`}
+                        className="font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline text-xs"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {po.poNumber}
-                      </span>
+                      </Link>
                       {po.purchaseType === 'DIRECT' ? (
                         <Badge variant="purple">Cash</Badge>
                       ) : (
@@ -1402,100 +1688,131 @@ export function InventoryContent() {
                   header: 'Status',
                   align: 'left',
                   cell: (po) => (
-                    po.status === 'REJECTED' ? (
-                      <Badge variant="danger">Dibatalkan</Badge>
-                    ) : po.purchaseType === 'DIRECT' || po.status === 'RECEIVED' ? (
-                      <Badge variant="success">Diterima</Badge>
-                    ) : po.status === 'ORDERED' ? (
-                      <Badge variant="info">Dipesan</Badge>
-                    ) : (
-                      <Badge variant="warning">Pengajuan</Badge>
-                    )
+                    <Badge variant={getPOStatusVariant(po.status)}>
+                      {getPOStatusLabel(po.status)}
+                    </Badge>
                   ),
                 },
                 {
                   key: 'actions',
                   header: 'Aksi',
                   align: 'center',
+                  width: '190px',
+                  headerClassName: 'w-[190px] whitespace-nowrap',
+                  className: 'w-[190px] whitespace-nowrap',
                   cell: (po) => {
                     const isPurchasing = canCreatePO(currentUser.role);
                     const isInventory = canManageInventory(currentUser.role);
+                    const isCreator = po.createdBy === currentUser.name;
 
-                    const items: ActionMenuItem[] = [
-                      {
-                        label: 'Lihat Detail',
-                        icon: <Eye className="h-4 w-4" />,
-                        onClick: () => setSelectedProcurementDetail(po),
-                      },
-                    ];
+                    if (po.status === 'RECEIVED' || po.status === 'REJECTED' || po.status === 'CANCELED') {
+                      return (
+                        <div className="flex items-center justify-center text-slate-300 dark:text-slate-600 font-mono text-xs">
+                          -
+                        </div>
+                      );
+                    }
+
+                    let mainButton: React.ReactNode = null;
+                    const moreItems: ActionMenuItem[] = [];
 
                     if (po.status === 'DRAFT') {
                       if (isPurchasing) {
-                        items.push({
-                          label: 'Setujui & Pesan',
-                          icon: <Check className="h-4 w-4" />,
-                          onClick: () => orderPO(po.id),
-                        });
-                        items.push({
-                          label: 'Tolak',
-                          icon: <X className="h-4 w-4" />,
+                        mainButton = (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => handleOrderPO(po.id, po.poNumber)}
+                            title="Setujui pengadaan ini"
+                          >
+                            Setujui & Pesan
+                          </Button>
+                        );
+                        moreItems.push({
+                          label: 'Tolak PO',
+                          icon: <XCircle className="h-3.5 w-3.5" />,
                           variant: 'danger',
-                          onClick: () => {
-                            setSelectedProcurementDetail(po);
-                            setCancelPOReason('');
-                            setCancelPOError('');
-                            setShowCancelPOModal(true);
-                          },
+                          onClick: () => openRejectPOModal(po),
                         });
-                        items.push({
-                          label: 'Hapus',
-                          icon: <Trash2 className="h-4 w-4" />,
+                      }
+                      if (isPurchasing || isCreator) {
+                        moreItems.push({
+                          label: 'Batalkan PO',
+                          icon: <Ban className="h-3.5 w-3.5" />,
                           variant: 'danger',
-                          onClick: () => handleDeletePO(po.id, po.poNumber),
+                          onClick: () => openCancelPOModal(po, 'DRAFT'),
                         });
                       }
                     } else if (po.status === 'ORDERED') {
-                      if (isInventory) {
-                        items.push({
-                          label: 'Terima Barang',
-                          icon: <PackageCheck className="h-4 w-4" />,
-                          onClick: () => receivePO(po.id),
+                      if (isInventory || isPurchasing) {
+                        mainButton = (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => openReceiveModal(po)}
+                            title="Terima barang masuk ke gudang"
+                          >
+                            Terima Barang
+                          </Button>
+                        );
+                      }
+                      if (isPurchasing || isCreator) {
+                        moreItems.push({
+                          label: 'Batalkan PO',
+                          icon: <Ban className="h-3.5 w-3.5" />,
+                          variant: 'danger',
+                          onClick: () => openCancelPOModal(po, 'ORDERED'),
                         });
                       }
-                      if (isPurchasing) {
-                        items.push({
-                          label: 'Batalkan',
-                          icon: <X className="h-4 w-4" />,
-                          variant: 'danger',
-                          onClick: () => {
-                            setSelectedProcurementDetail(po);
-                            setCancelPOReason('');
-                            setCancelPOError('');
-                            setShowCancelPOModal(true);
-                          },
-                        });
+                    } else if (po.status === 'PARTIALLY_RECEIVED') {
+                      if (isInventory || isPurchasing) {
+                        mainButton = (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => openReceiveModal(po)}
+                            title="Terima sisa barang pengadaan"
+                          >
+                            Terima Barang
+                          </Button>
+                        );
                       }
-                    } else if (po.status === 'REJECTED') {
-                      if (isPurchasing) {
-                        items.push({
-                          label: 'Hapus',
-                          icon: <Trash2 className="h-4 w-4" />,
+                      if (isPurchasing || isCreator) {
+                        moreItems.push({
+                          label: 'Batalkan Sisa PO',
+                          icon: <Ban className="h-3.5 w-3.5" />,
                           variant: 'danger',
-                          onClick: () => handleDeletePO(po.id, po.poNumber),
+                          onClick: () => handleCancelRemainingPO(po),
                         });
                       }
                     }
 
+                    if (!mainButton && moreItems.length === 0) {
+                      return (
+                        <div className="flex items-center justify-center text-slate-300 dark:text-slate-600 font-mono text-xs">
+                          -
+                        </div>
+                      );
+                    }
+
                     return (
-                      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-                        <ActionMenu menuWidth="w-max min-w-[108px]" items={items} />
+                      <div
+                        className="flex items-center justify-center gap-1.5 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {mainButton}
+                        {moreItems.length > 0 && (
+                          <ActionMenu
+                            menuWidth="w-max min-w-[120px]"
+                            items={moreItems}
+                          />
+                        )}
                       </div>
                     );
                   },
                 },
               ]}
             />
-          )}
         </Card>
       )}
 
@@ -1505,69 +1822,140 @@ export function InventoryContent() {
           {filteredAssets.length === 0 ? (
             <EmptyState title="Belum ada aset terdaftar" description="Register aset & alat kerja untuk mencatat biaya penyusutan dan servis" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kode</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Nama Aset / Alat</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Kategori</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Tgl Perolehan</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Harga Perolehan</th>
-                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Umur Ekonomis</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Penyusutan / Bln</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Biaya Servis</th>
-                    <th className="pb-3 pr-3 text-center font-medium text-slate-500">Status</th>
-                    {canManageInventory(currentUser.role) && (
-                      <th className="pb-3 text-center font-medium text-slate-500">Aksi</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAssets.map(ast => {
-                    return (
-                      <tr key={ast.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3.5 pr-3 font-mono text-xs font-semibold text-slate-600 dark:text-slate-400">{ast.code}</td>
-                        <td className="py-3.5 pr-3 font-medium text-slate-900 dark:text-white">{ast.name}</td>
-                        <td className="py-3.5 pr-3">
-                          <Badge variant="info">{ast.category}</Badge>
-                        </td>
-                        <td className="py-3.5 pr-3 text-slate-600 dark:text-slate-400 text-xs">{ast.purchaseDate}</td>
-                        <td className="py-3.5 pr-3 text-right text-slate-950 dark:text-white font-medium">{formatCurrency(ast.purchaseCost)}</td>
-                        <td className="py-3.5 pr-3 text-center text-slate-600 dark:text-slate-400">{ast.usefulLifeYears} Tahun</td>
-                        <td className="py-3.5 pr-3 text-right font-semibold text-red-650 dark:text-red-400">{formatCurrency(ast.monthlyDepreciation)}</td>
-                        <td className="py-3.5 pr-3 text-right font-semibold text-slate-800 dark:text-slate-200">{formatCurrency(ast.accumulatedServiceCost)}</td>
-                        <td className="py-3.5 pr-3 text-center">
-                          <Badge variant={ast.status === 'AKTIF' ? 'success' : ast.status === 'MAINTENANCE' ? 'warning' : 'danger'}>
-                            {ast.status}
-                          </Badge>
-                        </td>
-                        {canManageInventory(currentUser.role) && (
-                          <td className="py-3.5 text-center">
-                            <div className="flex justify-center gap-1">
-                              <Button size="sm" variant="ghost" onClick={() => openEditAsset(ast)} title="Edit Aset">
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => openManageServices(ast)} title="Kelola Servis" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900">
-                                <History className="h-3.5 w-3.5" />
-                              </Button>
-                              <button
-                                onClick={() => handleDeleteAsset(ast.id, ast.name)}
-                                className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg dark:hover:bg-red-950/20"
-                                title="Hapus Aset"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
+            <Table
+              data={filteredAssets}
+              keyExtractor={(ast) => ast.id}
+              onRowClick={(ast) => router.push(`/inventory/assets/${ast.id}`)}
+              columns={[
+                {
+                  key: 'code',
+                  header: 'Kode',
+                  cell: (ast) => (
+                    <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {ast.code}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'name',
+                  header: 'Nama Aset & Kategori',
+                  cell: (ast) => (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {ast.name}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {ast.category}
+                      </span>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'acquisitionType',
+                  header: 'Perolehan',
+                  align: 'center',
+                  cell: (ast) =>
+                    ast.acquisitionType === 'NEW_PURCHASE' ? (
+                      <Badge variant="purple">Beli Baru</Badge>
+                    ) : (
+                      <Badge variant="default">Saldo Awal</Badge>
+                    ),
+                },
+                {
+                  key: 'purchaseCost',
+                  header: 'Harga Perolehan',
+                  align: 'right',
+                  cell: (ast) => (
+                    <span className="font-mono font-medium text-slate-900 dark:text-white">
+                      {formatCurrency(ast.purchaseCost)}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'currentBookValue',
+                  header: 'Nilai Buku',
+                  align: 'right',
+                  cell: (ast) => (
+                    <span className="font-mono font-semibold text-indigo-600 dark:text-indigo-400">
+                      {formatCurrency(ast.currentBookValue ?? ast.purchaseCost)}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  align: 'center',
+                  cell: (ast) => {
+                    const statusVariant: 'success' | 'warning' | 'danger' | 'default' =
+                      ast.status === 'ACTIVE' || ast.status === 'AKTIF'
+                        ? 'success'
+                        : ast.status === 'IN_MAINTENANCE' || ast.status === 'MAINTENANCE'
+                        ? 'warning'
+                        : ast.status === 'BROKEN' || ast.status === 'RUSAK'
+                        ? 'danger'
+                        : 'default';
 
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    const statusLabel =
+                      ast.status === 'ACTIVE' || ast.status === 'AKTIF'
+                        ? 'Aktif'
+                        : ast.status === 'IN_MAINTENANCE' || ast.status === 'MAINTENANCE'
+                        ? 'Perawatan'
+                        : ast.status === 'BROKEN' || ast.status === 'RUSAK'
+                        ? 'Rusak'
+                        : ast.status === 'DISPOSED'
+                        ? 'Dijual'
+                        : 'Afkir / Scrap';
+
+                    return <Badge variant={statusVariant}>{statusLabel}</Badge>;
+                  },
+                },
+                ...(canManageInventory(currentUser.role)
+                  ? [
+                      {
+                        key: 'actions',
+                        header: 'Aksi',
+                        align: 'center' as const,
+                        cell: (ast: CompanyAsset) => {
+                          const serviceCount = (assetServiceLogs || []).filter(l => l.assetId === ast.id).length;
+                          const depreciationCount = (assetDepreciations || []).filter(d => d.assetId === ast.id).length;
+                          const hasDependencies = serviceCount > 0 || depreciationCount > 0;
+
+                          const menuItems: ActionMenuItem[] = [
+                            {
+                              label: 'Edit',
+                              icon: <Edit2 className="h-3.5 w-3.5" />,
+                              onClick: () => openEditAsset(ast),
+                            },
+                            {
+                              label: 'Catat Servis',
+                              icon: <Wrench className="h-3.5 w-3.5" />,
+                              onClick: () => openManageServices(ast),
+                            },
+                          ];
+
+                          if (!hasDependencies) {
+                            menuItems.push({
+                              label: 'Hapus',
+                              icon: <Trash2 className="h-3.5 w-3.5" />,
+                              variant: 'danger',
+                              onClick: () => handleDeleteAsset(ast.id, ast.name),
+                            });
+                          }
+
+                          return (
+                            <div
+                              className="flex items-center justify-center"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ActionMenu menuWidth="w-max min-w-[120px]" items={menuItems} />
+                            </div>
+                          );
+                        },
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           )}
         </Card>
       )}
@@ -1827,8 +2215,8 @@ export function InventoryContent() {
       <Modal
         isOpen={showAssetModal}
         onClose={() => setShowAssetModal(false)}
-        title={editAssetId ? 'Edit Aset & Alat Kerja' : 'Register Aset Baru'}
-        size="md"
+        title={editAssetId ? 'Edit Aset Perusahaan' : 'Register Aset Baru'}
+        size="lg"
         actions={
           <>
             <Button type="button" variant="ghost" onClick={() => setShowAssetModal(false)}>Batal</Button>
@@ -1836,7 +2224,7 @@ export function InventoryContent() {
           </>
         }
       >
-        <form onSubmit={handleSaveAsset} className="space-y-4 pb-6 min-h-[240px]">
+        <form onSubmit={handleSaveAsset} className="space-y-4 pb-2">
           {crudError && (
             <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -1845,17 +2233,14 @@ export function InventoryContent() {
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Kode Aset *</label>
-              <input
-                type="text"
-                value={astCode}
-                onChange={e => setAstCode(e.target.value)}
-                placeholder="Misal: AST-MSN-001"
-                disabled={!!editAssetId}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-900"
-              />
-            </div>
+            <Input
+              label="Kode Aset"
+              required
+              value={astCode}
+              onChange={e => setAstCode(e.target.value)}
+              placeholder="Misal: AST-MSN-001"
+              disabled={!!editAssetId}
+            />
             <Select
               label="Kategori"
               required
@@ -1865,64 +2250,59 @@ export function InventoryContent() {
             />
           </div>
 
-
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Nama Aset *</label>
-            <input
-              type="text"
+            <Input
+              label="Nama Aset"
+              required
               value={astName}
               onChange={e => setAstName(e.target.value)}
               placeholder="Contoh: Mesin Cutting CNC Wood Router"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Tanggal Perolehan *</label>
-              <input
-                type="date"
-                value={astPurchaseDate}
-                onChange={e => setAstPurchaseDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Status *</label>
-              <Select
-                value={astStatus}
-                onChange={e => setAstStatus(e.target.value as any)}
-                options={[
-                  { value: 'AKTIF', label: 'AKTIF' },
-                  { value: 'MAINTENANCE', label: 'MAINTENANCE' },
-                  { value: 'RUSAK', label: 'RUSAK' },
-                ]}
-              />
-            </div>
+            <Input
+              type="date"
+              label="Tanggal Perolehan"
+              required
+              value={astPurchaseDate}
+              onChange={e => setAstPurchaseDate(e.target.value)}
+            />
+            <Select
+              label="Status"
+              required
+              value={astStatus}
+              onChange={e => setAstStatus(e.target.value as any)}
+              options={[
+                { value: 'ACTIVE', label: 'Aktif' },
+                { value: 'IN_MAINTENANCE', label: 'Dalam Pemeliharaan' },
+                { value: 'BROKEN', label: 'Rusak' },
+                { value: 'DISPOSED', label: 'Dijual' },
+                { value: 'SCRAPPED', label: 'Afkir / Scrap' },
+              ]}
+            />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Harga Perolehan (Rp) *</label>
-              <input
-                type="number"
-                value={astPurchaseCost || ''}
-                onChange={e => setAstPurchaseCost(Number(e.target.value))}
-                placeholder="0"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Umur (Thn) *</label>
-              <input
-                type="number"
-                value={astUsefulLifeYears || ''}
-                onChange={e => setAstUsefulLifeYears(Number(e.target.value))}
-                placeholder="5"
-                min="1"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
+            <CurrencyInput
+              label="Harga Perolehan (Rp)"
+              required
+              value={astPurchaseCost}
+              onChange={val => setAstPurchaseCost(val)}
+            />
+            <Input
+              type="number"
+              label="Masa Manfaat (Bulan)"
+              required
+              value={astUsefulLifeMonths}
+              onChange={e => setAstUsefulLifeMonths(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="60"
+            />
+            <CurrencyInput
+              label="Nilai Sisa / Residu (Rp)"
+              value={astSalvageValue}
+              onChange={val => setAstSalvageValue(val)}
+            />
           </div>
 
           {editAssetId && (
@@ -1935,12 +2315,34 @@ export function InventoryContent() {
             </div>
           )}
 
-          {/* Auto calculation info display */}
-          {astPurchaseCost > 0 && astUsefulLifeYears > 0 && (
-            <div className="rounded-lg bg-indigo-50/50 p-3 text-xs text-indigo-800 dark:bg-indigo-950/20 dark:text-indigo-400">
-              <span className="font-semibold">Perkiraan Beban Overhead:</span> Penyusutan bulanan untuk aset ini adalah <strong className="font-bold">{formatCurrency(astPurchaseCost / (astUsefulLifeYears * 12))}</strong> per bulan.
-            </div>
-          )}
+          {/* Mode Perolehan: Checkbox Pembelian Baru & Sumber Dana di Paling Bawah */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <Checkbox
+              id="checkbox-new-purchase"
+              label="Pembelian Baru"
+              checked={astAcquisitionType === 'NEW_PURCHASE'}
+              disabled={!!editAssetId}
+              onChange={(checked) => {
+                setAstAcquisitionType(checked ? 'NEW_PURCHASE' : 'EXISTING');
+                if (checked && !astCashAccountId) {
+                  setAstCashAccountId(bankAccounts[0]?.id || '');
+                }
+              }}
+            />
+            {astAcquisitionType === 'NEW_PURCHASE' && (
+              <Select
+                label="Sumber Dana"
+                required
+                value={astCashAccountId}
+                onChange={e => setAstCashAccountId(e.target.value)}
+                options={bankAccounts.map(b => ({
+                  value: b.id,
+                  label: `${b.name} (${formatCurrency(b.balance)})`,
+                }))}
+                placeholder="Pilih Sumber Dana"
+              />
+            )}
+          </div>
         </form>
       </Modal>
 
@@ -2063,90 +2465,6 @@ export function InventoryContent() {
                 )}
               </tbody>
             </table>
-          </div>
-        </div>
-      </Modal>
-      {/* Modal: Form Barang Jadi */}
-      <Modal
-        isOpen={showFGModal}
-        onClose={() => setShowFGModal(false)}
-        title={editFGId ? 'Edit Stok Barang Jadi' : 'Tambah Stok Barang Jadi'}
-        size="md"
-        actions={
-          <>
-            <Button variant="ghost" onClick={() => setShowFGModal(false)}>Batal</Button>
-            <Button onClick={handleSaveFinishedGood}>
-              <Check className="h-4 w-4 mr-1.5" />
-              Simpan
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4 pb-2">
-          {fgError && (
-            <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{fgError}</span>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <Select
-              label="Pilih Produk Utama"
-              required
-              value={fgProductId}
-              onChange={e => {
-                setFGProductId(e.target.value);
-                setFGVariantId('');
-              }}
-              options={[
-                { value: '', label: '-- Pilih Produk --' },
-                ...products.map(p => ({ value: p.id, label: p.name })),
-              ]}
-              disabled={!!editFGId}
-            />
-
-            {(() => {
-              const selectedProd = products.find(p => p.id === fgProductId);
-              if (!selectedProd || !selectedProd.variants || selectedProd.variants.length === 0) return null;
-              return (
-                <Select
-                  label="Pilih Varian (Opsional)"
-                  value={fgVariantId}
-                  onChange={e => setFGVariantId(e.target.value)}
-                  options={[
-                    { value: '', label: '-- Tanpa Varian --' },
-                    ...selectedProd.variants.map(v => ({ value: v.id, label: Object.values(v.combination || {}).join(' • ') || v.sku })),
-                  ]}
-                  disabled={!!editFGId}
-                />
-              );
-            })()}
-
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Stok"
-                required
-                type="number"
-                value={fgStock}
-                onChange={e => setFGStock(e.target.value)}
-              />
-              <Input
-                label="Batas Min Stok"
-                required
-                type="number"
-                value={fgMinStock}
-                onChange={e => setFGMinStock(Number(e.target.value))}
-              />
-            </div>
-            
-            <Input
-              label="Satuan"
-              required
-              type="text"
-              value={fgUnit}
-              onChange={e => setFGUnit(e.target.value)}
-            />
           </div>
         </div>
       </Modal>
@@ -2327,7 +2645,7 @@ export function InventoryContent() {
                     placeholder="Pilih Bahan Baku..."
                     value={selectedMat}
                     onChange={e => setSelectedMat(e.target.value)}
-                    options={materials.filter(m => !m.isSubAssembly).map(m => ({
+                    options={materials.filter(m => !m.isSubAssembly && m.isActive !== false).map(m => ({
                       value: m.id,
                       label: `${m.name} (${formatCurrency(m.unitCost)} / ${m.unit})`,
                     }))}
@@ -2393,225 +2711,184 @@ export function InventoryContent() {
         </div>
       </Modal>
 
-      {/* Modal: Detail Pengadaan */}
+      {/* Modal: Terima Barang dengan Checkbox & Input Qty */}
       <Modal
-        isOpen={!!selectedProcurementDetail}
-        onClose={() => setSelectedProcurementDetail(null)}
-        title="Detail Pengadaan"
+        isOpen={showReceiveModal}
+        onClose={() => setShowReceiveModal(false)}
+        title={`Terima Barang - PO #${receivePOData?.poNumber || ''}`}
         size="lg"
-        actions={(() => {
-          if (!selectedProcurementDetail) return undefined;
-
-          const isDraft = selectedProcurementDetail.status === 'DRAFT';
-          const isOrdered = selectedProcurementDetail.status === 'ORDERED';
-          const isPurchasing = canCreatePO(currentUser.role);
-          const isInventory = canManageInventory(currentUser.role);
-
-          if (!isDraft && !isOrdered) return undefined;
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowReceiveModal(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleConfirmReceive}>
+              <PackageCheck className="h-4 w-4 mr-1.5" />
+              Simpan Penerimaan
+            </Button>
+          </div>
+        }
+      >
+        {receivePOData && (() => {
+          const remainingItems = receivePOData.items.filter(i => Math.max(0, i.qty - (i.receivedQty || 0)) > 0);
+          const allChecked = remainingItems.length > 0 && remainingItems.every(i => receiveSelections[i.materialId]?.checked);
+          const someChecked = remainingItems.some(i => receiveSelections[i.materialId]?.checked);
 
           return (
-            <div className="flex justify-end items-center gap-2">
-              {isDraft && isPurchasing && (
-                <>
-                  <Button
-                    variant="danger"
-                    onClick={() => {
-                      setCancelPOReason('');
-                      setCancelPOError('');
-                      setShowCancelPOModal(true);
-                    }}
-                  >
-                    Tolak Pengajuan
-                  </Button>
-                  <Button
-                    variant="primary"
-                    className="whitespace-nowrap font-medium"
-                    onClick={() => {
-                      orderPO(selectedProcurementDetail.id);
-                      setSelectedProcurementDetail(null);
-                    }}
-                  >
-                    Setujui & Pesan
-                  </Button>
-                </>
+            <div className="space-y-4">
+              {receiveError && (
+                <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{receiveError}</span>
+                </div>
               )}
 
-              {isOrdered && (
-                <>
-                  {isPurchasing && (
-                    <Button
-                      variant="danger"
-                      onClick={() => {
-                        setCancelPOReason('');
-                        setCancelPOError('');
-                        setShowCancelPOModal(true);
-                      }}
-                    >
-                      Batalkan Pesanan
-                    </Button>
-                  )}
-                  {isInventory && (
-                    <Button
-                      variant="success"
-                      className="whitespace-nowrap font-medium"
-                      onClick={() => {
-                        receivePO(selectedProcurementDetail.id);
-                        setSelectedProcurementDetail(null);
-                      }}
-                    >
-                      Terima Barang
-                    </Button>
-                  )}
-                </>
-              )}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs pb-3 border-b border-slate-100 dark:border-slate-800 gap-2">
+                <div>
+                  <span className="text-slate-400">Vendor:</span>{' '}
+                  <strong className="text-slate-900 dark:text-white font-semibold">{receivePOData.supplier}</strong>
+                </div>
+                <div className="text-slate-500">
+                  Centang item yang diterima, lalu masukkan kuantitas barang masuk.
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
+                      <th className="pb-3 pr-3 text-left w-10">
+                        <Checkbox
+                          checked={allChecked}
+                          indeterminate={someChecked && !allChecked}
+                          onChange={(checked) => {
+                            setReceiveSelections(prev => {
+                              const next = { ...prev };
+                              remainingItems.forEach(i => {
+                                const rem = Math.max(0, i.qty - (i.receivedQty || 0));
+                                next[i.materialId] = {
+                                  checked,
+                                  receivedQty: rem,
+                                };
+                              });
+                              return next;
+                            });
+                          }}
+                        />
+                      </th>
+                      <th className="pb-3 pr-3 text-left font-medium text-slate-500">Nama Barang</th>
+                      <th className="pb-3 pr-3 text-center font-medium text-slate-500">Total PO</th>
+                      <th className="pb-3 pr-3 text-center font-medium text-slate-500">Sisa Belum Diterima</th>
+                      <th className="pb-3 text-right font-medium text-slate-500 w-48">Kuantitas Diterima</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {receivePOData.items.map(item => {
+                      const matUnit = item.unit || materials.find(m => m.id === item.materialId)?.unit || 'unit';
+                      const remaining = Math.max(0, item.qty - (item.receivedQty || 0));
+                      const isCompleted = remaining <= 0;
+                      const sel = receiveSelections[item.materialId] || { checked: false, receivedQty: remaining };
+
+                      return (
+                        <tr key={item.materialId} className="border-b border-slate-50 dark:border-slate-800/50 last:border-0 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                          <td className="py-3 pr-3">
+                            <Checkbox
+                              disabled={isCompleted}
+                              checked={sel.checked}
+                              onChange={(checked) => {
+                                setReceiveSelections(prev => ({
+                                  ...prev,
+                                  [item.materialId]: {
+                                    checked,
+                                    receivedQty: checked ? remaining : remaining,
+                                  },
+                                }));
+                              }}
+                            />
+                          </td>
+                          <td className="py-3 pr-3">
+                            <div className="font-semibold text-slate-900 dark:text-white">{item.materialName}</div>
+                            {item.receivedQty && item.receivedQty > 0 ? (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Sudah diterima: <span className="font-medium text-emerald-600 dark:text-emerald-400">{item.receivedQty} {matUnit}</span>
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="py-3 pr-3 text-center font-mono text-slate-600 dark:text-slate-400 text-xs">
+                            {item.qty} {matUnit}
+                          </td>
+                          <td className="py-3 pr-3 text-center font-mono text-xs font-semibold text-slate-900 dark:text-white">
+                            {remaining} {matUnit}
+                          </td>
+                          <td className="py-3 text-right">
+                            {isCompleted ? (
+                              <Badge variant="success">Lengkap</Badge>
+                            ) : !sel.checked ? (
+                              <span className="text-slate-400 dark:text-slate-500 text-xs font-mono">
+                                {remaining} {matUnit}
+                              </span>
+                            ) : (
+                              <div className="flex flex-col items-end">
+                                <div className="w-32">
+                                  <Input
+                                    inputSize="sm"
+                                    type="number"
+                                    step="any"
+                                    min={0.01}
+                                    max={remaining}
+                                    value={sel.receivedQty}
+                                    onChange={(e) => {
+                                      const val = e.target.value === '' ? '' : Math.min(remaining, Math.max(0, parseFloat(e.target.value)));
+                                      setReceiveSelections(prev => ({
+                                        ...prev,
+                                        [item.materialId]: {
+                                          ...prev[item.materialId],
+                                          receivedQty: val,
+                                        },
+                                      }));
+                                    }}
+                                    placeholder={String(remaining)}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-slate-400 mt-0.5">
+                                  Maks: {remaining} {matUnit}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         })()}
-      >
-        {selectedProcurementDetail && (
-          <div className="space-y-5 py-1">
-            {selectedProcurementDetail.status === 'REJECTED' && (
-              <div className="rounded-xl border border-red-200 bg-red-50/70 p-4 text-xs dark:border-red-900/50 dark:bg-red-950/30 space-y-1">
-                <div className="flex items-center gap-2 text-red-800 dark:text-red-300 font-bold">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>Pengadaan Dibatalkan / Ditolak</span>
-                </div>
-                <p className="text-slate-600 dark:text-slate-300">
-                  Diproses pada <strong className="font-semibold">{selectedProcurementDetail.cancelledAt ? formatDateTime(selectedProcurementDetail.cancelledAt) : '-'}</strong> oleh <strong className="font-semibold">{selectedProcurementDetail.cancelledBy || 'Admin'}</strong>.
-                </p>
-                {selectedProcurementDetail.cancelReason && (
-                  <p className="text-slate-700 dark:text-slate-200 font-medium italic pt-1 border-t border-red-200/60 dark:border-red-900/40">
-                    &quot;{selectedProcurementDetail.cancelReason}&quot;
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-base font-bold text-slate-900 dark:text-white">
-                    {selectedProcurementDetail.poNumber}
-                  </span>
-                  <Badge
-                    variant={
-                      selectedProcurementDetail.status === 'REJECTED'
-                        ? 'danger'
-                        : selectedProcurementDetail.purchaseType === 'DIRECT' || selectedProcurementDetail.status === 'RECEIVED'
-                        ? 'success'
-                        : selectedProcurementDetail.status === 'ORDERED'
-                        ? 'info'
-                        : 'warning'
-                    }
-                  >
-                    {selectedProcurementDetail.status === 'REJECTED'
-                      ? 'Dibatalkan'
-                      : selectedProcurementDetail.purchaseType === 'DIRECT' || selectedProcurementDetail.status === 'RECEIVED'
-                      ? 'Diterima'
-                      : selectedProcurementDetail.status === 'ORDERED'
-                      ? 'Dipesan'
-                      : 'Pengajuan'}
-                  </Badge>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Dibuat {formatDateTime(selectedProcurementDetail.createdAt)} oleh {selectedProcurementDetail.createdBy || 'Gudang'}
-                </p>
-              </div>
-
-              <div className="text-right">
-                <span className="text-xs text-slate-400 block">Total Transaksi</span>
-                <span className="font-mono text-lg font-bold text-slate-900 dark:text-white">
-                  {formatCurrency(selectedProcurementDetail.totalAmount)}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 text-xs">
-              <div>
-                <span className="text-slate-400 block text-[11px] mb-0.5">Tipe</span>
-                <span className="font-semibold text-slate-900 dark:text-white">
-                  {selectedProcurementDetail.purchaseType === 'DIRECT' ? 'Pembelian Langsung' : 'Purchase Order'}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px] mb-0.5">Vendor</span>
-                <span className="font-semibold text-slate-900 dark:text-white">{selectedProcurementDetail.supplier}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px] mb-0.5">Diterima Pada</span>
-                <span className="font-medium text-slate-700 dark:text-slate-300">
-                  {selectedProcurementDetail.receivedAt ? formatDateTime(selectedProcurementDetail.receivedAt) : 'Belum Diterima'}
-                </span>
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <Table
-                dense
-                data={selectedProcurementDetail.items}
-                columns={[
-                  {
-                    key: 'materialName',
-                    header: 'Bahan Baku',
-                    cell: (item) => <span className="font-medium text-slate-900 dark:text-white">{item.materialName}</span>,
-                  },
-                  {
-                    key: 'qty',
-                    header: 'Kuantitas',
-                    align: 'center',
-                    cell: (item) => <span className="font-mono text-slate-800 dark:text-slate-200">{item.qty} unit</span>,
-                  },
-                  {
-                    key: 'unitCost',
-                    header: 'Harga Satuan',
-                    align: 'right',
-                    cell: (item) => <span className="font-mono text-slate-800 dark:text-slate-200">{formatCurrency(item.unitCost)}</span>,
-                  },
-                  {
-                    key: 'subtotal',
-                    header: 'Subtotal',
-                    align: 'right',
-                    cell: (item) => <span className="font-mono font-semibold text-slate-900 dark:text-white">{formatCurrency(item.qty * item.unitCost)}</span>,
-                  },
-                ]}
-              />
-            </div>
-          </div>
-        )}
       </Modal>
 
       {/* Modal: Form Pembatalan / Penolakan Pengadaan */}
       <Modal
         isOpen={showCancelPOModal}
         onClose={() => setShowCancelPOModal(false)}
-        title={selectedProcurementDetail?.status === 'DRAFT' ? `Tolak Pengajuan ${selectedProcurementDetail?.poNumber || ''}` : `Batalkan Pesanan ${selectedProcurementDetail?.poNumber || ''}`}
-        size="md"
-        actions={
-          <>
-            <Button variant="ghost" onClick={() => setShowCancelPOModal(false)}>Batal</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                if (!selectedProcurementDetail) return;
-                if (!cancelPOReason.trim()) {
-                  setCancelPOError('Alasan wajib diisi.');
-                  return;
-                }
-                const isDraft = selectedProcurementDetail.status === 'DRAFT';
-                const res = rejectPO(selectedProcurementDetail.id, cancelPOReason.trim());
-                if (!res.success) {
-                  setCancelPOError(res.error || (isDraft ? 'Gagal menolak pengajuan.' : 'Gagal membatalkan pesanan.'));
-                } else {
-                  toast.success(isDraft ? 'Pengajuan Ditolak' : 'Pesanan Dibatalkan');
-                  setShowCancelPOModal(false);
-                  setSelectedProcurementDetail(null);
-                }
-              }}
-            >
-              {selectedProcurementDetail?.status === 'DRAFT' ? 'Tolak Pengajuan' : 'Batalkan Pesanan'}
-            </Button>
-          </>
+        title={
+          cancelPOMode === 'REJECT'
+            ? `Tolak PO ${targetPOForCancel?.poNumber || ''}`
+            : `Batalkan PO ${targetPOForCancel?.poNumber || ''}`
         }
+        size="md"
+        actions={[
+          <Button key="cancel" variant="ghost" onClick={() => setShowCancelPOModal(false)}>
+            Batal
+          </Button>,
+          <Button
+            key="submit"
+            variant="danger"
+            onClick={handleCancelOrRejectSubmit}
+          >
+            {cancelPOMode === 'REJECT' ? 'Tolak PO' : 'Batalkan PO'}
+          </Button>,
+        ]}
       >
         <div className="space-y-4">
           {cancelPOError && (
@@ -2623,18 +2900,24 @@ export function InventoryContent() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              {selectedProcurementDetail?.status === 'DRAFT' ? 'Alasan Penolakan Pengajuan' : 'Alasan Pembatalan Pesanan'} <span className="text-red-500 font-bold">*</span>
+              {cancelPOMode === 'REJECT' ? 'Alasan Penolakan PO' : 'Alasan Pembatalan PO'}
+              <span className="text-red-500 font-bold ml-1">*</span>
             </label>
             <textarea
               rows={3}
               value={cancelPOReason}
               onChange={e => setCancelPOReason(e.target.value)}
-              placeholder={selectedProcurementDetail?.status === 'DRAFT' ? 'Contoh: Stok di gudang masih mencukupi...' : 'Contoh: Vendor kehabisan stok...'}
+              placeholder={
+                cancelPOMode === 'REJECT'
+                  ? 'Contoh: Stok di gudang masih mencukupi...'
+                  : 'Contoh: Vendor tidak dapat memenuhi jadwal pengiriman...'
+              }
               className="w-full rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
         </div>
       </Modal>
+
 
       {/* MODAL: BUAT SPK BAHAN SETENGAH JADI (WIP) */}
       <Modal

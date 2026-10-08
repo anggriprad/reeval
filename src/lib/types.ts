@@ -17,9 +17,9 @@ export type SPKStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELED';
 
 export type InvoiceStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 
-export type POStatus = 'DRAFT' | 'ORDERED' | 'RECEIVED' | 'REJECTED';
+export type POStatus = 'DRAFT' | 'ORDERED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'REJECTED' | 'CANCELED';
 
-export type StockMovementType = 'IN' | 'OUT';
+export type StockMovementType = 'IN' | 'OUT' | 'INIT';
 
 export type DeliveryStatus = 'READY_TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'PENDING';
 
@@ -46,6 +46,8 @@ export interface FormContainer {
 
 // --- Raw Material & Bahan Setengah Jadi ---
 
+export type StockLevel = 'Aman' | 'Kritis' | 'Habis';
+
 export interface RawMaterial {
   id: string;
   code: string;
@@ -58,6 +60,7 @@ export interface RawMaterial {
   isSubAssembly?: boolean;   // True if this item is a Bahan Setengah Jadi (Semi-Finished Good)
   childBom?: BOMItem[];      // Child BOM components required to build this bahan setengah jadi
   routingId?: string;        // Optional Production Routing ID assigned to build this bahan setengah jadi
+  isActive?: boolean;        // Soft delete flag (default: true)
 }
 
 // --- BOM (Bill of Materials) Item ---
@@ -102,6 +105,7 @@ export interface ProductVariantSKU {
   presetId?: string;      // ID of Master Preset BOM template
   isCustomBOM?: boolean;  // false = Inherit live from Master Preset; true = Custom overridden BOM
   routingId?: string;  // referensi ke ProductionRouting
+  initialStock?: number; // Inisiasi stok awal saat dibuat
   isActive: boolean;
 }
 
@@ -241,6 +245,7 @@ export interface Product {
 
   // --- Modifiers ---
   modifierGroupIds?: string[];
+  isActive?: boolean; // Soft delete flag (default: true)
 }
 
 // --- Customer ---
@@ -427,6 +432,9 @@ export interface PurchaseOrder {
   cancelReason?: string;
   cancelledBy?: string;
   cancelledAt?: string;
+  rejectionReason?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
 }
 
 export interface PurchaseOrderItem {
@@ -435,7 +443,9 @@ export interface PurchaseOrderItem {
   qty: number;
   unitCost: number;
   unit?: string;
+  receivedQty?: number;
 }
+
 
 // --- Stock Movement ---
 
@@ -463,6 +473,12 @@ export interface FinishedGoodStock {
   stock: number;
   minStock: number;
   unit: string; // default 'unit'
+  isActive?: boolean; // Soft delete flag (default: true)
+}
+
+export interface DeleteResult {
+  success: boolean;
+  reason?: string;
 }
 
 // --- Returned Good (Barang Retur dari Komplain / Refund) ---
@@ -521,6 +537,7 @@ export interface DeliveryOrder {
   salesOrderNumbers?: string[];
   customerName: string;
   customerAddress: string;
+  customerPhone?: string;
   items: string[];
   orderItems?: DeliveryOrderItem[];
   driverId?: string;
@@ -616,17 +633,36 @@ export interface HPPAnalysis {
 
 // --- Company Asset ---
 
+export type AssetAcquisitionType = 'EXISTING' | 'NEW_PURCHASE';
+
+export type AssetStatus =
+  | 'ACTIVE'
+  | 'IN_MAINTENANCE'
+  | 'BROKEN'
+  | 'DISPOSED'
+  | 'SCRAPPED'
+  | 'AKTIF'
+  | 'MAINTENANCE'
+  | 'RUSAK'
+  | 'AFKIR';
+
 export interface CompanyAsset {
   id: string;
-  code: string;
+  code: string; // asset_code
   name: string;
   category: string; // e.g. "Mesin", "Peralatan", "Kendaraan", "Alat Kerja", "Lainnya"
-  purchaseDate: string; // YYYY-MM-DD
-  purchaseCost: number;
+  acquisitionType?: AssetAcquisitionType; // EXISTING or NEW_PURCHASE (defaults to EXISTING for legacy)
+  purchaseDate: string; // YYYY-MM-DD (acquisition_date)
+  purchaseCost: number; // acquisition_cost
   usefulLifeYears: number; // useful life in years
-  monthlyDepreciation: number; // purchaseCost / (usefulLifeYears * 12)
+  usefulLifeMonths?: number; // useful life in months (usefulLifeYears * 12)
+  salvageValue?: number; // Nilai sisa / residual value (default 0)
+  currentBookValue?: number; // Nilai buku aset saat ini
+  monthlyDepreciation: number; // (purchaseCost - salvageValue) / (usefulLifeMonths || usefulLifeYears * 12)
   accumulatedServiceCost: number; // accumulated service/maintenance cost
-  status: 'AKTIF' | 'MAINTENANCE' | 'RUSAK';
+  status: AssetStatus;
+  cashAccountId?: string; // FK to bankAccounts / cash_accounts (required if NEW_PURCHASE)
+  financeTransactionId?: string; // FK to expenses (cash_out record)
 }
 
 // --- Company Asset Service Log ---
@@ -639,6 +675,18 @@ export interface CompanyAssetServiceLog {
   serviceDate: string; // YYYY-MM-DD
   cost: number;
   description: string;
+  serviceProvider?: string;
+}
+
+// --- Company Asset Depreciation Log ---
+
+export interface AssetDepreciation {
+  id: string;
+  assetId: string;
+  amount: number;
+  periodDate: string; // YYYY-MM-DD or YYYY-MM
+  journalEntryId?: string;
+  createdAt?: string;
 }
 
 // --- Accounting: Chart of Accounts & Journal Entries ---
@@ -719,6 +767,7 @@ export interface AppState {
   productCategories: string[]; // Dynamic product categories
   assets: CompanyAsset[];     // Master data for assets
   assetServiceLogs: CompanyAssetServiceLog[]; // Service logs for assets
+  assetDepreciations?: AssetDepreciation[];   // Depreciation records for assets
   masterModifierGroups: ProductModifierGroup[];
   operations: ProductionOperation[];
   routings: ProductionRouting[];
@@ -744,9 +793,11 @@ export interface BankAccount {
   balance: number;
 }
 
+export type ExpenseCategory = 'GAJI' | 'LISTRIK_AIR' | 'SEWA' | 'TRANSPORT' | 'ATK' | 'ASET' | 'LAINNYA';
+
 export interface Expense {
   id: string;
-  category: 'GAJI' | 'LISTRIK_AIR' | 'SEWA' | 'TRANSPORT' | 'ATK' | 'LAINNYA';
+  category: ExpenseCategory;
   amount: number;
   date: string;
   bankAccountId: string;

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { BOMItem, RawMaterial, Product, FinishedGoodStock } from '@/lib/types';
+import type { BOMItem, RawMaterial, Product, FinishedGoodStock, StockLevel, POStatus } from '@/lib/types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -87,27 +87,56 @@ export function generateId(): string {
   return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
 }
 
-export function getStockLevel(stock: number, minStock: number): 'Aman' | 'Menipis' | 'Kritis' {
-  if (stock <= 0) return 'Kritis';
-  if (stock <= minStock) return 'Menipis';
+export function getStockLevel(stock: number, minStock: number): StockLevel {
+  if (stock <= 0) return 'Habis';
+  if (stock <= minStock) return 'Kritis';
   return 'Aman';
 }
 
-export function getStockLevelColor(level: 'Aman' | 'Menipis' | 'Kritis'): string {
+export function getStockLevelDescription(level: StockLevel | string): string {
   switch (level) {
-    case 'Aman': return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60';
-    case 'Menipis': return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60';
-    case 'Kritis': return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800/60';
+    case 'Aman':
+      return 'Stok cukup untuk operasional harian.';
+    case 'Kritis':
+    case 'Menipis':
+      return 'Sudah menyentuh batas minimal, bagian pengadaan siap buat PO.';
+    case 'Habis':
+      return 'Barang kosong total, produksi terancam stop.';
+    default:
+      return '';
   }
 }
 
-export function getStockLevelTextColor(level: 'Aman' | 'Menipis' | 'Kritis'): string {
+export function getStockLevelBadgeVariant(level: StockLevel | string): 'success' | 'warning' | 'danger' | 'default' {
   switch (level) {
-    case 'Aman': return 'text-emerald-600 dark:text-emerald-400';
-    case 'Menipis': return 'text-amber-600 dark:text-amber-400';
-    case 'Kritis': return 'text-red-600 dark:text-red-400';
+    case 'Aman': return 'success';
+    case 'Kritis':
+    case 'Menipis': return 'warning';
+    case 'Habis': return 'danger';
+    default: return 'default';
   }
 }
+
+export function getStockLevelColor(level: StockLevel | 'Menipis' | string): string {
+  switch (level) {
+    case 'Aman': return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60';
+    case 'Kritis':
+    case 'Menipis': return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60';
+    case 'Habis': return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800/60';
+    default: return 'bg-slate-50 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300';
+  }
+}
+
+export function getStockLevelTextColor(level: StockLevel | 'Menipis' | string): string {
+  switch (level) {
+    case 'Aman': return 'text-emerald-600 dark:text-emerald-400';
+    case 'Kritis':
+    case 'Menipis': return 'text-amber-600 dark:text-amber-400';
+    case 'Habis': return 'text-red-600 dark:text-red-400';
+    default: return 'text-slate-600 dark:text-slate-400';
+  }
+}
+
 
 export function getOrderStatusColor(status: string): string {
   switch (status) {
@@ -196,6 +225,31 @@ export function getInvoiceStatusLabel(status: string): string {
     default: return status;
   }
 }
+
+export function getPOStatusLabel(status: POStatus | string): string {
+  switch (status) {
+    case 'DRAFT': return 'Diajukan';
+    case 'ORDERED': return 'Dipesan';
+    case 'PARTIALLY_RECEIVED': return 'Diterima Sebagian';
+    case 'RECEIVED': return 'Diterima';
+    case 'REJECTED': return 'Ditolak';
+    case 'CANCELED': return 'Dibatalkan';
+    default: return status;
+  }
+}
+
+export function getPOStatusVariant(status: POStatus | string): 'warning' | 'info' | 'purple' | 'success' | 'danger' | 'default' {
+  switch (status) {
+    case 'DRAFT': return 'warning';
+    case 'ORDERED': return 'info';
+    case 'PARTIALLY_RECEIVED': return 'purple';
+    case 'RECEIVED': return 'success';
+    case 'REJECTED': return 'danger';
+    case 'CANCELED': return 'danger';
+    default: return 'default';
+  }
+}
+
 
 export const SPK_STAGES: Array<{ key: string; label: string; color: string }> = [
   { key: 'QUEUED', label: 'Menunggu', color: 'border-slate-300 dark:border-slate-600' },
@@ -320,6 +374,7 @@ export function syncFinishedGoodsWithProducts(
   const result: FinishedGoodStock[] = [];
 
   for (const prod of products) {
+    if (prod.isActive === false) continue;
     if (prod.variants && prod.variants.length > 0) {
       for (const variant of prod.variants) {
         if (variant.isActive === false) continue;
@@ -332,6 +387,7 @@ export function syncFinishedGoodsWithProducts(
             ...existing,
             productName: prod.name,
             variantLabel: variantLabel || existing.variantLabel,
+            isActive: existing.isActive !== false,
           });
           fgMap.delete(key);
         } else {
@@ -341,9 +397,10 @@ export function syncFinishedGoodsWithProducts(
             variantId: variant.id,
             productName: prod.name,
             variantLabel,
-            stock: 0,
+            stock: variant.initialStock || 0,
             minStock: 0,
             unit: 'unit',
+            isActive: true,
           });
         }
       }
@@ -351,10 +408,12 @@ export function syncFinishedGoodsWithProducts(
       // Produk tanpa varian
       const key = `${prod.id}__`;
       const existing = fgMap.get(key);
+      const initStock = prod.variants?.[0]?.initialStock || 0;
       if (existing) {
         result.push({
           ...existing,
           productName: prod.name,
+          isActive: existing.isActive !== false,
         });
         fgMap.delete(key);
       } else {
@@ -364,9 +423,10 @@ export function syncFinishedGoodsWithProducts(
           variantId: undefined,
           productName: prod.name,
           variantLabel: undefined,
-          stock: 0,
+          stock: initStock,
           minStock: 0,
           unit: 'unit',
+          isActive: true,
         });
       }
     }
@@ -401,3 +461,22 @@ export function generateOrderNumber(orderCount: number, date = new Date()): stri
 export function generateItemUnitNumber(orderNumber: string, unitIndex: number): string {
   return `${orderNumber}-${String(unitIndex).padStart(3, '0')}`;
 }
+
+/**
+ * Menghitung total stok netto dari riwayat mutasi stok:
+ * Total Stok = (Inisiasi + Masuk) - Keluar
+ */
+export function calculateNetStockFromMovements(
+  movements: { type: 'IN' | 'OUT' | 'INIT'; qty: number }[]
+): number {
+  return movements.reduce((acc, mv) => {
+    if (mv.type === 'INIT' || mv.type === 'IN') {
+      return acc + mv.qty;
+    }
+    if (mv.type === 'OUT') {
+      return acc - mv.qty;
+    }
+    return acc;
+  }, 0);
+}
+

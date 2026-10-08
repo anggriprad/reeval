@@ -30,6 +30,8 @@ export default function DashboardPage() {
   const totalOrders = salesOrders.length;
   const activeOrders = salesOrders.filter(o => o.status !== 'CANCELED' && o.status !== 'SENT');
   const activeWorkOrders = workOrders.filter(w => w.status !== 'COMPLETED');
+  const criticalItems = materials.filter(m => m.stock > 0 && m.stock <= m.minStock);
+  const emptyItems = materials.filter(m => m.stock <= 0);
   const lowStockItems = materials.filter(m => m.stock <= m.minStock);
   
   const totalRevenue = invoices
@@ -90,7 +92,9 @@ export default function DashboardPage() {
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Peringatan Stok Bahan</p>
               <h3 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{lowStockItems.length}</h3>
               <p className="mt-1 text-xs text-red-600 dark:text-red-400 font-medium">
-                {lowStockItems.length > 0 ? 'Bahan menipis/habis' : 'Stok dalam batas aman'}
+                {lowStockItems.length > 0
+                  ? `${emptyItems.length > 0 ? `${emptyItems.length} habis, ` : ''}${criticalItems.length} kritis`
+                  : 'Stok dalam batas aman'}
               </p>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-950/60 dark:text-red-400">
@@ -230,9 +234,9 @@ export default function DashboardPage() {
               <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
                 <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
                 <div>
-                  <p className="font-bold">Stok Bahan Baku Menipis</p>
+                  <p className="font-bold">Stok Bahan Baku Kritis / Habis</p>
                   <p className="mt-0.5 text-[11px]">
-                    Terdapat {lowStockItems.length} bahan baku (seperti {lowStockItems[0]?.name}) di bawah batas minimum.
+                    Terdapat {lowStockItems.length} bahan baku (seperti {lowStockItems[0]?.name}) telah menyentuh batas minimum atau kosong.
                   </p>
                   <Link href="/inventory" className="mt-1.5 inline-block text-[11px] font-bold text-amber-700 underline dark:text-amber-300">
                     Buka Inventaris & Buat PO →

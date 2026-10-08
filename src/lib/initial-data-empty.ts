@@ -11,6 +11,7 @@ import type {
   Invoice,
   CompanyAsset,
   CompanyAssetServiceLog,
+  AssetDepreciation,
   ProductModifierGroup,
   ProductionOperator,
   BankAccount,
@@ -62,6 +63,7 @@ export const initialDeliveryOrders: DeliveryOrder[] = [];
 export const initialInvoices: Invoice[] = [];
 export const initialAssets: CompanyAsset[] = [];
 export const initialAssetServiceLogs: CompanyAssetServiceLog[] = [];
+export const initialAssetDepreciations: AssetDepreciation[] = [];
 export const initialModifierGroups: ProductModifierGroup[] = [];
 export const initialBankAccounts: BankAccount[] = [];
 export const initialExpenses: Expense[] = [];

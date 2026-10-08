@@ -1,24 +1,61 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 
+export interface CardContextValue {
+  inCard: boolean;
+  isOnlyChild: boolean;
+}
+
+export const CardContext = React.createContext<CardContextValue>({
+  inCard: false,
+  isOnlyChild: false,
+});
+
+export function useCardContext() {
+  return React.useContext(CardContext);
+}
+
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   className?: string;
   hover?: boolean;
+  noPadding?: boolean;
 }
 
-export function Card({ children, className, hover, ...props }: CardProps) {
+function isSoleTableChild(children: React.ReactNode): boolean {
+  const childArray = React.Children.toArray(children).filter(
+    (c) => c !== null && c !== undefined && typeof c !== 'boolean'
+  );
+  if (childArray.length !== 1) return false;
+  const single = childArray[0];
+  if (!React.isValidElement(single)) return false;
+
+  const type: any = single.type;
+  if (type === 'table') return true;
+  if (type?.displayName === 'Table' || type?.name === 'Table') return true;
+  if (single.props && 'columns' in (single.props as any) && 'data' in (single.props as any)) return true;
+
+  return false;
+}
+
+export function Card({ children, className, hover, noPadding, ...props }: CardProps) {
+  const isOnlyTable = React.useMemo(() => isSoleTableChild(children), [children]);
+  const shouldRemovePadding = noPadding || isOnlyTable;
+
   return (
-    <div
-      {...props}
-      className={cn(
-        'rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all dark:border-slate-700 dark:bg-slate-900',
-        hover && 'hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600 cursor-pointer',
-        className
-      )}
-    >
-      {children}
-    </div>
+    <CardContext.Provider value={{ inCard: true, isOnlyChild: isOnlyTable }}>
+      <div
+        {...props}
+        className={cn(
+          'rounded-xl border border-slate-200 bg-white shadow-sm transition-all dark:border-slate-700 dark:bg-slate-900',
+          shouldRemovePadding ? 'p-0 overflow-hidden' : 'p-5',
+          hover && 'hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600 cursor-pointer',
+          className
+        )}
+      >
+        {children}
+      </div>
+    </CardContext.Provider>
   );
 }
 

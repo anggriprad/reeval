@@ -5,6 +5,7 @@ interface BadgeProps {
   children: React.ReactNode;
   className?: string;
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'purple';
+  title?: string;
 }
 
 const variantClasses: Record<string, string> = {
@@ -16,9 +17,10 @@ const variantClasses: Record<string, string> = {
   purple: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-500/40',
 };
 
-export function Badge({ children, className, variant = 'default' }: BadgeProps) {
+export function Badge({ children, className, variant = 'default', title }: BadgeProps) {
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors border',
         variantClasses[variant],

@@ -393,15 +393,16 @@ function ProductsContent() {
   const handleDelete = async (p: Product) => {
     const isOk = await confirm({
       title: 'Hapus Produk',
-      message: `Apakah Anda yakin ingin menghapus produk "${p.name}"? Data yang dihapus tidak dapat dikembalikan.`,
+      message: `Apakah Anda yakin ingin menghapus produk "${p.name}"? Produk hanya dapat dihapus jika tidak memiliki sisa stok dan belum memiliki riwayat transaksi mutasi.`,
       confirmText: 'Hapus Produk',
       variant: 'danger',
     });
     if (isOk) {
-      if (!deleteProduct(p.id)) {
-        toast.error('Gagal Menghapus', 'Produk ini sudah digunakan dalam Sales Order.');
+      const result = deleteProduct(p.id);
+      if (!result.success) {
+        toast.error('Gagal Menghapus', result.reason || 'Produk tidak dapat dihapus.');
       } else {
-        toast.success('Produk Dihapus', `Produk "${p.name}" berhasil dihapus.`);
+        toast.success('Produk Dihapus', `Produk "${p.name}" berhasil dihapus dari sistem.`);
       }
     }
   };
@@ -642,6 +643,7 @@ function ProductsContent() {
   };
 
   const filtered = products.filter(p => {
+    if (p.isActive === false) return false;
     const matchesFilter = !productFilter || p.category === productFilter;
     const matchesSearch = !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesFilter && matchesSearch;

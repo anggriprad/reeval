@@ -433,6 +433,8 @@ export function mapExpenseCategoryToCoa(category: Expense['category']): { code: 
       return { code: '6-4000', name: 'Beban BBM, Logistik & Transportasi' };
     case 'ATK':
       return { code: '6-5000', name: 'Beban ATK & Perlengkapan Kantor' };
+    case 'ASET':
+      return { code: '1-2100', name: 'Mesin & Peralatan Pabrik (Perolehan Aset)' };
     case 'LAINNYA':
     default:
       return { code: '6-9000', name: 'Beban Operasional Lain-lain' };
@@ -839,21 +841,22 @@ export function createExpenseJournal(
 ): JournalEntry {
   const coaMap = mapExpenseCategoryToCoa(expense.category);
   const targetId = `coa-${coaMap.code.replace('-', '')}`;
-  const bebanAccount = resolveAccount(chartOfAccounts, targetId, coaMap.code, 'EXPENSE');
+  const accountType = expense.category === 'ASET' ? 'ASSET' : 'EXPENSE';
+  const debitAccount = resolveAccount(chartOfAccounts, targetId, coaMap.code, accountType);
   const kasBank = resolveAccount(chartOfAccounts, 'coa-11100', '1-1100', 'ASSET');
 
   return {
     id: `je-${generateId()}`,
     entryNumber: generateEntryNumber(existingEntriesCount),
     date,
-    description: expense.note?.trim() ? expense.note.trim() : bebanAccount.name,
+    description: expense.note?.trim() ? expense.note.trim() : debitAccount.name,
     sourceType: 'EXPENSE',
     sourceId: expense.id,
     lines: [
       {
-        accountId: bebanAccount.id,
-        accountCode: bebanAccount.code,
-        accountName: bebanAccount.name,
+        accountId: debitAccount.id,
+        accountCode: debitAccount.code,
+        accountName: debitAccount.name,
         debit: expense.amount,
         credit: 0,
       },
@@ -863,6 +866,47 @@ export function createExpenseJournal(
         accountName: kasBank.name,
         debit: 0,
         credit: expense.amount,
+      },
+    ],
+    createdAt: date,
+  };
+}
+
+export function createAssetPurchaseJournal(
+  asset: { name: string; code: string; purchaseCost: number; category?: string },
+  expenseId: string,
+  bankAccountName: string,
+  existingEntriesCount: number,
+  date: string,
+  chartOfAccounts: AccountCode[] = DEFAULT_CHART_OF_ACCOUNTS
+): JournalEntry {
+  const isVehicle = asset.category?.toLowerCase().includes('kendaraan');
+  const coaCode = isVehicle ? '1-2200' : '1-2100';
+  const targetId = `coa-${coaCode.replace('-', '')}`;
+  const assetAccount = resolveAccount(chartOfAccounts, targetId, coaCode, 'ASSET');
+  const kasBank = resolveAccount(chartOfAccounts, 'coa-11100', '1-1100', 'ASSET');
+
+  return {
+    id: `je-${generateId()}`,
+    entryNumber: generateEntryNumber(existingEntriesCount),
+    date,
+    description: `Pembelian Aset: ${asset.name} (${asset.code})`,
+    sourceType: 'EXPENSE',
+    sourceId: expenseId,
+    lines: [
+      {
+        accountId: assetAccount.id,
+        accountCode: assetAccount.code,
+        accountName: assetAccount.name,
+        debit: asset.purchaseCost,
+        credit: 0,
+      },
+      {
+        accountId: kasBank.id,
+        accountCode: kasBank.code,
+        accountName: kasBank.name,
+        debit: 0,
+        credit: asset.purchaseCost,
       },
     ],
     createdAt: date,

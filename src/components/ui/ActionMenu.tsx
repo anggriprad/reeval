@@ -20,6 +20,7 @@ export interface ActionMenuProps {
   className?: string;
   triggerTitle?: string;
   menuWidth?: string;
+  triggerSize?: 'sm' | 'md';
 }
 
 export function ActionMenu({
@@ -28,6 +29,7 @@ export function ActionMenu({
   className,
   triggerTitle = 'Opsi',
   menuWidth,
+  triggerSize = 'sm',
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left?: number; right?: number; placement: 'top' | 'bottom' } | null>(null);
@@ -118,7 +120,10 @@ export function ActionMenu({
         variant="ghost"
         size="icon"
         onClick={handleToggle}
-        className="h-8 w-8 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+        className={cn(
+          triggerSize === 'md' ? 'h-9 w-9' : 'h-8 w-8',
+          'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+        )}
         title={triggerTitle}
         aria-haspopup="true"
         aria-expanded={isOpen}

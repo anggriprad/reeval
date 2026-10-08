@@ -206,6 +206,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     return [];
   });
 
+  const [singleInitialStock, setSingleInitialStock] = useState<number>(0);
+
   // Auto-fill single SKU when name changes if user hasn't manually entered one
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(Boolean(initialProduct?.variants?.[0]?.sku));
   useEffect(() => {
@@ -335,6 +337,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           estimatedHours: defaultVariantEstimatedHours || 0,
           routingId: defaultVariantRoutingId || '',
           bom: [],
+          initialStock: 0,
           isActive: true,
         };
       });
@@ -861,6 +864,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           presetId: singlePresetId || undefined,
           isCustomBOM: isSingleCustomBOM,
           bom: resolvedSingleBom,
+          initialStock: singleInitialStock || 0,
           isActive: true,
         }];
       } else {
@@ -1355,6 +1359,23 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                       className="font-mono uppercase font-bold"
                     />
                   </div>
+
+                  {/* Stok Awal Single Product (Hanya saat Tambah Produk Baru) */}
+                  {!isEditMode && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Stok Awal <span className="text-[10px] font-normal text-slate-400">(Inisiasi)</span>
+                      </label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={singleInitialStock || ''}
+                        onChange={e => setSingleInitialStock(Math.max(0, parseInt(e.target.value) || 0))}
+                        placeholder="0"
+                        inputSize="sm"
+                      />
+                    </div>
+                  )}
 
                   {/* Alur Produksi */}
                   <div className="space-y-1.5">
@@ -1915,6 +1936,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         <th className="py-2.5 px-3 min-w-[130px]">Varian</th>
                         <th className="py-2.5 px-3 min-w-[130px]">Kode SKU</th>
                         <th className="py-2.5 px-3 min-w-[140px]">Harga Jual</th>
+                        {!isEditMode && <th className="py-2.5 px-3 min-w-[95px]">Stok Awal</th>}
                         <th className="py-2.5 px-3 min-w-[105px]">Est. Jam</th>
                         <th className="py-2.5 px-3 min-w-[150px]">Alur Produksi</th>
                         <th className="py-2.5 px-3 min-w-[170px]">BOM & HPP</th>
@@ -1924,7 +1946,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
                       {filteredVariants.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                          <td colSpan={!isEditMode ? 9 : 8} className="py-8 text-center text-slate-500 dark:text-slate-400">
                             <p className="text-xs font-medium">Tidak ada varian yang sesuai dengan filter atribut.</p>
                             <Button
                               type="button"
@@ -2009,6 +2031,21 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                   inputSize="sm"
                                 />
                               </td>
+
+                              {/* Col: Initial Stock (Only for new products) */}
+                              {!isEditMode && (
+                                <td className="py-2 px-2.5 align-middle">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={variant.initialStock ?? ''}
+                                    onChange={e => updateVariantField(variant.id, 'initialStock', Math.max(0, parseInt(e.target.value) || 0))}
+                                    placeholder="0"
+                                    inputSize="sm"
+                                    className="font-mono text-xs text-right font-medium"
+                                  />
+                                </td>
+                              )}
 
                               {/* Col 5: Estimated Hours */}
                               <td className="py-2 px-2.5 align-middle">

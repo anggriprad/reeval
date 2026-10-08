@@ -234,7 +234,7 @@ export function updateStock(
   const material = store.materials.find(m => m.id === materialId);
   if (!material) return null;
 
-  if (type === 'IN') {
+  if (type === 'IN' || type === 'INIT') {
     material.stock += deltaQty;
   } else {
     material.stock = Math.max(0, material.stock - deltaQty);

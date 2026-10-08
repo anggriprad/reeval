@@ -14,7 +14,7 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl, SegmentOption } from '@/components/ui/SegmentedControl';
-import { formatDate, formatDateTime, cn } from '@/lib/utils';
+import { formatDate, formatDateTime, cn, formatPhoneDisplay, getWhatsAppUrl } from '@/lib/utils';
 import {
   Truck,
   FileText,
@@ -30,6 +30,10 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  Phone,
+  ExternalLink,
+  Package,
+  User,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -128,6 +132,20 @@ function DeliveryContent() {
   const [showLoadingModal, setShowLoadingModal] = useState<string | null>(null);
   const [showProofModal, setShowProofModal] = useState<string | null>(null);
 
+  // Accordion state in Create Surat Jalan modal
+  const [expandedCreateOrderIds, setExpandedCreateOrderIds] = useState<Record<string, boolean>>({});
+
+  const toggleCreateOrderExpand = (orderId: string) => {
+    setExpandedCreateOrderIds(prev => ({
+      ...prev,
+      [orderId]: !prev[orderId],
+    }));
+  };
+
+
+  // Preview Photo Modal state
+  const [previewPhotoModal, setPreviewPhotoModal] = useState<{ url: string; title: string } | null>(null);
+
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
   const [driverFilter, setDriverFilter] = useState('');
@@ -178,6 +196,9 @@ function DeliveryContent() {
     const relevantOrders = salesOrders.filter(o => {
       if (o.status === 'PENDING' || o.status === 'CANCELED') return false;
       if (o.status !== 'SENT') return true;
+      // Safeguard: Jika SO berstatus SENT tetapi sebenarnya masih ada item yang belum terpenuhi (deliveredQty < qty)
+      const hasUnfulfilledItems = o.items.some(it => (it.deliveredQty || 0) < it.qty);
+      if (hasUnfulfilledItems) return true;
       return (o.complaints || []).some(
         c => c.resolution === 'Kirim Barang Pengganti' && c.replacementStatus === 'READY_FOR_DELIVERY'
       );
@@ -187,7 +208,8 @@ function DeliveryContent() {
       const allUnits: ChildUnitItem[] = [];
       let totalOrderUnits = 0;
 
-      if (order.status !== 'SENT') {
+      const isOrderFullySent = order.status === 'SENT' && !order.items.some(it => (it.deliveredQty || 0) < it.qty);
+      if (!isOrderFullySent) {
         order.items.forEach((item, itemIdx) => {
           totalOrderUnits += item.qty;
           const shippedCount = item.shippedQty || 0;
@@ -196,7 +218,7 @@ function DeliveryContent() {
           // Find matching WOs strictly for this specific item in this Sales Order
           const matchingWOs = (workOrders || []).filter(
             w =>
-              w.salesOrderId === order.id &&
+              (w.salesOrderId === order.id || w.salesOrderNumber === order.orderNumber) &&
               !w.isSubAssembly &&
               !w.isComplaintReplacement &&
               (w.itemIndex !== undefined
@@ -206,6 +228,8 @@ function DeliveryContent() {
                     : w.productName === item.productName))
           );
 
+          const activeDOs = deliveryOrders || [];
+
           // Generate all ordered units: completed (ready), shipped, or in production
           for (let u = 1; u <= item.qty; u++) {
             // Find 1-to-1 work order for this unit
@@ -214,33 +238,47 @@ function DeliveryContent() {
               unitWO = matchingWOs[u - 1];
             }
 
-            // Determine if this unit has already been shipped
-            const isShippedByDO = (deliveryOrders || []).some(d =>
-              (d.orderItems || []).some(
-                oi =>
-                  oi.orderId === order.id &&
-                  (
-                    (oi.spkNumber && unitWO?.spkNumber ? oi.spkNumber === unitWO.spkNumber : false) ||
-                    (oi.itemIndex === itemIdx && oi.unitIndex === u)
-                  )
-              )
-            );
-            const isShipped = isShippedByDO || u <= shippedCount;
+            // Determine if this unit has already been shipped or included in an active DO
+            let isShipped = false;
+            if (unitWO && unitWO.spkNumber) {
+              isShipped = activeDOs.some(d =>
+                (d.orderItems || []).some(
+                  oi =>
+                    (oi.orderId === order.id || oi.orderNumber === order.orderNumber) &&
+                    oi.spkNumber === unitWO.spkNumber
+                )
+              );
+            }
+            if (!isShipped) {
+              isShipped = activeDOs.some(d =>
+                (d.orderItems || []).some(
+                  oi =>
+                    (oi.orderId === order.id || oi.orderNumber === order.orderNumber) &&
+                    oi.itemIndex === itemIdx &&
+                    oi.unitIndex === u
+                )
+              );
+            }
 
             let unitStatus: 'READY' | 'IN_PRODUCTION' | 'SHIPPED';
-            if (isShipped) {
-              unitStatus = 'SHIPPED';
-            } else if (unitWO) {
-              // Unit status MUST strictly reflect the actual SPK status
-              if (unitWO.status === 'COMPLETED') {
+            if (unitWO) {
+              // Unit status strictly reflects whether it is already dispatched or its SPK completion
+              if (isShipped) {
+                unitStatus = 'SHIPPED';
+              } else if (unitWO.status === 'COMPLETED') {
                 unitStatus = 'READY';
               } else {
                 unitStatus = 'IN_PRODUCTION';
               }
-            } else if (u <= shippedCount + availableQty) {
-              unitStatus = 'READY';
             } else {
-              unitStatus = 'IN_PRODUCTION';
+              // Fallback for items without individual work orders (e.g. ready-stock items)
+              if (isShipped || u <= shippedCount) {
+                unitStatus = 'SHIPPED';
+              } else if (u <= shippedCount + availableQty) {
+                unitStatus = 'READY';
+              } else {
+                unitStatus = 'IN_PRODUCTION';
+              }
             }
 
             allUnits.push({
@@ -687,6 +725,7 @@ function DeliveryContent() {
     setCustomVehiclePlate(initialArmada?.plateNumber || '');
     setScheduledShipDate(new Date().toISOString().split('T')[0]);
     setShipmentNotes('');
+    setExpandedCreateOrderIds({});
     setShowCreateModal(true);
   };
 
@@ -786,19 +825,29 @@ function DeliveryContent() {
       return;
     }
 
-    confirmDelivery(showProofModal, {
+    const targetDOId = showProofModal;
+    const targetDO = deliveryOrders.find(d => d.id === targetDOId);
+    const targetTrip = targetDO ? tripGroups.find(t => t.tripId === (targetDO.tripId || targetDO.id)) : null;
+    const willBeAllDelivered = targetTrip ? targetTrip.deliveredCount + 1 >= targetTrip.totalDestinationsCount : true;
+
+    confirmDelivery(targetDOId, {
       receiverName: receiverName.trim(),
       proofNote: proofNote.trim(),
       proofPhoto: uploadedPhotoUrl || undefined,
     });
 
-    toast.success('Pengiriman berhasil diselesaikan! Status Sales Order kini Terkirim.');
     setShowProofModal(null);
     setReceiverName('');
     setProofNote('');
     setUploadedPhotoUrl(null);
     setUploadedPhotoName('');
-    setActiveTab('delivered');
+
+    if (willBeAllDelivered) {
+      toast.success('Seluruh pesanan dalam kloter telah selesai diserahkan! Kloter berpindah ke tab Terkirim.');
+      setActiveTab('delivered');
+    } else {
+      toast.success(`Pengiriman pesanan ${targetDO?.salesOrderNumber || ''} berhasil diserahterimakan!`);
+    }
   };
 
   // Tab definitions matching user workflow
@@ -1152,7 +1201,7 @@ function DeliveryContent() {
           {displayReadyToShipTrips.length === 0 ? (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8">
               <EmptyState
-                title={searchTerm ? 'Tidak ada kloter siap kirim yang sesuai pencarian' : 'Belum ada kloter pengiriman siap kirim'}
+                title={searchTerm ? 'Tidak ada trip siap kirim yang sesuai pencarian' : 'Belum ada trip pengiriman siap kirim'}
                 description={
                   searchTerm
                     ? 'Coba gunakan kata kunci pencarian yang berbeda.'
@@ -1170,11 +1219,14 @@ function DeliveryContent() {
                     key={trip.tripId}
                     className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden"
                   >
-                    {/* Header Kloter */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
+                    {/* Header Trip - Klik untuk melihat Detail Trip */}
+                    <div
+                      onClick={() => router.push(`/delivery/trip/${trip.tripId}`)}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors group select-none"
+                    >
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="text-xs">
-                          <span className="font-semibold text-slate-900 dark:text-white">
+                          <span className="font-semibold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                             {trip.driverName}
                           </span>
                           <span className="text-slate-400 mx-1.5">•</span>
@@ -1195,14 +1247,15 @@ function DeliveryContent() {
 
                       <div className="flex items-center gap-3">
                         <span className="inline-block px-2.5 py-1 rounded-md bg-white dark:bg-slate-800 font-bold text-xs text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700">
-                          {trip.totalDestinationsCount} Tujuan (SO) • {trip.totalUnitsCount} Unit
+                          {trip.totalDestinationsCount} Titik (SJ) • {trip.totalUnitsCount} Unit
                         </span>
                         <Badge variant="warning" className="text-[10px]">
                           Menunggu Muat
                         </Badge>
                         <Button
                           size="sm"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setCheckedLoadingItemKeys({});
                             setShowLoadingModal(trip.tripId);
                           }}
@@ -1210,10 +1263,11 @@ function DeliveryContent() {
                         >
                           Muat Barang
                         </Button>
+                        <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all shrink-0" />
                       </div>
                     </div>
 
-                    {/* Child Surat Jalan List */}
+                    {/* List Surat Jalan di dalam Trip */}
                     <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                       {trip.deliveryOrders.map(dOrder => {
                         const doUnits = dOrder.orderItems && dOrder.orderItems.length > 0
@@ -1223,13 +1277,13 @@ function DeliveryContent() {
                         return (
                           <div
                             key={dOrder.id}
-                            onClick={() => router.push(`/delivery/${dOrder.id}`)}
-                            className="p-3.5 pl-6 sm:pl-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors cursor-pointer select-none"
+                            onClick={() => router.push(`/delivery/sj/${dOrder.id}`)}
+                            className="group/item p-3.5 pl-6 sm:pl-8 flex items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors cursor-pointer select-none"
                           >
-                            <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-start sm:items-center">
+                            <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-center">
                               <div className="sm:col-span-4 min-w-0">
-                                <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
-                                  {dOrder.salesOrderNumber}
+                                <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 group-hover/item:underline block truncate">
+                                  Pesanan #{dOrder.salesOrderNumber}
                                 </span>
                                 <span className="text-[11px] text-slate-400 dark:text-slate-500">
                                   {formatDate(dOrder.createdAt)}
@@ -1247,13 +1301,14 @@ function DeliveryContent() {
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/60">
-                              <span className="inline-block px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
                                 {doUnits} Unit
                               </span>
                               <Badge variant="purple" className="text-[10px]">
                                 Siap Angkut
                               </Badge>
+                              <ChevronRight className="h-4 w-4 text-slate-400 group-hover/item:text-indigo-600 dark:group-hover/item:text-indigo-400 group-hover/item:translate-x-0.5 transition-all shrink-0" />
                             </div>
                           </div>
                         );
@@ -1268,18 +1323,18 @@ function DeliveryContent() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAHAP 3: SEDANG DI PERJALANAN (Barang Dimuat, Driver Menuju Tujuan)       */}
+      {/* TAHAP 3: DALAM PERJALANAN (Driver Sedang Antar Barang ke Titik Penerima)  */}
       {/* ========================================================================= */}
       {activeTab === 'in-transit' && (
         <div className="space-y-4">
           {displayInTransitTrips.length === 0 ? (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8">
               <EmptyState
-                title={searchTerm ? 'Tidak ada kloter dalam perjalanan yang sesuai pencarian' : 'Tidak ada kloter pengiriman yang sedang berjalan'}
+                title={searchTerm ? 'Tidak ada trip dalam perjalanan yang sesuai pencarian' : 'Tidak ada trip pengiriman yang sedang berjalan'}
                 description={
                   searchTerm
                     ? 'Coba gunakan kata kunci pencarian yang berbeda.'
-                    : 'Konfirmasi muat barang pada kloter di tab "Siap Kirim" untuk memulai perjalanan armada.'
+                    : 'Konfirmasi muat barang pada trip di tab "Siap Kirim" untuk memulai perjalanan armada.'
                 }
               />
             </div>
@@ -1291,11 +1346,14 @@ function DeliveryContent() {
                     key={trip.tripId}
                     className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden"
                   >
-                    {/* Header Kloter */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
+                    {/* Header Trip - Klik untuk melihat Detail Trip */}
+                    <div
+                      onClick={() => router.push(`/delivery/trip/${trip.tripId}`)}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors group select-none"
+                    >
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="text-xs">
-                          <span className="font-semibold text-slate-900 dark:text-white">
+                          <span className="font-semibold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                             {trip.driverName}
                           </span>
                           <span className="text-slate-400 mx-1.5">•</span>
@@ -1310,17 +1368,14 @@ function DeliveryContent() {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <span className="px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold">
-                          {trip.deliveredCount} dari {trip.totalDestinationsCount} Tujuan Selesai
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          {trip.deliveredCount} dari {trip.totalDestinationsCount} Selesai • {trip.totalUnitsCount} Unit
                         </span>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                          Di Perjalanan
-                        </span>
+                        <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all shrink-0" />
                       </div>
                     </div>
 
-                    {/* Child Surat Jalan List */}
+                    {/* List Surat Jalan di dalam Trip */}
                     <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                       {trip.deliveryOrders.map(dOrder => {
                         const isDelivered = dOrder.status === 'DELIVERED';
@@ -1331,66 +1386,55 @@ function DeliveryContent() {
                         return (
                           <div
                             key={dOrder.id}
-                            onClick={() => router.push(`/delivery/${dOrder.id}`)}
+                            onClick={() => router.push(`/delivery/sj/${dOrder.id}`)}
                             className={cn(
-                              'p-3.5 pl-6 sm:pl-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors cursor-pointer select-none',
+                              'group/item p-3.5 pl-6 sm:pl-8 flex items-center justify-between gap-4 transition-colors cursor-pointer select-none',
                               isDelivered
-                                ? 'bg-emerald-50/20 dark:bg-emerald-950/10 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20'
-                                : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/30'
+                                ? 'bg-emerald-50/15 dark:bg-emerald-950/10 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20'
+                                : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
                             )}
                           >
-                            <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-start sm:items-center">
-                              <div className="sm:col-span-4 min-w-0">
-                                <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
-                                  {dOrder.salesOrderNumber}
-                                </span>
-                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  {formatDate(dOrder.createdAt)}
-                                </span>
+                            {/* Kiri: Icon + Info Nama Pelanggan & Alamat */}
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 text-slate-500 dark:text-slate-400">
+                                <User className="w-4 h-4" />
                               </div>
-
-                              <div className="sm:col-span-8 min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                                   {dOrder.customerName}
                                 </p>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-0.5">
-                                  <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                                  <span className="truncate">{dOrder.customerAddress || 'Alamat tidak dispesifikasikan'}</span>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                  {dOrder.customerAddress || 'Alamat tidak dispesifikasikan'}
                                 </p>
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/60">
-                              <span className="inline-block px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700">
-                                {doUnits} Unit
-                              </span>
-
-                              {isDelivered ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  Terkirim ({dOrder.receiverName || 'Penerima'})
+                            {/* Kanan: Nomor Pesanan & Jumlah Barang, lalu Status Item, lalu Chevron */}
+                            <div className="flex items-center gap-3.5 shrink-0">
+                              <div className="text-right">
+                                <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
+                                  #{dOrder.salesOrderNumber}
                                 </span>
-                              ) : (
-                                <>
-                                  <Badge variant="info" className="text-[10px]">
-                                    Di Perjalanan
-                                  </Badge>
-                                  <Button
-                                    size="sm"
-                                    variant="success"
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      setShowProofModal(dOrder.id);
-                                      setReceiverName('');
-                                      setProofNote('');
-                                      setUploadedPhotoUrl(null);
-                                      setUploadedPhotoName('');
-                                    }}
-                                  >
-                                    Selesaikan Pengiriman
-                                  </Button>
-                                </>
-                              )}
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                                  {doUnits} barang
+                                </span>
+                              </div>
+
+                              <Badge
+                                variant={isDelivered ? 'success' : 'info'}
+                                className="text-[10px]"
+                              >
+                                {isDelivered ? (
+                                  <span className="flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Terkirim
+                                  </span>
+                                ) : (
+                                  'Dalam Perjalanan'
+                                )}
+                              </Badge>
+
+                              <ChevronRight className="h-4 w-4 text-slate-400 group-hover/item:text-indigo-600 dark:group-hover/item:text-indigo-400 group-hover/item:translate-x-0.5 transition-all shrink-0" />
                             </div>
                           </div>
                         );
@@ -1412,11 +1456,11 @@ function DeliveryContent() {
           {displayDeliveredTrips.length === 0 ? (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8">
               <EmptyState
-                title={searchTerm ? 'Tidak ada kloter terkirim yang sesuai pencarian' : 'Belum ada kloter pengiriman yang selesai'}
+                title={searchTerm ? 'Tidak ada trip terkirim yang sesuai pencarian' : 'Belum ada trip pengiriman yang selesai'}
                 description={
                   searchTerm
                     ? 'Coba gunakan kata kunci pencarian yang berbeda.'
-                    : 'Kloter pengiriman akan otomatis berpindah ke sini setelah semua surat jalan di dalamnya selesai diserahterimakan.'
+                    : 'Trip pengiriman akan otomatis berpindah ke sini setelah semua surat jalan di dalamnya selesai diserahterimakan.'
                 }
               />
             </div>
@@ -1428,11 +1472,14 @@ function DeliveryContent() {
                     key={trip.tripId}
                     className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden"
                   >
-                    {/* Header Kloter */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
+                    {/* Header Trip - Klik untuk melihat Detail Trip */}
+                    <div
+                      onClick={() => router.push(`/delivery/trip/${trip.tripId}`)}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors group select-none"
+                    >
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="text-xs">
-                          <span className="font-semibold text-slate-900 dark:text-white">
+                          <span className="font-semibold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                             {trip.driverName}
                           </span>
                           <span className="text-slate-400 mx-1.5">•</span>
@@ -1442,21 +1489,22 @@ function DeliveryContent() {
                           </span>
                         </div>
                         <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                          Jadwal: {formatDate(trip.scheduledDate)}
+                          Selesai: {formatDate(trip.scheduledDate)}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <span className="inline-block px-2.5 py-1 rounded-md bg-white dark:bg-slate-800 font-bold text-xs text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700">
-                          {trip.totalDestinationsCount} Tujuan Selesai • {trip.totalUnitsCount} Unit
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          {trip.totalDestinationsCount} Titik (SJ) • {trip.totalUnitsCount} Unit
                         </span>
                         <Badge variant="success" className="text-[10px]">
-                          Kloter Selesai
+                          Selesai
                         </Badge>
+                        <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all shrink-0" />
                       </div>
                     </div>
 
-                    {/* Child Surat Jalan List */}
+                    {/* List Surat Jalan di dalam Trip */}
                     <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                       {trip.deliveryOrders.map(dOrder => {
                         const doUnits = dOrder.orderItems && dOrder.orderItems.length > 0
@@ -1466,55 +1514,46 @@ function DeliveryContent() {
                         return (
                           <div
                             key={dOrder.id}
-                            onClick={() => router.push(`/delivery/${dOrder.id}`)}
-                            className="p-3.5 pl-6 sm:pl-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors cursor-pointer select-none"
+                            onClick={() => router.push(`/delivery/sj/${dOrder.id}`)}
+                            className="group/item p-3.5 pl-6 sm:pl-8 flex items-center justify-between gap-4 transition-colors cursor-pointer select-none hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                           >
-                            <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-start sm:items-center">
-                              <div className="sm:col-span-4 min-w-0">
-                                <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
-                                  {dOrder.salesOrderNumber}
-                                </span>
-                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  {formatDate(dOrder.createdAt)}
-                                </span>
+                            {/* Kiri: Icon + Info Nama Pelanggan & Alamat */}
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 text-slate-500 dark:text-slate-400">
+                                <User className="w-4 h-4" />
                               </div>
-
-                              <div className="sm:col-span-8 min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                                   {dOrder.customerName}
                                 </p>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-0.5">
-                                  <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                                  <span className="truncate">{dOrder.customerAddress || 'Alamat tidak dispesifikasikan'}</span>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                  {dOrder.customerAddress || 'Alamat tidak dispesifikasikan'}
                                 </p>
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/60">
-                              <span className="inline-block px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700">
-                                {doUnits} Unit
-                              </span>
-
-                              <div className="text-left sm:text-right">
-                                <p className="text-xs font-semibold text-slate-900 dark:text-white flex items-center sm:justify-end gap-1">
-                                  <UserCheck className="h-3.5 w-3.5 text-emerald-500" />
-                                  {dOrder.receiverName || 'Penerima'}
-                                </p>
-                                <p className="text-[10px] text-slate-400">
-                                  {dOrder.deliveredAt ? formatDateTime(dOrder.deliveredAt) : '-'}
-                                </p>
+                            {/* Kanan: Nomor Pesanan & Jumlah Barang, lalu Status Item, lalu Chevron */}
+                            <div className="flex items-center gap-3.5 shrink-0">
+                              <div className="text-right">
+                                <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 block">
+                                  #{dOrder.salesOrderNumber}
+                                </span>
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                                  {doUnits} barang
+                                </span>
                               </div>
 
-                              {dOrder.deliveryProofPhoto && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
-                                  <Camera className="h-3.5 w-3.5" />
-                                  Foto Ada
+                              <Badge
+                                variant="success"
+                                className="text-[10px]"
+                              >
+                                <span className="flex items-center gap-1">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Terkirim
                                 </span>
-                              )}
-
-                              <Badge variant="success" className="text-[10px]">
-                                Terkirim
                               </Badge>
+
+                              <ChevronRight className="h-4 w-4 text-slate-400 group-hover/item:text-indigo-600 dark:group-hover/item:text-indigo-400 group-hover/item:translate-x-0.5 transition-all shrink-0" />
                             </div>
                           </div>
                         );
@@ -1551,38 +1590,103 @@ function DeliveryContent() {
         }
       >
         <div className="space-y-4">
-          {/* List Pesanan & Unit yang Dikirim */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 divide-y divide-slate-200/60 dark:divide-slate-700/60 max-h-56 overflow-y-auto">
+          {/* List Pesanan & Unit yang Dikirim (Accordion, normal modal scroll) */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800/80 overflow-hidden">
             {selectedOrdersList.map(order => {
               const orderUnits = selectedUnitsList.filter(u => u.orderId === order.orderId);
+              const isOrderExpanded = !!expandedCreateOrderIds[order.orderId];
 
               return (
-                <div key={order.orderId} className="p-3 text-xs space-y-2">
-                  <div className="flex items-center justify-between font-semibold text-slate-900 dark:text-white">
-                    <span>{order.customerName}</span>
-                    <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold">
-                      {order.orderNumber} • {orderUnits.length} unit
-                    </span>
-                  </div>
-                  <p className="text-slate-600 dark:text-slate-300">
-                    {order.customerAddress || '-'}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {orderUnits.map(unit => (
-                      <span
-                        key={unit.key}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white dark:bg-slate-800 text-[11px] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
-                      >
-                        <span className="font-medium">{unit.productName}</span>
-                        {unit.variantLabel && (
-                          <span className="text-slate-400">({unit.variantLabel})</span>
-                        )}
-                        <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold text-[10px]">
-                          {unit.spkNumber || `Unit #${unit.unitNumber}`}
+                <div key={order.orderId} className="transition-colors">
+                  {/* Accordion Collapse Row */}
+                  <div
+                    onClick={() => toggleCreateOrderExpand(order.orderId)}
+                    className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/50 select-none transition-colors"
+                  >
+                    <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-start sm:items-center">
+                      {/* Info Pesanan */}
+                      <div className="sm:col-span-4 min-w-0">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                          Pesanan
                         </span>
+                        <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 block truncate">
+                          {order.orderNumber}
+                        </span>
+                      </div>
+
+                      {/* Pelanggan & Alamat */}
+                      <div className="sm:col-span-8 min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                          {order.customerName}
+                        </p>
+                        <p
+                          className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-0.5"
+                          title={order.customerAddress}
+                        >
+                          <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                          <span className="truncate">{order.customerAddress || 'Alamat tidak dispesifikasikan'}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Unit Count & Chevron */}
+                    <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/60">
+                      <span className="inline-block px-2.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-800 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700">
+                        {orderUnits.length} Unit
                       </span>
-                    ))}
+
+                      <div
+                        className={cn(
+                          'p-1 text-slate-400 transition-transform duration-200 shrink-0',
+                          isOrderExpanded ? 'rotate-180 text-slate-700 dark:text-slate-200' : ''
+                        )}
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Accordion Expand: List Produk */}
+                  {isOrderExpanded && (
+                    <div className="px-4 py-2.5 bg-slate-50/50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-slate-800/80">
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                        {orderUnits.map((unit, idx) => (
+                          <div
+                            key={unit.key || idx}
+                            className="py-2 flex items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                              {unit.spkNumber && (
+                                <span className="font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-700 border border-slate-300/50 dark:border-slate-600">
+                                  {unit.spkNumber}
+                                </span>
+                              )}
+                              <span className="font-medium text-slate-900 dark:text-white">
+                                {unit.productName}
+                              </span>
+                              {unit.variantLabel && (
+                                <span className="text-slate-500 dark:text-slate-400">
+                                  • {unit.variantLabel}
+                                </span>
+                              )}
+                              {unit.isReplacement ? (
+                                <Badge variant="purple" className="text-[10px] px-1.5 py-0">
+                                  Penggantian Komplain
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-slate-400">
+                                  Unit #{unit.unitNumber}
+                                </span>
+                              )}
+                            </div>
+                            <span className="shrink-0 font-medium text-slate-600 dark:text-slate-300">
+                              1 Unit
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1693,7 +1797,7 @@ function DeliveryContent() {
             </div>
 
             {/* Checklist of all items */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
               {kloterLoadingItems.map(item => {
                 const isChecked = !!checkedLoadingItemKeys[item.key];
                 return (
@@ -1936,6 +2040,30 @@ function DeliveryContent() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Zoom Foto Bukti Serah Terima */}
+      <Modal
+        isOpen={!!previewPhotoModal}
+        onClose={() => setPreviewPhotoModal(null)}
+        title={previewPhotoModal?.title || 'Bukti Serah Terima'}
+        size="lg"
+        actions={
+          <Button variant="outline" onClick={() => setPreviewPhotoModal(null)}>
+            Tutup
+          </Button>
+        }
+      >
+        {previewPhotoModal && (
+          <div className="flex flex-col items-center justify-center p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={previewPhotoModal.url}
+              alt="Bukti Serah Terima"
+              className="max-h-[70vh] w-auto object-contain rounded-lg border border-slate-200 dark:border-slate-800"
+            />
           </div>
         )}
       </Modal>

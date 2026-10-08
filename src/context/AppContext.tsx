@@ -18,11 +18,14 @@ import type {
   Invoice,
   Payment,
   SPKStatus,
+  POStatus,
   OrderStatus,
+  DeleteResult,
   JobCard,
   Customer,
   CompanyAsset,
   CompanyAssetServiceLog,
+  AssetDepreciation,
   ProductModifierGroup,
   ProductionOperation,
   ProductionRouting,
@@ -59,6 +62,7 @@ import {
   initialInvoices,
   initialAssets,
   initialAssetServiceLogs,
+  initialAssetDepreciations,
   initialModifierGroups,
   initialOperations,
   initialRoutings,
@@ -89,6 +93,7 @@ import {
   createReversalPOReceivedJournal,
   createReversalDirectPurchaseJournal,
   createExpenseJournal,
+  createAssetPurchaseJournal,
   createBankTransferJournal,
   createCashInflowJournal,
   createManualJournal,
@@ -120,7 +125,7 @@ interface AppContextType extends AppState {
   // Products CRUD
   addProduct: (product: Omit<Product, 'id'>) => void;
   updateProduct: (id: string, product: Partial<Omit<Product, 'id'>>) => void;
-  deleteProduct: (id: string) => boolean;
+  deleteProduct: (id: string) => DeleteResult;
 
   // Global Attributes CRUD
   addAttribute: (attr: Omit<AttributeMaster, 'id'>) => void;
@@ -138,7 +143,7 @@ interface AppContextType extends AppState {
   // Raw Materials & Category CRUD
   addMaterial: (material: Omit<RawMaterial, 'id'>) => void;
   updateMaterial: (id: string, material: Partial<RawMaterial>) => void;
-  deleteMaterial: (id: string) => boolean;
+  deleteMaterial: (id: string) => DeleteResult;
   addMaterialCategory: (category: string) => void;
   updateMaterialCategory: (oldCategory: string, newCategory: string) => void;
   deleteMaterialCategory: (category: string) => boolean;
@@ -148,7 +153,7 @@ interface AppContextType extends AppState {
   finishedGoods: FinishedGoodStock[];
   addFinishedGood: (fg: Omit<FinishedGoodStock, 'id'>) => void;
   updateFinishedGood: (id: string, fg: Partial<FinishedGoodStock>) => void;
-  deleteFinishedGood: (id: string) => boolean;
+  deleteFinishedGood: (id: string) => DeleteResult;
   adjustFinishedGoodStock: (productId: string, variantId: string | undefined, delta: number, reference: string) => void;
 
   // Product Category CRUD
@@ -158,7 +163,8 @@ interface AppContextType extends AppState {
   // Assets CRUD
   addAsset: (asset: Omit<CompanyAsset, 'id' | 'monthlyDepreciation' | 'accumulatedServiceCost'>) => void;
   updateAsset: (id: string, asset: Partial<Omit<CompanyAsset, 'id' | 'monthlyDepreciation' | 'accumulatedServiceCost'>>) => void;
-  deleteAsset: (id: string) => boolean;
+  deleteAsset: (id: string) => DeleteResult;
+  canDeleteAsset: (id: string) => { canDelete: boolean; reason?: string };
   addAssetCategory: (category: string) => void;
   updateAssetCategory: (oldCategory: string, newCategory: string) => void;
   deleteAssetCategory: (category: string) => boolean;
@@ -170,10 +176,13 @@ interface AppContextType extends AppState {
   // Inventory / PO / Pengadaan
   createPO: (supplier: string, items: PurchaseOrderItem[]) => void;
   createDirectPurchase: (supplier: string, items: PurchaseOrderItem[], bankAccountId: string, additionalCost?: number) => void;
-  receivePO: (poId: string) => void;
+  receivePO: (poId: string, receivedItems?: { materialId: string; qty: number }[]) => { success: boolean; isPartial?: boolean; error?: string };
   orderPO: (poId: string) => void;
   rejectPO: (poId: string, reason?: string) => { success: boolean; error?: string };
+  cancelPO: (poId: string, reason?: string) => { success: boolean; error?: string };
+  cancelRemainingPO: (poId: string, reason?: string) => { success: boolean; error?: string };
   deletePO: (poId: string) => boolean;
+
 
   // Sales & Order Lifecycle
   createSalesOrder: (customer: Customer, items: SalesOrderItem[], orderNotes?: string, shippingCost?: number) => string;
@@ -364,6 +373,7 @@ function getDefaultState(): AppState {
     productCategories: structuredClone(initialProductCategories),
     assets: structuredClone(initialAssets),
     assetServiceLogs: structuredClone(initialAssetServiceLogs),
+    assetDepreciations: structuredClone(initialAssetDepreciations || []),
     masterModifierGroups: structuredClone(initialModifierGroups),
     operations: structuredClone(initialOperations),
     routings: structuredClone(initialRoutings),
@@ -439,8 +449,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           return d;
         }),
-        assets: saved.assets || structuredClone(initialAssets),
+        assets: (saved.assets || structuredClone(initialAssets)).map(ast => ({
+          ...ast,
+          acquisitionType: ast.acquisitionType || 'EXISTING',
+          usefulLifeMonths: ast.usefulLifeMonths || (ast.usefulLifeYears * 12),
+          salvageValue: ast.salvageValue || 0,
+          currentBookValue: ast.currentBookValue !== undefined ? ast.currentBookValue : ast.purchaseCost,
+        })),
         assetServiceLogs: saved.assetServiceLogs || structuredClone(initialAssetServiceLogs),
+        assetDepreciations: saved.assetDepreciations || structuredClone(initialAssetDepreciations || []),
         masterModifierGroups: saved.masterModifierGroups || structuredClone(initialModifierGroups),
         bankAccounts: loadedBankAccounts,
         expenses: saved.expenses || structuredClone(initialExpenses),
@@ -821,7 +838,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ---- Products CRUD ----
   const addProduct = useCallback((product: Omit<Product, 'id'>) => {
     const id = `prod-${generateId()}`;
-    const productWithId = { id, ...product } as Product;
+    const productWithId = { id, isActive: true, ...product } as Product;
     const rawVariants = (product.variants && product.variants.length > 0)
       ? product.variants
       : generateVariantsFromRules(productWithId, state.materials);
@@ -843,10 +860,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     setState(prev => {
       const nextProducts = [{ ...productWithId, variants }, ...prev.products];
+      const syncedFG = syncFinishedGoodsWithProducts(nextProducts, prev.finishedGoods);
+
+      // Record StockMovement for any newly created finished good with initialStock > 0
+      const initialMovements: StockMovement[] = [];
+      const now = new Date().toISOString();
+      for (const fg of syncedFG) {
+        if (fg.productId === id && fg.stock > 0) {
+          initialMovements.push({
+            id: `sm-${crypto.randomUUID().slice(0, 8)}`,
+            materialId: fg.id,
+            materialName: fg.productName + (fg.variantLabel ? ` (${fg.variantLabel})` : ''),
+            type: 'INIT',
+            qty: fg.stock,
+            reference: 'Inisiasi Stok',
+            date: now,
+            stockCategory: 'FINISHED',
+          });
+        }
+      }
+
       return {
         ...prev,
         products: nextProducts,
-        finishedGoods: syncFinishedGoodsWithProducts(nextProducts, prev.finishedGoods),
+        finishedGoods: syncedFG,
+        stockMovements: [...initialMovements, ...prev.stockMovements],
         variantBoms: [
           ...prev.variantBoms.filter(vb => !variants.some(v => v.id === vb.variantId)),
           ...newVariantBoms,
@@ -893,20 +931,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const deleteProduct = useCallback((id: string): boolean => {
-    let canDelete = true;
-    setState(prev => {
-      const usedInSO = prev.salesOrders.some(so => so.items.some(i => i.productId === id));
-      if (usedInSO) { canDelete = false; return prev; }
-      const nextProducts = prev.products.filter(p => p.id !== id);
+  const deleteProduct = useCallback((id: string): DeleteResult => {
+    const prod = state.products.find(p => p.id === id);
+    if (!prod) {
+      return { success: false, reason: 'Produk tidak ditemukan.' };
+    }
+
+    const fgIds = new Set(state.finishedGoods.filter(fg => fg.productId === id).map(fg => fg.id));
+    const movements = state.stockMovements.filter(sm => fgIds.has(sm.materialId) || sm.materialId === id);
+    const hasOtherMovements = movements.some(
+      sm => sm.type !== 'INIT' && !sm.reference.trim().toLowerCase().startsWith('inisiasi')
+    );
+    if (hasOtherMovements) {
+      const otherRef = movements.find(sm => sm.type !== 'INIT' && !sm.reference.trim().toLowerCase().startsWith('inisiasi'))?.reference;
       return {
-        ...prev,
-        products: nextProducts,
-        finishedGoods: syncFinishedGoodsWithProducts(nextProducts, prev.finishedGoods),
+        success: false,
+        reason: `Produk "${prod.name}" memiliki riwayat mutasi transaksi (${otherRef || 'transaksi operasional'}). Tidak dapat dihapus demi integritas audit.`,
       };
-    });
-    return canDelete;
-  }, []);
+    }
+
+    // 2. Cek Sales Order
+    const usedInSO = state.salesOrders.some(so => so.items.some(i => i.productId === id));
+    if (usedInSO) {
+      return {
+        success: false,
+        reason: `Produk "${prod.name}" sudah terdaftar dalam transaksi Sales Order.`,
+      };
+    }
+
+    // Soft delete: set isActive = false pada produk & barang jadi terkait, bersihkan mutasi inisiasinya
+    setState(prev => ({
+      ...prev,
+      products: prev.products.map(p => (p.id === id ? { ...p, isActive: false } : p)),
+      finishedGoods: prev.finishedGoods.map(fg => (fg.productId === id ? { ...fg, isActive: false } : fg)),
+      stockMovements: prev.stockMovements.filter(sm => !fgIds.has(sm.materialId) && sm.materialId !== id),
+    }));
+
+    return { success: true };
+  }, [state.products, state.finishedGoods, state.stockMovements, state.salesOrders]);
 
   // ---- Global Attribute Master CRUD ----
   const addAttribute = useCallback((attr: Omit<AttributeMaster, 'id'>) => {
@@ -981,12 +1043,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Finished Goods CRUD ──────────────────────────────────────────────────
   const addFinishedGood = useCallback((fg: Omit<FinishedGoodStock, 'id'>) => {
+    const newId = `fg-${crypto.randomUUID().slice(0, 8)}`;
+    const newFG: FinishedGoodStock = { ...fg, id: newId, isActive: true };
+    const movements: StockMovement[] = [];
+    if (newFG.stock > 0) {
+      movements.push({
+        id: `sm-${crypto.randomUUID().slice(0, 8)}`,
+        materialId: newFG.id,
+        materialName: newFG.productName + (newFG.variantLabel ? ` (${newFG.variantLabel})` : ''),
+        type: 'INIT',
+        qty: newFG.stock,
+        reference: 'Inisiasi Stok',
+        date: new Date().toISOString(),
+        stockCategory: 'FINISHED',
+      });
+    }
     setState(prev => ({
       ...prev,
-      finishedGoods: [
-        { ...fg, id: `fg-${crypto.randomUUID().slice(0, 8)}` },
-        ...prev.finishedGoods,
-      ],
+      finishedGoods: [newFG, ...prev.finishedGoods],
+      stockMovements: [...movements, ...prev.stockMovements],
     }));
   }, []);
 
@@ -999,26 +1074,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const deleteFinishedGood = useCallback((id: string): boolean => {
-    let deleted = false;
-    setState(prev => {
-      const exists = prev.finishedGoods.find(fg => fg.id === id);
-      if (!exists) return prev;
-      deleted = true;
-      const isCatalog = prev.products.some(p => p.id === exists.productId);
-      if (isCatalog) {
-        return {
-          ...prev,
-          finishedGoods: prev.finishedGoods.map(fg => fg.id === id ? { ...fg, stock: 0, minStock: 0 } : fg),
-        };
-      }
+  const deleteFinishedGood = useCallback((id: string): DeleteResult => {
+    const fg = state.finishedGoods.find(item => item.id === id);
+    if (!fg) {
+      return { success: false, reason: 'Barang jadi tidak ditemukan.' };
+    }
+
+    const movements = state.stockMovements.filter(sm => sm.materialId === id);
+    const hasOtherMovements = movements.some(
+      sm => sm.type !== 'INIT' && !sm.reference.trim().toLowerCase().startsWith('inisiasi')
+    );
+    if (hasOtherMovements) {
+      const otherRef = movements.find(sm => sm.type !== 'INIT' && !sm.reference.trim().toLowerCase().startsWith('inisiasi'))?.reference;
       return {
-        ...prev,
-        finishedGoods: prev.finishedGoods.filter(fg => fg.id !== id),
+        success: false,
+        reason: `Barang jadi "${fg.productName}" memiliki riwayat mutasi transaksi (${otherRef || 'transaksi operasional'}). Tidak dapat dihapus demi integritas audit.`,
       };
-    });
-    return deleted;
-  }, []);
+    }
+
+    const usedInSO = state.salesOrders?.some(so =>
+      so.items?.some(item =>
+        item.productId === fg.productId &&
+        (!fg.variantId || item.variantId === fg.variantId)
+      )
+    );
+    if (usedInSO) {
+      return {
+        success: false,
+        reason: `Barang jadi "${fg.productName}" sudah terhubung dengan dokumen Sales Order.`,
+      };
+    }
+
+    // Soft delete: set isActive = false, dan bersihkan mutasi inisiasinya
+    setState(prev => ({
+      ...prev,
+      finishedGoods: prev.finishedGoods.map(item => item.id === id ? { ...item, isActive: false } : item),
+      stockMovements: prev.stockMovements.filter(sm => sm.materialId !== id),
+    }));
+
+    return { success: true };
+  }, [state.finishedGoods, state.stockMovements, state.salesOrders]);
 
   const adjustFinishedGoodStock = useCallback((productId: string, variantId: string | undefined, delta: number, reference: string) => {
     setState(prev => {
@@ -1084,9 +1179,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const id = `mat-${generateId()}`;
     const newMaterial: RawMaterial = {
       id,
+      isActive: true,
       ...material,
     };
-    setState(prev => ({ ...prev, materials: [newMaterial, ...prev.materials] }));
+    const movements: StockMovement[] = [];
+    if (newMaterial.stock > 0) {
+      movements.push({
+        id: `sm-${crypto.randomUUID().slice(0, 8)}`,
+        materialId: newMaterial.id,
+        materialName: newMaterial.name,
+        type: 'INIT',
+        qty: newMaterial.stock,
+        reference: 'Inisiasi Stok',
+        date: new Date().toISOString(),
+        stockCategory: newMaterial.isSubAssembly ? 'WIP' : 'RAW',
+      });
+    }
+    setState(prev => ({
+      ...prev,
+      materials: [newMaterial, ...prev.materials],
+      stockMovements: [...movements, ...prev.stockMovements],
+    }));
   }, []);
 
   const updateMaterial = useCallback((id: string, material: Partial<RawMaterial>) => {
@@ -1096,23 +1209,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const deleteMaterial = useCallback((id: string): boolean => {
-    let canDelete = true;
-    setState(prev => {
-      // Check if material is referenced in any SPK (workOrders) or purchaseOrders items
-      const usedInSPK = prev.workOrders.some(wo => wo.materialsConsumed.some(mc => mc.materialId === id));
-      const usedInPO = prev.purchaseOrders.some(po => po.items.some(pi => pi.materialId === id));
-      if (usedInSPK || usedInPO) {
-        canDelete = false;
-        return prev;
-      }
+  const deleteMaterial = useCallback((id: string): DeleteResult => {
+    const mat = state.materials.find(m => m.id === id);
+    if (!mat) {
+      return { success: false, reason: 'Bahan baku tidak ditemukan.' };
+    }
+
+    // 1. Cek mutasi selain inisiasi
+    const movements = state.stockMovements.filter(sm => sm.materialId === id);
+    const hasOtherMovements = movements.some(
+      sm => sm.type !== 'INIT' && !sm.reference.trim().toLowerCase().startsWith('inisiasi')
+    );
+    if (hasOtherMovements) {
+      const otherRef = movements.find(sm => sm.type !== 'INIT' && !sm.reference.trim().toLowerCase().startsWith('inisiasi'))?.reference;
       return {
-        ...prev,
-        materials: prev.materials.filter(m => m.id !== id),
+        success: false,
+        reason: `Bahan baku "${mat.name}" memiliki riwayat mutasi transaksi (${otherRef || 'transaksi operasional'}). Tidak dapat dihapus demi integritas audit.`,
       };
-    });
-    return canDelete;
-  }, []);
+    }
+
+    // 2. Cek penggunaan pada dokumen operasional:
+    const usedInSPK = state.workOrders.some(wo => wo.materialsConsumed.some(mc => mc.materialId === id));
+    if (usedInSPK) {
+      return {
+        success: false,
+        reason: `Bahan baku "${mat.name}" sudah digunakan dalam dokumen SPK produksi.`,
+      };
+    }
+
+    const usedInPO = state.purchaseOrders.some(po => po.items.some(pi => pi.materialId === id));
+    if (usedInPO) {
+      return {
+        success: false,
+        reason: `Bahan baku "${mat.name}" sudah digunakan dalam dokumen Purchase Order.`,
+      };
+    }
+
+    const usedInProductBOM = state.products.some(p =>
+      p.isActive !== false && p.variants.some(v => v.bom?.some(b => b.materialId === id))
+    );
+    if (usedInProductBOM) {
+      return {
+        success: false,
+        reason: `Bahan baku "${mat.name}" digunakan pada struktur BOM produk katalog aktif.`,
+      };
+    }
+
+    // Soft delete: set isActive = false, dan bersihkan mutasi inisiasinya
+    setState(prev => ({
+      ...prev,
+      materials: prev.materials.map(m => (m.id === id ? { ...m, isActive: false } : m)),
+      stockMovements: prev.stockMovements.filter(sm => sm.materialId !== id),
+    }));
+
+    return { success: true };
+  }, [state.materials, state.stockMovements, state.workOrders, state.purchaseOrders, state.products]);
 
   const addMaterialCategory = useCallback((category: string) => {
     setState(prev => {
@@ -1233,16 +1384,109 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---- Assets CRUD ----
+  const canDeleteAsset = useCallback((id: string): { canDelete: boolean; reason?: string } => {
+    const asset = state.assets.find(a => a.id === id);
+    if (!asset) return { canDelete: false, reason: 'Aset tidak ditemukan.' };
+
+    const serviceLogsCount = (state.assetServiceLogs || []).filter(l => l.assetId === id).length;
+    if (serviceLogsCount > 0) {
+      return {
+        canDelete: false,
+        reason: `Aset memiliki ${serviceLogsCount} riwayat pemeliharaan/servis. Tidak dapat dihapus.`,
+      };
+    }
+
+    const depreciationsCount = (state.assetDepreciations || []).filter(d => d.assetId === id).length;
+    if (depreciationsCount > 0) {
+      return {
+        canDelete: false,
+        reason: `Aset memiliki ${depreciationsCount} catatan penyusutan. Tidak dapat dihapus.`,
+      };
+    }
+
+    return { canDelete: true };
+  }, [state.assets, state.assetServiceLogs, state.assetDepreciations]);
+
   const addAsset = useCallback((asset: Omit<CompanyAsset, 'id' | 'monthlyDepreciation' | 'accumulatedServiceCost'>) => {
     const id = `ast-${generateId()}`;
-    const monthlyDepreciation = asset.purchaseCost / (asset.usefulLifeYears * 12);
-    const newAsset: CompanyAsset = {
-      id,
-      ...asset,
-      accumulatedServiceCost: 0,
-      monthlyDepreciation,
-    };
-    setState(prev => ({ ...prev, assets: [newAsset, ...prev.assets] }));
+    const usefulLifeMonths = asset.usefulLifeMonths || (asset.usefulLifeYears * 12);
+    const usefulLifeYears = asset.usefulLifeYears || Math.round((usefulLifeMonths / 12) * 10) / 10;
+    const salvageValue = Math.max(0, asset.salvageValue || 0);
+    const monthlyDepreciation = (asset.purchaseCost - salvageValue) / usefulLifeMonths;
+    const acquisitionType = asset.acquisitionType || 'EXISTING';
+
+    setState(prev => {
+      let createdExpense: Expense | undefined;
+      let updatedBankAccounts = [...prev.bankAccounts];
+      let updatedExpenses = [...prev.expenses];
+      let updatedJournalEntries = [...prev.journalEntries];
+      let financeTransactionId: string | undefined;
+
+      // Handle NEW_PURCHASE: Atomic cash out & journal
+      if (acquisitionType === 'NEW_PURCHASE' && asset.cashAccountId) {
+        const cashAccount = prev.bankAccounts.find(ba => ba.id === asset.cashAccountId);
+        if (cashAccount) {
+          const expenseId = generateId();
+          const now = asset.purchaseDate || new Date().toISOString();
+          createdExpense = {
+            id: expenseId,
+            category: 'ASET',
+            amount: asset.purchaseCost,
+            date: now,
+            bankAccountId: asset.cashAccountId,
+            note: `Pembelian Aset: ${asset.name} (${asset.code.toUpperCase()})`,
+          };
+
+          updatedBankAccounts = updatedBankAccounts.map(ba =>
+            ba.id === asset.cashAccountId
+              ? { ...ba, balance: ba.balance - asset.purchaseCost }
+              : ba
+          );
+
+          const journalEntry = createAssetPurchaseJournal(
+            {
+              name: asset.name,
+              code: asset.code.toUpperCase(),
+              purchaseCost: asset.purchaseCost,
+              category: asset.category,
+            },
+            expenseId,
+            cashAccount.name,
+            updatedJournalEntries.length,
+            now,
+            prev.chartOfAccounts
+          );
+
+          updatedExpenses = [createdExpense, ...updatedExpenses];
+          updatedJournalEntries = [journalEntry, ...updatedJournalEntries];
+          financeTransactionId = expenseId;
+        }
+      }
+
+      const newAsset: CompanyAsset = {
+        id,
+        ...asset,
+        code: asset.code.trim().toUpperCase(),
+        acquisitionType,
+        usefulLifeMonths,
+        usefulLifeYears,
+        salvageValue,
+        currentBookValue: asset.currentBookValue !== undefined ? asset.currentBookValue : asset.purchaseCost,
+        accumulatedServiceCost: 0,
+        monthlyDepreciation,
+        status: asset.status || 'ACTIVE',
+        cashAccountId: acquisitionType === 'NEW_PURCHASE' ? asset.cashAccountId : undefined,
+        financeTransactionId,
+      };
+
+      return {
+        ...prev,
+        assets: [newAsset, ...prev.assets],
+        bankAccounts: updatedBankAccounts,
+        expenses: updatedExpenses,
+        journalEntries: updatedJournalEntries,
+      };
+    });
   }, []);
 
   const updateAsset = useCallback((id: string, asset: Partial<Omit<CompanyAsset, 'id' | 'monthlyDepreciation' | 'accumulatedServiceCost'>>) => {
@@ -1251,22 +1495,83 @@ export function AppProvider({ children }: { children: ReactNode }) {
       assets: prev.assets.map(a => {
         if (a.id === id) {
           const merged = { ...a, ...asset };
-          const monthlyDepreciation = merged.purchaseCost / (merged.usefulLifeYears * 12);
-          return { ...merged, monthlyDepreciation };
+          const usefulLifeMonths = merged.usefulLifeMonths || (merged.usefulLifeYears * 12);
+          const usefulLifeYears = merged.usefulLifeYears || Math.round((usefulLifeMonths / 12) * 10) / 10;
+          const salvageValue = Math.max(0, merged.salvageValue || 0);
+          const monthlyDepreciation = (merged.purchaseCost - salvageValue) / usefulLifeMonths;
+          return {
+            ...merged,
+            usefulLifeMonths,
+            usefulLifeYears,
+            salvageValue,
+            monthlyDepreciation,
+          };
         }
         return a;
       }),
     }));
   }, []);
 
-  const deleteAsset = useCallback((id: string): boolean => {
-    setState(prev => ({
-      ...prev,
-      assets: prev.assets.filter(a => a.id !== id),
-      assetServiceLogs: prev.assetServiceLogs.filter(l => l.assetId !== id),
-    }));
-    return true;
-  }, []);
+  const deleteAsset = useCallback((id: string): DeleteResult => {
+    const asset = state.assets.find(a => a.id === id);
+    if (!asset) {
+      return { success: false, reason: 'Aset tidak ditemukan.' };
+    }
+
+    // Constraint 1: service logs
+    const serviceCount = (state.assetServiceLogs || []).filter(l => l.assetId === id).length;
+    if (serviceCount > 0) {
+      return {
+        success: false,
+        reason: `Aset memiliki ${serviceCount} catatan riwayat servis. Tidak dapat dihapus.`,
+      };
+    }
+
+    // Constraint 2: depreciations
+    const depreciationCount = (state.assetDepreciations || []).filter(d => d.assetId === id).length;
+    if (depreciationCount > 0) {
+      return {
+        success: false,
+        reason: `Aset memiliki ${depreciationCount} riwayat penyusutan/amortisasi. Tidak dapat dihapus.`,
+      };
+    }
+
+    // Atomic execution & cash rollback if NEW_PURCHASE
+    setState(prev => {
+      let updatedBankAccounts = [...prev.bankAccounts];
+      let updatedExpenses = [...prev.expenses];
+      let updatedJournalEntries = [...prev.journalEntries];
+
+      if (asset.acquisitionType === 'NEW_PURCHASE' && asset.financeTransactionId) {
+        const linkedExpense = prev.expenses.find(e => e.id === asset.financeTransactionId);
+        if (linkedExpense) {
+          // Kembalikan saldo kas
+          updatedBankAccounts = updatedBankAccounts.map(ba =>
+            ba.id === linkedExpense.bankAccountId
+              ? { ...ba, balance: ba.balance + linkedExpense.amount }
+              : ba
+          );
+          // Hapus expense
+          updatedExpenses = updatedExpenses.filter(e => e.id !== linkedExpense.id);
+          // Hapus jurnal terkait
+          updatedJournalEntries = updatedJournalEntries.filter(
+            j => !(j.sourceType === 'EXPENSE' && j.sourceId === linkedExpense.id)
+          );
+        }
+      }
+
+      return {
+        ...prev,
+        assets: prev.assets.filter(a => a.id !== id),
+        assetServiceLogs: prev.assetServiceLogs.filter(l => l.assetId !== id),
+        bankAccounts: updatedBankAccounts,
+        expenses: updatedExpenses,
+        journalEntries: updatedJournalEntries,
+      };
+    });
+
+    return { success: true };
+  }, [state.assets, state.assetServiceLogs, state.assetDepreciations]);
 
   const recordAssetService = useCallback((log: Omit<CompanyAssetServiceLog, 'id'>) => {
     const id = `asl-${generateId()}`;
@@ -1424,100 +1729,97 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const rejectPO = useCallback((poId: string, reason?: string): { success: boolean; error?: string } => {
     let result: { success: boolean; error?: string } = { success: true };
     setState(prev => {
+      const currentUser = getUserById(prev.currentUserId || DEFAULT_USER_ID);
       const po = prev.purchaseOrders.find(p => p.id === poId);
-      if (!po || po.status === 'REJECTED') {
-        result = { success: false, error: 'Pengadaan tidak ditemukan atau sudah dibatalkan.' };
+      if (!po || po.status !== 'DRAFT') {
+        result = { success: false, error: 'Hanya pengadaan berstatus Diajukan yang dapat ditolak.' };
         return prev;
       }
 
-      const wasReceived = po.status === 'RECEIVED' || po.purchaseType === 'DIRECT';
       const now = new Date().toISOString();
-
-      let updatedMaterials = prev.materials;
-      let updatedMovements = prev.stockMovements;
-      let updatedBankAccounts = prev.bankAccounts;
-      let newJournals: JournalEntry[] = [];
-
-      if (wasReceived) {
-        // Stock Safety Check: Check if any material stock is less than poItem.qty
-        const insufficientMat = po.items.find(poItem => {
-          const mat = prev.materials.find(m => m.id === poItem.materialId);
-          return !mat || mat.stock < poItem.qty;
-        });
-
-        if (insufficientMat) {
-          const matObj = prev.materials.find(m => m.id === insufficientMat.materialId);
-          const currentQty = matObj ? matObj.stock : 0;
-          result = {
-            success: false,
-            error: `Gagal membatalkan. Stok "${insufficientMat.materialName}" saat ini tersisa ${currentQty} ${insufficientMat.unit || 'unit'}, kurang dari ${insufficientMat.qty} unit pada PO. Bahan baku ini sebagian telah dikonsumsi oleh SPK produksi.`,
-          };
-          return prev;
-        }
-
-        // Deduct material stock that was previously added
-        updatedMaterials = prev.materials.map(m => {
-          const poItem = po.items.find(i => i.materialId === m.id);
-          if (poItem) {
-            return { ...m, stock: Math.max(0, parseFloat((m.stock - poItem.qty).toFixed(4))) };
-          }
-          return m;
-        });
-
-        // Add cancellation stock movement
-        const cancelMovements: StockMovement[] = po.items.map(item => ({
-          id: generateId(),
-          materialId: item.materialId,
-          materialName: item.materialName,
-          type: 'OUT' as const,
-          qty: item.qty,
-          reference: `Batal ${po.poNumber}`,
-          date: now,
-        }));
-        updatedMovements = [...cancelMovements, ...prev.stockMovements];
-
-        // Refund cash if it was direct purchase & create reversal journal
-        if (po.purchaseType === 'DIRECT' && po.bankAccountId) {
-          updatedBankAccounts = prev.bankAccounts.map(b =>
-            b.id === po.bankAccountId ? { ...b, balance: b.balance + po.totalAmount } : b
-          );
-          const revJournal = createReversalDirectPurchaseJournal(
-            po,
-            prev.journalEntries.length,
-            reason,
-            now,
-            prev.chartOfAccounts
-          );
-          newJournals.push(revJournal);
-        } else {
-          const revJournal = createReversalPOReceivedJournal(
-            po,
-            prev.journalEntries.length,
-            reason,
-            now,
-            prev.chartOfAccounts
-          );
-          newJournals.push(revJournal);
-        }
-      }
-
-      const currentUser = getUserById(prev.currentUserId || DEFAULT_USER_ID);
 
       return {
         ...prev,
-        materials: updatedMaterials,
-        stockMovements: updatedMovements,
-        bankAccounts: updatedBankAccounts,
-        journalEntries: [...newJournals, ...prev.journalEntries],
         purchaseOrders: prev.purchaseOrders.map(p =>
           p.id === poId
             ? {
-              ...p,
-              status: 'REJECTED' as const,
-              cancelReason: reason?.trim() || undefined,
-              cancelledBy: currentUser.name,
-              cancelledAt: now,
-            }
+                ...p,
+                status: 'REJECTED' as const,
+                rejectionReason: reason?.trim() || undefined,
+                cancelReason: reason?.trim() || undefined,
+                rejectedBy: currentUser.name,
+                rejectedAt: now,
+              }
+            : p
+        ),
+      };
+    });
+    return result;
+  }, []);
+
+  const cancelPO = useCallback((poId: string, reason?: string): { success: boolean; error?: string } => {
+    let result: { success: boolean; error?: string } = { success: true };
+    setState(prev => {
+      const currentUser = getUserById(prev.currentUserId || DEFAULT_USER_ID);
+      const po = prev.purchaseOrders.find(p => p.id === poId);
+      if (!po) {
+        result = { success: false, error: 'Pengadaan tidak ditemukan.' };
+        return prev;
+      }
+      if (po.status !== 'DRAFT' && po.status !== 'ORDERED') {
+        result = { success: false, error: 'Pengadaan tidak dapat dibatalkan pada status ini.' };
+        return prev;
+      }
+
+      const now = new Date().toISOString();
+
+      return {
+        ...prev,
+        purchaseOrders: prev.purchaseOrders.map(p =>
+          p.id === poId
+            ? {
+                ...p,
+                status: 'CANCELED' as const,
+                cancelReason: reason?.trim() || (po.status === 'DRAFT' ? 'Dibatalkan oleh pembuat pengadaan' : 'Dibatalkan'),
+                cancelledBy: currentUser.name,
+                cancelledAt: now,
+              }
+            : p
+        ),
+      };
+    });
+    return result;
+  }, []);
+
+  const cancelRemainingPO = useCallback((poId: string, reason?: string): { success: boolean; error?: string } => {
+    let result: { success: boolean; error?: string } = { success: true };
+    setState(prev => {
+      const po = prev.purchaseOrders.find(p => p.id === poId);
+      if (!po || po.status !== 'PARTIALLY_RECEIVED') {
+        result = { success: false, error: 'Hanya pengadaan berstatus Diterima Sebagian yang dapat dibatalkan sisa pesanannya.' };
+        return prev;
+      }
+
+      const now = new Date().toISOString();
+      // Hapus/sesuaikan sisa kuantitas yang belum diterima: qty item menjadi sebesar yang sudah diterima
+      const updatedItems = po.items.map(item => ({
+        ...item,
+        qty: item.receivedQty || 0,
+      }));
+      const newTotalAmount = updatedItems.reduce((sum, item) => sum + (item.qty * item.unitCost), 0) + (po.additionalCost || 0);
+
+      return {
+        ...prev,
+        purchaseOrders: prev.purchaseOrders.map(p =>
+          p.id === poId
+            ? {
+                ...p,
+                items: updatedItems,
+                totalAmount: newTotalAmount,
+                status: 'RECEIVED' as const,
+                receivedAt: p.receivedAt || now,
+                cancelReason: reason?.trim() || 'Sisa kuantitas PO dibatalkan oleh pengguna',
+              }
             : p
         ),
       };
@@ -1546,40 +1848,111 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return success;
   }, []);
 
-  const receivePO = useCallback((poId: string) => {
+  const receivePO = useCallback((
+    poId: string,
+    receivedItems?: { materialId: string; qty: number }[]
+  ): { success: boolean; isPartial?: boolean; error?: string } => {
+    let result: { success: boolean; isPartial?: boolean; error?: string } = { success: true };
     setState(prev => {
       const po = prev.purchaseOrders.find(p => p.id === poId);
-      if (!po || po.status === 'RECEIVED') return prev;
+      if (!po || (po.status !== 'ORDERED' && po.status !== 'PARTIALLY_RECEIVED')) {
+        result = { success: false, error: 'Pengadaan tidak dalam status Dipesan atau Diterima Sebagian.' };
+        return prev;
+      }
 
       const now = new Date().toISOString();
+
+      // Menghitung kuantitas barang yang diterima pada transaksi ini
+      const toReceiveMap = new Map<string, number>();
+      if (receivedItems && receivedItems.length > 0) {
+        for (const r of receivedItems) {
+          if (r.qty > 0) {
+            toReceiveMap.set(r.materialId, r.qty);
+          }
+        }
+      } else {
+        // Fallback: terima seluruh sisa kuantitas
+        for (const item of po.items) {
+          const remaining = item.qty - (item.receivedQty || 0);
+          if (remaining > 0) {
+            toReceiveMap.set(item.materialId, remaining);
+          }
+        }
+      }
+
+      if (toReceiveMap.size === 0) {
+        result = { success: false, error: 'Tidak ada item yang dipilih untuk diterima.' };
+        return prev;
+      }
+
+      // 1. Update stok bahan baku di gudang
       const newMaterials = prev.materials.map(m => {
-        const poItem = po.items.find(i => i.materialId === m.id);
-        if (poItem) return { ...m, stock: parseFloat((m.stock + poItem.qty).toFixed(4)) };
+        const incomingQty = toReceiveMap.get(m.id);
+        if (incomingQty && incomingQty > 0) {
+          return { ...m, stock: parseFloat((m.stock + incomingQty).toFixed(4)) };
+        }
         return m;
       });
 
-      const newMovements: StockMovement[] = po.items.map(item => ({
-        id: generateId(),
-        materialId: item.materialId,
-        materialName: item.materialName,
-        type: 'IN' as const,
-        qty: item.qty,
-        reference: po.poNumber,
-        date: now,
-      }));
+      // 2. Buat mutasi stok masuk (IN)
+      const newMovements: StockMovement[] = [];
+      toReceiveMap.forEach((qty, matId) => {
+        const item = po.items.find(i => i.materialId === matId);
+        if (item && qty > 0) {
+          newMovements.push({
+            id: generateId(),
+            materialId: item.materialId,
+            materialName: item.materialName,
+            type: 'IN' as const,
+            qty,
+            reference: po.poNumber,
+            date: now,
+          });
+        }
+      });
 
-      const poJournal = createPOReceivedJournal(po, prev.journalEntries.length, now, prev.chartOfAccounts);
+      // 3. Update status receivedQty pada masing-masing item PO
+      const updatedItems = po.items.map(item => {
+        const incomingQty = toReceiveMap.get(item.materialId) || 0;
+        const currentRecv = item.receivedQty || 0;
+        return {
+          ...item,
+          receivedQty: parseFloat((currentRecv + incomingQty).toFixed(4)),
+        };
+      });
+
+      // 4. Periksa apakah seluruh item sudah diterima penuh
+      const allFullyReceived = updatedItems.every(i => (i.receivedQty || 0) >= i.qty);
+      const newStatus: POStatus = allFullyReceived ? 'RECEIVED' : 'PARTIALLY_RECEIVED';
+
+      // 5. Jurnal akuntansi penerimaan barang
+      const poJournal = createPOReceivedJournal(
+        { ...po, items: updatedItems },
+        prev.journalEntries.length,
+        now,
+        prev.chartOfAccounts
+      );
+
+      result = { success: true, isPartial: !allFullyReceived };
 
       return {
         ...prev,
         materials: newMaterials,
         purchaseOrders: prev.purchaseOrders.map(p =>
-          p.id === poId ? { ...p, status: 'RECEIVED' as const, receivedAt: now } : p
+          p.id === poId
+            ? {
+                ...p,
+                items: updatedItems,
+                status: newStatus,
+                receivedAt: allFullyReceived ? now : p.receivedAt,
+              }
+            : p
         ),
         stockMovements: [...prev.stockMovements, ...newMovements],
         journalEntries: [poJournal, ...prev.journalEntries],
       };
     });
+    return result;
   }, []);
 
   // ---- Sales Orders ----
@@ -2962,7 +3335,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // Regular Sales Order WO completion: Item-level fulfillment: increment producedQty for the matching SO item
             const soId = targetWO.salesOrderId;
             updatedFinishedGoods = prev.finishedGoods;
-            const matchingSO = prev.salesOrders.find(s => s.id === soId);
+            const matchingSO = prev.salesOrders.find(
+              s => s.id === soId || s.orderNumber === targetWO.salesOrderNumber || (soId && s.orderNumber === soId)
+            );
 
             // Determine target SO item index accurately
             let targetItemIndex = -1;
@@ -3024,7 +3399,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
 
             updatedSOs = (updatedSOs === prev.salesOrders ? [...prev.salesOrders] : updatedSOs).map(so => {
-              if (so.id !== soId) return so;
+              const isMatch = so.id === soId || so.orderNumber === targetWO.salesOrderNumber || (soId && so.orderNumber === soId);
+              if (!isMatch) return so;
               // Increment producedQty ONLY for the single targeted item
               const updatedItems = so.items.map((item, idx) => {
                 if (idx === targetItemIndex && (item.producedQty || 0) < item.qty) {
@@ -3641,10 +4017,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
           const updatedItems = so.items.map((item, idx) => {
             const matchingItems = regularItems.filter(si =>
-              si.itemIndex === idx || (
-                si.productName === item.productName &&
-                (si.variantLabel || '') === (item.variantLabel || '')
-              )
+              si.itemIndex !== undefined
+                ? si.itemIndex === idx
+                : (
+                    si.productName === item.productName &&
+                    (si.variantLabel || '') === (item.variantLabel || '')
+                  )
             );
             if (matchingItems.length > 0) {
               const addedQty = matchingItems.reduce((sum, mi) => sum + (mi.qty || 1), 0);
@@ -3661,7 +4039,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
 
           const updatedSO = { ...so, items: updatedItems, complaints: updatedComplaints };
-          const newStatus = so.status === 'SENT' ? 'SENT' : computeSOStatus(updatedSO);
+          const newStatus = computeSOStatus(updatedSO);
           return { ...updatedSO, status: newStatus };
         });
       }
@@ -3766,10 +4144,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
           const updatedItems = so.items.map((item, idx) => {
             const matchingItems = regularDeliveredItems.filter(di =>
-              di.itemIndex === idx || (
-                di.productName === item.productName &&
-                (di.variantLabel || '') === (item.variantLabel || '')
-              )
+              di.itemIndex !== undefined
+                ? di.itemIndex === idx
+                : (
+                    di.productName === item.productName &&
+                    (di.variantLabel || '') === (item.variantLabel || '')
+                  )
             );
             if (matchingItems.length > 0) {
               const addedQty = matchingItems.reduce((sum, mi) => sum + (mi.qty || 1), 0);
@@ -3791,7 +4171,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
 
           const updatedSO = { ...so, items: updatedItems, complaints: updatedComplaints };
-          const newStatus = so.status === 'SENT' ? 'SENT' : computeSOStatus(updatedSO);
+          const newStatus = computeSOStatus(updatedSO);
           return {
             ...updatedSO,
             status: newStatus,
@@ -3799,7 +4179,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           };
         }
         // Fallback for legacy DOs without orderItems: mark fully delivered
-        return { ...so, status: 'SENT' as const, deliveredAt: now };
+        const updatedItems = so.items.map(item => ({
+          ...item,
+          deliveredQty: item.qty,
+          shippedQty: Math.max(item.shippedQty || 0, item.qty),
+        }));
+        const updatedSO = { ...so, items: updatedItems };
+        return { ...updatedSO, status: 'SENT' as const, deliveredAt: now };
       });
 
       let updatedInvoices = [...prev.invoices];
@@ -4504,6 +4890,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addAsset,
     updateAsset,
     deleteAsset,
+    canDeleteAsset,
     recordAssetService,
     deleteAssetServiceLog,
 
@@ -4512,6 +4899,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     receivePO,
     orderPO,
     rejectPO,
+    cancelPO,
+    cancelRemainingPO,
     deletePO,
     createSalesOrder,
     updateSalesOrder,
