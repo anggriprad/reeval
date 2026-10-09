@@ -10,7 +10,10 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { ActionMenu } from '@/components/ui/ActionMenu';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Alert } from '@/components/ui/Alert';
 import { formatDate, formatDateTime, getWhatsAppUrl, formatPhoneDisplay, cn } from '@/lib/utils';
 import {
   CheckCircle,
@@ -19,6 +22,8 @@ import {
   FileText,
   Eye,
   MessageSquare,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
 
 export default function DeliveryOrderDetailPage() {
@@ -31,6 +36,7 @@ export default function DeliveryOrderDetailPage() {
     deliveryOrders,
     salesOrders,
     confirmDelivery,
+    reportFailedDelivery,
   } = useApp();
 
   // Find Delivery Order
@@ -76,6 +82,24 @@ export default function DeliveryOrderDetailPage() {
   const [uploadedPhotoName, setUploadedPhotoName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Modal Failed Delivery State
+  const [showFailureModal, setShowFailureModal] = useState(false);
+  const [failureReason, setFailureReason] = useState('Alamat tidak ditemukan');
+  const [failureNote, setFailureNote] = useState('');
+  const [uploadedFailurePhoto, setUploadedFailurePhoto] = useState<string | null>(null);
+  const [uploadedFailurePhotoName, setUploadedFailurePhotoName] = useState<string>('');
+  const failureFileInputRef = useRef<HTMLInputElement>(null);
+
+  const FAILURE_REASON_OPTIONS = [
+    { value: 'Alamat tidak ditemukan', label: 'Alamat tidak ditemukan' },
+    { value: 'Tidak ada penerima', label: 'Tidak ada penerima' },
+    { value: 'Pelanggan minta reschedule', label: 'Pelanggan minta reschedule' },
+    { value: 'Akses jalan terhalang', label: 'Akses jalan terhalang' },
+    { value: 'Ditolak oleh pelanggan', label: 'Ditolak oleh pelanggan' },
+    { value: 'Kendala kendaraan / Cuaca', label: 'Kendala kendaraan / Cuaca' },
+    { value: 'Lainnya', label: 'Lainnya' },
+  ];
+
   // Photo Zoom preview modal
   const [previewPhotoModal, setPreviewPhotoModal] = useState<{ url: string; title: string } | null>(null);
 
@@ -102,6 +126,7 @@ export default function DeliveryOrderDetailPage() {
 
   const isDelivered = dOrder.status === 'DELIVERED';
   const isInTransit = dOrder.status === 'IN_TRANSIT';
+  const isFailed = dOrder.status === 'FAILED';
 
   const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -151,6 +176,54 @@ export default function DeliveryOrderDetailPage() {
     setShowProofModal(false);
   };
 
+  const handleFailurePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('File harus berupa gambar (JPG, PNG, WEBP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ukuran file foto maksimal 5 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = event => {
+      setUploadedFailurePhoto(event.target?.result as string);
+      setUploadedFailurePhotoName(file.name);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSelectMockFailurePhoto = (type: 'fail-closed' | 'fail-blocked') => {
+    if (type === 'fail-closed') {
+      setUploadedFailurePhoto('https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=800&q=80');
+      setUploadedFailurePhotoName('rumah_kosong_terkunci.jpg');
+    } else {
+      setUploadedFailurePhoto('https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=800&q=80');
+      setUploadedFailurePhotoName('jalan_ditutup_proyek.jpg');
+    }
+  };
+
+  const handleReportFailedDelivery = () => {
+    if (!failureReason) {
+      toast.error('Alasan gagal kirim wajib dipilih.');
+      return;
+    }
+
+    reportFailedDelivery(dOrder.id, {
+      reason: failureReason,
+      note: failureNote.trim(),
+      photo: uploadedFailurePhoto || undefined,
+    });
+
+    toast.success('Pengiriman dilaporkan gagal. Barang dikembalikan ke gudang & pesanan kembali ke antrean kirim.');
+    setShowFailureModal(false);
+  };
+
   const customerPhone = dOrder.customerPhone || salesOrder?.customer?.phone;
   const orderNotes = salesOrder?.orderNotes || dOrder.notes;
   const backUrl = dOrder.tripId ? `/delivery/trip/${dOrder.tripId}` : '/delivery';
@@ -167,14 +240,57 @@ export default function DeliveryOrderDetailPage() {
             </h1>
             <Badge
               variant={
-                isDelivered ? 'success' : isInTransit ? 'info' : 'warning'
+                isDelivered ? 'success' : isFailed ? 'danger' : isInTransit ? 'info' : 'warning'
               }
             >
-              {isDelivered ? 'Terkirim' : isInTransit ? 'Dalam Perjalanan' : 'Siap Kirim'}
+              {isDelivered ? 'Terkirim' : isFailed ? 'Gagal Kirim' : isInTransit ? 'Dalam Perjalanan' : 'Siap Kirim'}
             </Badge>
           </div>
         }
       />
+
+      {/* Alert Gagal Kirim (Jika Pengiriman Gagal) */}
+      {isFailed && (
+        <Alert
+          variant="danger"
+          title={
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span>Pengiriman Gagal: {dOrder.failureReason || 'Kendala Lapangan'}</span>
+              {dOrder.failedAt && (
+                <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 font-mono">
+                  {formatDateTime(dOrder.failedAt)}
+                </span>
+              )}
+            </div>
+          }
+          description={
+            <div className="space-y-1.5 text-xs">
+              {dOrder.failureNote && (
+                <p className="text-slate-700 dark:text-slate-300">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">Catatan: </span>
+                  {dOrder.failureNote}
+                </p>
+              )}
+              <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                <span>Barang fisik dikembalikan ke rak gudang &amp; stok ditahan telah dilepas.</span>
+                {dOrder.failurePhoto && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPhotoModal({
+                      url: dOrder.failurePhoto!,
+                      title: `Bukti Gagal Kirim — Pesanan #${dOrder.salesOrderNumber}`
+                    })}
+                    className="text-red-600 dark:text-red-400 font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Eye className="w-3 h-3" />
+                    <span>Lihat Foto Bukti</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          }
+        />
+      )}
 
       {/* Grid Layout: Kiri (Info Pesanan & Daftar Produk), Kanan (Riwayat Pengiriman) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -225,16 +341,13 @@ export default function DeliveryOrderDetailPage() {
             </div>
           </div>
 
-          {/* Card Catatan Pesanan dari SO (Sebelum Daftar Barang) */}
+          {/* Alert Catatan Pesanan dari SO (Sebelum Daftar Barang) */}
           {orderNotes && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20 shadow-xs p-5 space-y-2">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                Catatan Pesanan
-              </h2>
-              <p className="text-sm font-normal text-amber-900 dark:text-amber-200 leading-relaxed">
-                {orderNotes}
-              </p>
-            </div>
+            <Alert
+              variant="warning"
+              title="Catatan Pesanan"
+              description={orderNotes}
+            />
           )}
 
           {/* Card Daftar Barang */}
@@ -309,9 +422,10 @@ export default function DeliveryOrderDetailPage() {
                 actor?: string;
                 status: 'completed' | 'current';
                 photo?: string;
+                isFailure?: boolean;
               };
 
-              const isLoaded = Boolean(tripInfo?.loadedAt || isInTransit || isDelivered);
+              const isLoaded = Boolean(tripInfo?.loadedAt || isInTransit || isDelivered || isFailed);
               const timelineEvents: SJTimelineEvent[] = [
                 {
                   id: 'step-created',
@@ -359,6 +473,25 @@ export default function DeliveryOrderDetailPage() {
                     photo: dOrder.deliveryProofPhoto,
                   }
                 ] : []),
+                ...(isFailed ? [
+                  {
+                    id: 'step-departed',
+                    title: 'Keberangkatan ke Lokasi',
+                    description: `Armada berangkat menuju lokasi alamat pengiriman.`,
+                    timestamp: tripInfo?.loadedAt,
+                    status: 'completed' as const,
+                  },
+                  {
+                    id: 'step-failed',
+                    title: 'Pengiriman Gagal — Kembali ke Gudang',
+                    description: `Pengiriman dilaporkan gagal: ${dOrder.failureReason || 'Kendala di lokasi'}.${dOrder.failureNote ? ` Catatan: "${dOrder.failureNote}".` : ''} Barang fisik dibongkar kembali ke rak gudang & stok telah dilepas.`,
+                    timestamp: dOrder.failedAt,
+                    actor: tripInfo?.driverName,
+                    status: 'completed' as const,
+                    isFailure: true,
+                    photo: dOrder.failurePhoto,
+                  }
+                ] : []),
               ];
 
               return (
@@ -372,9 +505,15 @@ export default function DeliveryOrderDetailPage() {
                         {/* Node & Connector Line */}
                         <div className="flex flex-col items-center shrink-0">
                           <div className={`flex items-center justify-center rounded-full bg-white dark:bg-slate-900 mt-0.5 ${
-                            isDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'
+                            evt.isFailure
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : isDone
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-indigo-600 dark:text-indigo-400'
                           }`}>
-                            {isDone ? (
+                            {evt.isFailure ? (
+                              <XCircle className="w-4 h-4 fill-rose-50 dark:fill-rose-950/40" />
+                            ) : isDone ? (
                               <CheckCircle className="w-4 h-4 fill-emerald-50 dark:fill-emerald-950/40" />
                             ) : (
                               <div className="w-4 h-4 rounded-full border-2 border-indigo-600 dark:border-indigo-400 flex items-center justify-center">
@@ -390,7 +529,11 @@ export default function DeliveryOrderDetailPage() {
                         {/* Content */}
                         <div className={`space-y-0.5 min-w-0 flex-1 ${!isLast ? 'pb-3.5' : ''}`}>
                           <div className={`font-semibold ${
-                            isDone ? 'text-slate-900 dark:text-white' : 'text-indigo-600 dark:text-indigo-400 font-bold'
+                            evt.isFailure
+                              ? 'text-rose-600 dark:text-rose-400 font-bold'
+                              : isDone
+                              ? 'text-slate-900 dark:text-white'
+                              : 'text-indigo-600 dark:text-indigo-400 font-bold'
                           }`}>
                             {evt.title}
                           </div>
@@ -418,14 +561,14 @@ export default function DeliveryOrderDetailPage() {
                                 type="button"
                                 onClick={() => setPreviewPhotoModal({
                                   url: evt.photo!,
-                                  title: `Bukti Serah Terima — Pesanan ${dOrder.salesOrderNumber}`
+                                  title: `Bukti Foto — Pesanan ${dOrder.salesOrderNumber}`
                                 })}
                                 className="group relative block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-500 hover:ring-2 hover:ring-indigo-500/20 transition-all cursor-pointer shadow-2xs text-left"
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={evt.photo}
-                                  alt="Bukti Serah Terima"
+                                  alt="Bukti Foto"
                                   className="w-32 h-20 sm:w-36 sm:h-24 object-cover rounded-lg group-hover:scale-105 transition-transform duration-200"
                                 />
                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
@@ -447,7 +590,7 @@ export default function DeliveryOrderDetailPage() {
           </div>
 
           {/* ACTION BUTTONS DI LUAR CONTAINER LOG RIWAYAT */}
-          <div className="flex items-center gap-3 pt-1">
+          <div className="flex items-center gap-2 pt-1">
             {customerPhone && (
               <Button
                 variant="outline"
@@ -461,21 +604,42 @@ export default function DeliveryOrderDetailPage() {
             )}
 
             {isInTransit && (
-              <Button
-                variant="success"
-                size="md"
-                onClick={() => {
-                  setReceiverName('');
-                  setProofNote('');
-                  setUploadedPhotoUrl(null);
-                  setUploadedPhotoName('');
-                  setShowProofModal(true);
-                }}
-                className="flex-1 justify-center shadow-xs"
-              >
-                <CheckCircle className="h-4 w-4 mr-1.5" />
-                <span>Selesaikan Pengiriman</span>
-              </Button>
+              <>
+                <Button
+                  variant="success"
+                  size="md"
+                  onClick={() => {
+                    setReceiverName('');
+                    setProofNote('');
+                    setUploadedPhotoUrl(null);
+                    setUploadedPhotoName('');
+                    setShowProofModal(true);
+                  }}
+                  className="flex-1 justify-center shadow-xs"
+                >
+                  <CheckCircle className="h-4 w-4 mr-1.5" />
+                  <span>Selesaikan Pengiriman</span>
+                </Button>
+
+                <ActionMenu
+                  triggerSize="md"
+                  triggerTitle="Pilihan Tindakan"
+                  items={[
+                    {
+                      label: 'Laporkan Gagal Kirim',
+                      icon: <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />,
+                      variant: 'danger',
+                      onClick: () => {
+                        setFailureReason('Alamat tidak ditemukan');
+                        setFailureNote('');
+                        setUploadedFailurePhoto(null);
+                        setUploadedFailurePhotoName('');
+                        setShowFailureModal(true);
+                      },
+                    },
+                  ]}
+                />
+              </>
             )}
           </div>
         </div>
@@ -617,6 +781,147 @@ export default function DeliveryOrderDetailPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Laporkan Gagal Kirim */}
+      <Modal
+        isOpen={showFailureModal}
+        onClose={() => setShowFailureModal(false)}
+        title={`Laporkan Gagal Kirim — Pesanan #${dOrder.salesOrderNumber}`}
+        size="lg"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setShowFailureModal(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleReportFailedDelivery}
+              disabled={!failureReason}
+            >
+              Konfirmasi Gagal Kirim
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl bg-slate-50 p-3.5 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-xs space-y-1.5">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Nomor Pesanan:</span>
+              <strong className="font-mono text-indigo-600 dark:text-indigo-400">#{dOrder.salesOrderNumber}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Tujuan Pengiriman:</span>
+              <strong className="text-slate-900 dark:text-white">{dOrder.customerName}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Alamat:</span>
+              <span className="text-slate-700 dark:text-slate-300 truncate max-w-sm text-right">
+                {dOrder.customerAddress}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <Select
+              label="Alasan Gagal Kirim"
+              required
+              options={FAILURE_REASON_OPTIONS}
+              value={failureReason}
+              onChange={e => setFailureReason(e.target.value)}
+              placeholder="Pilih alasan kendala pengiriman"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Catatan Situasi Lapangan
+            </label>
+            <textarea
+              value={failureNote}
+              onChange={e => setFailureNote(e.target.value)}
+              placeholder="Contoh: Lokasi tutup/gerbang terkunci dan nomor penerima tidak dapat dihubungi saat tiba..."
+              className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+              rows={3}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Foto Bukti Kendala di Lapangan
+            </label>
+            <input
+              type="file"
+              ref={failureFileInputRef}
+              accept="image/*"
+              onChange={handleFailurePhotoFileChange}
+              className="hidden"
+            />
+
+            {uploadedFailurePhoto ? (
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-600 dark:text-slate-400 truncate max-w-xs font-mono">
+                    {uploadedFailurePhotoName || 'Foto Bukti Terlampir'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadedFailurePhoto(null);
+                      setUploadedFailurePhotoName('');
+                    }}
+                    className="text-xs text-rose-500 hover:underline cursor-pointer"
+                  >
+                    Hapus
+                  </button>
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={uploadedFailurePhoto}
+                  alt="Preview Bukti Gagal Kirim"
+                  className="h-44 w-full object-cover rounded-lg border border-slate-200 dark:border-slate-700"
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => failureFileInputRef.current?.click()}
+                  className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-rose-400 dark:hover:border-rose-500 hover:bg-rose-50/20 dark:hover:bg-rose-950/10 transition-all text-slate-500 dark:text-slate-400 cursor-pointer"
+                >
+                  <Camera className="w-6 h-6 text-slate-400" />
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                      Klik untuk ambil foto / upload bukti kendala
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      JPG, PNG, atau WEBP (Maksimal 5 MB)
+                    </p>
+                  </div>
+                </button>
+
+                {/* Quick Mock Photos for Demo / Testing */}
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <span className="text-[11px] text-slate-400">Foto Cepat:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectMockFailurePhoto('fail-closed')}
+                    className="text-[11px] px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Gerbang Terkunci
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectMockFailurePhoto('fail-blocked')}
+                    className="text-[11px] px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Akses Jalan Terhalang
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </Modal>

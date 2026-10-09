@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { Alert } from '@/components/ui/Alert';
 import {
   formatCurrency,
   formatDateTime,
@@ -22,6 +23,7 @@ import {
   getOrderStatusColor,
   getOrderStatusVariant,
   getOrderStatusLabel,
+  getComplaintStatusLabel,
 } from '@/lib/utils';
 import { canApproveOrder, USER_ACCOUNTS } from '@/lib/roles';
 import { ComplaintAttachment } from '@/lib/types';
@@ -490,7 +492,7 @@ export default function OrderDetailPage() {
         actor: 'Admin Customer Service',
         status: 'completed',
       });
-    } else if (cmp.resolution === 'Kirim Barang Pengganti' && cmp.status === 'SELESAI' && cmp.resolvedAt) {
+    } else if ((cmp.resolution === 'Penuhi Barang Pengganti' || cmp.resolution === 'Kirim Barang Pengganti') && cmp.status === 'SELESAI' && cmp.resolvedAt) {
       rawEvents.push({
         id: `cmp-resolved-${cmp.id}`,
         title: 'Komplain Selesai',
@@ -572,7 +574,7 @@ export default function OrderDetailPage() {
       actor: '',
       status: 'current',
     });
-  } else if ((order.complaints || []).some(c => c.status === 'DITANGANI' && c.replacementStatus === 'WAITING_PRODUCTION')) {
+  } else if ((order.complaints || []).some(c => (c.status === 'MENUNGGU' || c.status === 'DITANGANI') && c.replacementStatus === 'WAITING_PRODUCTION')) {
     sortedEvents.push({
       id: 'step-comp-prod',
       title: 'Produksi Barang Pengganti',
@@ -580,7 +582,7 @@ export default function OrderDetailPage() {
       actor: '',
       status: 'current',
     });
-  } else if ((order.complaints || []).some(c => c.status === 'DITANGANI' && c.replacementStatus === 'READY_FOR_DELIVERY')) {
+  } else if ((order.complaints || []).some(c => (c.status === 'MENUNGGU' || c.status === 'DITANGANI') && c.replacementStatus === 'READY_FOR_DELIVERY')) {
     sortedEvents.push({
       id: 'step-comp-delivery',
       title: 'Menunggu Pengiriman Barang Pengganti',
@@ -679,7 +681,7 @@ export default function OrderDetailPage() {
             }
 
             // Hanya bisa mengajukan komplain jika pesanan berstatus TERKIRIM (SENT) dan tidak ada komplain aktif
-            const hasActiveComplaint = order.complaints?.some(c => c.status !== 'SELESAI');
+            const hasActiveComplaint = order.complaints?.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK');
             if (order.status === 'SENT' && !hasActiveComplaint) {
               items.push({
                 label: 'Ajukan Komplain',
@@ -701,10 +703,10 @@ export default function OrderDetailPage() {
       />
 
       {/* COMPLAINT INFO ALERT */}
-      {order.complaints && order.complaints.some(c => c.status !== 'SELESAI') && (
+      {order.complaints && order.complaints.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK') && (
         <div className="space-y-2">
           {order.complaints
-            .filter(c => c.status !== 'SELESAI')
+            .filter(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK')
             .map(complaint => (
             <div
               key={complaint.id}
@@ -714,7 +716,7 @@ export default function OrderDetailPage() {
                 <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
                 <div className="min-w-0">
                   <span className="font-bold mr-1.5">Komplain: {complaint.category}</span>
-                  <span className="text-amber-700/80 dark:text-amber-300/80 text-[11px]">({complaint.status}) — "{complaint.description}"</span>
+                  <span className="text-amber-700/80 dark:text-amber-300/80 text-[11px]">({getComplaintStatusLabel(complaint.status)}) — "{complaint.description}"</span>
                 </div>
               </div>
               <Link
@@ -730,13 +732,16 @@ export default function OrderDetailPage() {
 
       {/* CANCELED ORDER REASON ALERT */}
       {order.status === 'CANCELED' && order.cancelReason && (
-        <div className="text-xs text-red-700 bg-red-50 dark:bg-red-950/40 dark:text-red-300 p-4 rounded-xl border border-red-200 dark:border-red-900/60 flex items-start gap-2.5">
-          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-bold block">Alasan Pembatalan:</span>
-            <span className="mt-0.5 block leading-relaxed">{order.cancelReason}</span>
-          </div>
-        </div>
+        <Alert
+          variant="danger"
+          title="Pesanan Dibatalkan"
+          description={
+            <div className="mt-0.5">
+              <span className="font-medium text-slate-700 dark:text-slate-300">Alasan: </span>
+              <span>{order.cancelReason}</span>
+            </div>
+          }
+        />
       )}
 
       {/* 2-COLUMN LAYOUT */}

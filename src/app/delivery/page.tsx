@@ -91,6 +91,8 @@ export interface DeliveryTripGroup {
   totalUnitsCount: number;
   totalDestinationsCount: number;
   deliveredCount: number;
+  failedCount?: number;
+  completedCount?: number;
   isAllDelivered: boolean;
   isReadyToShip: boolean;
   isInTransit: boolean;
@@ -115,6 +117,7 @@ function DeliveryContent() {
     armadas,
     drivers,
     workOrders,
+    finishedGoods,
     createDeliveryOrder,
     confirmLoadingDelivery,
     confirmDelivery,
@@ -200,7 +203,7 @@ function DeliveryContent() {
       const hasUnfulfilledItems = o.items.some(it => (it.deliveredQty || 0) < it.qty);
       if (hasUnfulfilledItems) return true;
       return (o.complaints || []).some(
-        c => c.resolution === 'Kirim Barang Pengganti' && c.replacementStatus === 'READY_FOR_DELIVERY'
+        c => (c.resolution === 'Penuhi Barang Pengganti' || c.resolution === 'Kirim Barang Pengganti') && c.replacementStatus === 'READY_FOR_DELIVERY'
       );
     });
 
@@ -242,6 +245,7 @@ function DeliveryContent() {
             let isShipped = false;
             if (unitWO && unitWO.spkNumber) {
               isShipped = activeDOs.some(d =>
+                d.status !== 'FAILED' &&
                 (d.orderItems || []).some(
                   oi =>
                     (oi.orderId === order.id || oi.orderNumber === order.orderNumber) &&
@@ -251,6 +255,7 @@ function DeliveryContent() {
             }
             if (!isShipped) {
               isShipped = activeDOs.some(d =>
+                d.status !== 'FAILED' &&
                 (d.orderItems || []).some(
                   oi =>
                     (oi.orderId === order.id || oi.orderNumber === order.orderNumber) &&
@@ -303,12 +308,15 @@ function DeliveryContent() {
 
       // Unit penggantian dari komplain pelanggan yang siap kirim
       (order.complaints || []).forEach(comp => {
-        if (comp.resolution === 'Kirim Barang Pengganti' && comp.replacementStatus === 'READY_FOR_DELIVERY') {
+        if ((comp.resolution === 'Penuhi Barang Pengganti' || comp.resolution === 'Kirim Barang Pengganti') && comp.replacementStatus === 'READY_FOR_DELIVERY') {
           (comp.items || []).forEach((ci, ciIdx) => {
             totalOrderUnits += ci.qty;
             const replWO = (workOrders || []).find(
               w => w.complaintId === comp.id && (w.productId ? w.productId === ci.productId : w.productName === ci.productName)
             );
+            const reservedUnit = (finishedGoods || [])
+              .flatMap(fg => fg.units || [])
+              .find(u => u.complaintId === comp.id);
 
             for (let u = 1; u <= ci.qty; u++) {
               allUnits.push({
@@ -323,7 +331,7 @@ function DeliveryContent() {
                 itemIndex: -1,
                 unitNumber: u,
                 totalOrderedQty: ci.qty,
-                spkNumber: replWO?.spkNumber,
+                spkNumber: replWO?.spkNumber || (reservedUnit?.spkNumber ? `${reservedUnit.spkNumber} (Gudang)` : reservedUnit ? 'Stok Gudang' : undefined),
                 orderCreatedAt: comp.resolvedAt || order.createdAt,
                 unitStatus: 'READY',
                 isReplacement: true,
@@ -485,6 +493,9 @@ function DeliveryContent() {
       if (d.status === 'DELIVERED') {
         group.deliveredCount += 1;
       }
+      if (d.status === 'FAILED') {
+        group.failedCount = (group.failedCount || 0) + 1;
+      }
       if (d.loadedAt && !group.loadedAt) {
         group.loadedAt = d.loadedAt;
         group.loadedBy = d.loadedBy;
@@ -493,14 +504,16 @@ function DeliveryContent() {
 
     return Array.from(map.values()).map(group => {
       const totalDOs = group.deliveryOrders.length;
-      const isAllDelivered = totalDOs > 0 && group.deliveredCount === totalDOs;
+      const completedCount = group.deliveryOrders.filter(d => d.status === 'DELIVERED' || d.status === 'FAILED').length;
+      const isAllCompleted = totalDOs > 0 && completedCount === totalDOs;
       const isReadyToShip = group.deliveryOrders.every(d => d.status === 'READY_TO_SHIP' || d.status === 'PENDING');
-      const isInTransit = !isReadyToShip && !isAllDelivered;
+      const isInTransit = !isReadyToShip && !isAllCompleted;
 
       group.totalDestinationsCount = group.deliveryOrders.length;
-      group.isAllDelivered = isAllDelivered;
+      group.isAllDelivered = isAllCompleted;
       group.isReadyToShip = isReadyToShip;
       group.isInTransit = isInTransit;
+      group.completedCount = completedCount;
 
       return group;
     });
@@ -724,7 +737,19 @@ function DeliveryContent() {
     setSelectedArmadaId(initialArmada?.id || '');
     setCustomVehiclePlate(initialArmada?.plateNumber || '');
     setScheduledShipDate(new Date().toISOString().split('T')[0]);
-    setShipmentNotes('');
+    // Deteksi otomatis jika ada unit penggantian komplain yang memerlukan tukar guling (tarik barang)
+    const tukarGulingUnits = selectedUnitsList.filter(u => {
+      if (!u.isReplacement || !u.complaintId) return false;
+      const order = salesOrders.find(o => o.id === u.orderId);
+      const cmp = order?.complaints?.find(c => c.id === u.complaintId);
+      return cmp?.isReturnRequested;
+    });
+
+    if (tukarGulingUnits.length > 0) {
+      setShipmentNotes('[TUKAR GULING] Tarik barang komplain/retur fisik dari pelanggan saat serah terima barang baru.');
+    } else {
+      setShipmentNotes('');
+    }
     setExpandedCreateOrderIds({});
     setShowCreateModal(true);
   };
@@ -855,7 +880,7 @@ function DeliveryContent() {
     {
       key: 'queue',
       label: 'Antrean Kirim',
-      count: totalReadyUnitsCount,
+      count: queueOrderGroups.length,
       icon: Clock,
     },
     {
@@ -1369,7 +1394,7 @@ function DeliveryContent() {
 
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                          {trip.deliveredCount} dari {trip.totalDestinationsCount} Selesai • {trip.totalUnitsCount} Unit
+                          {(trip.completedCount !== undefined ? trip.completedCount : trip.deliveredCount)} dari {trip.totalDestinationsCount} Selesai • {trip.totalUnitsCount} Unit
                         </span>
                         <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all shrink-0" />
                       </div>
@@ -1379,6 +1404,7 @@ function DeliveryContent() {
                     <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                       {trip.deliveryOrders.map(dOrder => {
                         const isDelivered = dOrder.status === 'DELIVERED';
+                        const isFailed = dOrder.status === 'FAILED';
                         const doUnits = dOrder.orderItems && dOrder.orderItems.length > 0
                           ? dOrder.orderItems.reduce((acc: number, i: any) => acc + (i.qty || 1), 0)
                           : dOrder.items.length;
@@ -1391,6 +1417,8 @@ function DeliveryContent() {
                               'group/item p-3.5 pl-6 sm:pl-8 flex items-center justify-between gap-4 transition-colors cursor-pointer select-none',
                               isDelivered
                                 ? 'bg-emerald-50/15 dark:bg-emerald-950/10 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20'
+                                : isFailed
+                                ? 'bg-rose-50/15 dark:bg-rose-950/10 hover:bg-rose-50/30 dark:hover:bg-rose-950/20'
                                 : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
                             )}
                           >
@@ -1421,13 +1449,18 @@ function DeliveryContent() {
                               </div>
 
                               <Badge
-                                variant={isDelivered ? 'success' : 'info'}
+                                variant={isDelivered ? 'success' : isFailed ? 'danger' : 'info'}
                                 className="text-[10px]"
                               >
                                 {isDelivered ? (
                                   <span className="flex items-center gap-1">
                                     <CheckCircle2 className="h-3 w-3" />
                                     Terkirim
+                                  </span>
+                                ) : isFailed ? (
+                                  <span className="flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Gagal Kirim
                                   </span>
                                 ) : (
                                   'Dalam Perjalanan'
@@ -1507,6 +1540,8 @@ function DeliveryContent() {
                     {/* List Surat Jalan di dalam Trip */}
                     <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                       {trip.deliveryOrders.map(dOrder => {
+                        const isDelivered = dOrder.status === 'DELIVERED';
+                        const isFailed = dOrder.status === 'FAILED';
                         const doUnits = dOrder.orderItems && dOrder.orderItems.length > 0
                           ? dOrder.orderItems.reduce((acc: number, i: any) => acc + (i.qty || 1), 0)
                           : dOrder.items.length;
@@ -1515,7 +1550,12 @@ function DeliveryContent() {
                           <div
                             key={dOrder.id}
                             onClick={() => router.push(`/delivery/sj/${dOrder.id}`)}
-                            className="group/item p-3.5 pl-6 sm:pl-8 flex items-center justify-between gap-4 transition-colors cursor-pointer select-none hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                            className={cn(
+                              'group/item p-3.5 pl-6 sm:pl-8 flex items-center justify-between gap-4 transition-colors cursor-pointer select-none',
+                              isFailed
+                                ? 'bg-rose-50/15 dark:bg-rose-950/10 hover:bg-rose-50/30 dark:hover:bg-rose-950/20'
+                                : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                            )}
                           >
                             {/* Kiri: Icon + Info Nama Pelanggan & Alamat */}
                             <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1544,13 +1584,20 @@ function DeliveryContent() {
                               </div>
 
                               <Badge
-                                variant="success"
+                                variant={isFailed ? 'danger' : 'success'}
                                 className="text-[10px]"
                               >
-                                <span className="flex items-center gap-1">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Terkirim
-                                </span>
+                                {isFailed ? (
+                                  <span className="flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Gagal Kirim
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Terkirim
+                                  </span>
+                                )}
                               </Badge>
 
                               <ChevronRight className="h-4 w-4 text-slate-400 group-hover/item:text-indigo-600 dark:group-hover/item:text-indigo-400 group-hover/item:translate-x-0.5 transition-all shrink-0" />

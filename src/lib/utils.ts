@@ -228,12 +228,23 @@ export function getInvoiceStatusLabel(status: string): string {
 
 export function getPOStatusLabel(status: POStatus | string): string {
   switch (status) {
-    case 'DRAFT': return 'Diajukan';
+    case 'DRAFT': return 'Menunggu';
     case 'ORDERED': return 'Dipesan';
     case 'PARTIALLY_RECEIVED': return 'Diterima Sebagian';
     case 'RECEIVED': return 'Diterima';
     case 'REJECTED': return 'Ditolak';
     case 'CANCELED': return 'Dibatalkan';
+    default: return status;
+  }
+}
+
+export function getComplaintStatusLabel(status: string): string {
+  switch (status) {
+    case 'DIAJUKAN':
+    case 'MENUNGGU': return 'Menunggu';
+    case 'DITANGANI': return 'Ditangani';
+    case 'SELESAI': return 'Selesai';
+    case 'DITOLAK': return 'Ditolak';
     default: return status;
   }
 }

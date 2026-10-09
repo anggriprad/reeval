@@ -148,6 +148,7 @@ export function Table<T>({
                   key={col.key}
                   style={col.width ? { width: col.width } : undefined}
                   className={cn(
+                    'whitespace-nowrap',
                     getCellPadding(colIdx),
                     getAlignClass(col.align),
                     col.headerClassName
@@ -177,6 +178,7 @@ export function Table<T>({
                       <td
                         key={col.key}
                         className={cn(
+                          'whitespace-nowrap',
                           getCellPadding(colIdx),
                           getAlignClass(col.align),
                           col.className

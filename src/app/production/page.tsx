@@ -976,7 +976,7 @@ function ProductionContent() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
                   <tr>
                     <th className="px-5 py-3.5">Rank & Operator</th>
@@ -1084,7 +1084,7 @@ function ProductionContent() {
 
             {/* KPI Analysis Table per Operation Step */}
             <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl">
-              <table className="w-full text-xs text-left">
+              <table className="w-full text-xs text-left whitespace-nowrap">
                 <thead className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 font-bold uppercase tracking-wider">
                   <tr>
                     <th className="py-3 px-3.5">Operasi</th>

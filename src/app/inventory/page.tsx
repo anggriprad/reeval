@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUrlTab } from '@/lib/useUrlTab';
 import { useApp } from '@/context/AppContext';
@@ -18,10 +18,11 @@ import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Table } from '@/components/ui/Table';
 import { Toggle } from '@/components/ui/Toggle';
 import { Checkbox } from '@/components/ui/Checkbox';
+import { TruncatedText } from '@/components/ui/TruncatedText';
 import { ActionMenu, type ActionMenuItem } from '@/components/ui/ActionMenu';
 import { formatCurrency, formatDateTime, getStockLevel, getStockLevelColor, getStockLevelTextColor, getStockLevelBadgeVariant, getStockLevelDescription, calculateSubAssemblyCost, calculateRollupBOMCost, getEffectiveVariantBOM, formatVariantLabel, getPOStatusLabel, getPOStatusVariant } from '@/lib/utils';
 import { canCreatePO, canManageInventory, canRequestPO, canManageProduction } from '@/lib/roles';
-import type { RawMaterial, CompanyAsset, CompanyAssetServiceLog, BOMItem, PurchaseOrder, ReturnedGood, ReturnedGoodAction, ReturnedGoodStatus, AssetAcquisitionType, AssetStatus } from '@/lib/types';
+import type { RawMaterial, CompanyAsset, CompanyAssetServiceLog, BOMItem, PurchaseOrder, ReturnedGood, ReturnedGoodAction, ReturnedGoodStatus, AssetAcquisitionType, AssetStatus, FinishedGoodStock, FinishedGoodUnit } from '@/lib/types';
 import Link from 'next/link';
 import {
   Plus,
@@ -150,12 +151,24 @@ export function InventoryContent() {
     salesOrders = [],
     returnedGoods = [],
     processReturnedGoodAction,
+    confirmReceiveReturnedGood,
+    allocateFinishedGoodToOrder,
+    workOrders = [],
+    deliveryOrders = [],
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryFilter, setInventoryFilter] = useState('');
   const [rawStatusFilter, setRawStatusFilter] = useState('');
   const [activeTab, setActiveTab] = useUrlTab(['raw', 'finished', 'movements', 'procurement', 'assets', 'returns'] as const, 'raw');
+
+  // Alokasi Barang Jadi ke SO / Pengiriman
+  const [selectedFGForAllocation, setSelectedFGForAllocation] = useState<FinishedGoodStock | null>(null);
+  const [selectedUnitForAllocation, setSelectedUnitForAllocation] = useState<string>('');
+  const [targetOrderIdForAllocation, setTargetOrderIdForAllocation] = useState<string>('');
+  const [allocationPurpose, setAllocationPurpose] = useState<'REGULAR' | 'COMPLAINT'>('REGULAR');
+  const [targetComplaintIdForAllocation, setTargetComplaintIdForAllocation] = useState<string>('');
+  const [allocationError, setAllocationError] = useState<string>('');
 
   // Modal SPK Bahan Setengah Jadi (WIP)
   const [showSaModal, setShowSaModal] = useState(false);
@@ -668,6 +681,114 @@ export function InventoryContent() {
     return { unitHPP, totalHPP, potentialRevenue };
   };
 
+  // Map stok bahan baku yang ditahan oleh SPK aktif
+  const reservedMaterialMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (workOrders || [])
+      .filter(w => w.status !== 'COMPLETED' && w.status !== 'CANCELED')
+      .forEach(w => {
+        (w.materialsConsumed || []).forEach(b => {
+          map.set(b.materialId, (map.get(b.materialId) || 0) + b.qty);
+        });
+      });
+    return map;
+  }, [workOrders]);
+
+  // Map stok barang jadi yang ditahan oleh unit RESERVED di gudang, Antrean Kirim, dan Delivery Order aktif
+  const reservedFinishedGoodMap = useMemo(() => {
+    const map = new Map<string, number>();
+
+    // 1. Dari unit fisik yang RESERVED di finishedGoods
+    finishedGoods.forEach(fg => {
+      const explicitReserved = (fg.units || []).filter(u => u.status === 'RESERVED').length;
+      if (explicitReserved > 0) {
+        map.set(fg.id, explicitReserved);
+      }
+    });
+
+    // 2. Untuk finished goods yang belum memiliki list units eksplisit:
+    finishedGoods.forEach(fg => {
+      if (!map.has(fg.id)) {
+        let reservedCount = 0;
+        (salesOrders || []).forEach(so => {
+          if (so.status !== 'CANCELED' && so.status !== 'SENT') {
+            (so.items || []).forEach(item => {
+              const match = (item.productId === fg.productId && (!fg.variantId || item.variantId === fg.variantId)) ||
+                (item.productName === fg.productName && (!fg.variantLabel || item.variantLabel === fg.variantLabel));
+              if (match) {
+                const waitingToShip = Math.max(0, (item.producedQty || 0) - (item.deliveredQty || 0));
+                reservedCount += waitingToShip;
+              }
+            });
+          }
+        });
+        if (reservedCount > 0) {
+          map.set(fg.id, Math.min(fg.stock, reservedCount));
+        }
+      }
+    });
+
+    return map;
+  }, [deliveryOrders, finishedGoods, salesOrders]);
+
+  // Filter Sales Order yang membutuhkan barang jadi ini (untuk modal alokasi)
+  const eligibleOrdersForAllocation = useMemo(() => {
+    if (!selectedFGForAllocation) return [];
+    return (salesOrders || []).filter(so => {
+      if (so.status === 'CANCELED') return false;
+      if (so.status === 'SENT') {
+        return (so.complaints || []).some(c =>
+          (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
+          c.replacementStatus !== 'DELIVERED' &&
+          (c.items || []).some(ci =>
+            ci.productId === selectedFGForAllocation.productId &&
+            (!selectedFGForAllocation.variantId || ci.variantId === selectedFGForAllocation.variantId)
+          )
+        );
+      }
+      const hasUnfulfilledItem = (so.items || []).some(item =>
+        item.productId === selectedFGForAllocation.productId &&
+        (!selectedFGForAllocation.variantId || item.variantId === selectedFGForAllocation.variantId) &&
+        (item.producedQty || 0) < item.qty
+      );
+      const hasActiveComplaint = (so.complaints || []).some(c =>
+        (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
+        c.replacementStatus !== 'DELIVERED' &&
+        (c.items || []).some(ci =>
+          ci.productId === selectedFGForAllocation.productId &&
+          (!selectedFGForAllocation.variantId || ci.variantId === selectedFGForAllocation.variantId)
+        )
+      );
+      return hasUnfulfilledItem || hasActiveComplaint;
+    });
+  }, [selectedFGForAllocation, salesOrders]);
+
+  const handleConfirmAllocation = () => {
+    if (!selectedFGForAllocation || !targetOrderIdForAllocation) {
+      setAllocationError('Pilih Sales Order tujuan.');
+      return;
+    }
+
+    const res = allocateFinishedGoodToOrder(
+      selectedFGForAllocation.id,
+      selectedUnitForAllocation || undefined,
+      targetOrderIdForAllocation,
+      allocationPurpose === 'COMPLAINT' ? targetComplaintIdForAllocation : undefined
+    );
+
+    if (res.success) {
+      toast.success('Alokasi Berhasil', res.message || 'Unit berhasil dialokasikan ke Antrean Kirim.');
+      setSelectedFGForAllocation(null);
+      setTargetOrderIdForAllocation('');
+      setSelectedUnitForAllocation('');
+      setTargetComplaintIdForAllocation('');
+      setAllocationPurpose('REGULAR');
+      setAllocationError('');
+    } else {
+      setAllocationError(res.message || 'Gagal mengalokasikan unit.');
+    }
+  };
+
   const filteredReturnedGoods = (returnedGoods || []).filter(rg => {
     const matchesStatus = !inventoryFilter || rg.status === inventoryFilter;
     const q = searchTerm.toLowerCase();
@@ -785,7 +906,7 @@ export function InventoryContent() {
       setPOItems([]);
       setSelectedSupplier('');
       setShowPOModal(false);
-      toast.success('Pengadaan Berhasil Diajukan');
+      toast.success('Pengadaan Berhasil Dibuat');
     }
   };
 
@@ -1013,7 +1134,7 @@ export function InventoryContent() {
           filterPlaceholder = "Semua Status";
           filterOptions = [
             { value: '', label: 'Semua Status' },
-            { value: 'DRAFT', label: 'Diajukan' },
+            { value: 'DRAFT', label: 'Menunggu' },
             { value: 'ORDERED', label: 'Dipesan' },
             { value: 'PARTIALLY_RECEIVED', label: 'Diterima Sebagian' },
             { value: 'RECEIVED', label: 'Diterima' },
@@ -1133,11 +1254,17 @@ export function InventoryContent() {
                 key: 'name',
                 header: 'Nama Bahan',
                 align: 'left',
+                width: '300px',
+                className: 'min-w-[260px]',
                 cell: (mat) => (
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-900 dark:text-white">{mat.name}</span>
+                  <div className="flex items-center gap-2 max-w-[320px]">
+                    <TruncatedText
+                      text={mat.name}
+                      className="font-semibold text-slate-900 dark:text-white"
+                      maxWidth="250px"
+                    />
                     {mat.isSubAssembly && (
-                      <Badge variant="purple">WIP</Badge>
+                      <Badge variant="purple" className="shrink-0">WIP</Badge>
                     )}
                   </div>
                 ),
@@ -1155,6 +1282,19 @@ export function InventoryContent() {
                 cell: (mat) => (
                   <span className="font-semibold text-slate-900 dark:text-white">{mat.stock}</span>
                 ),
+              },
+              {
+                key: 'reservedStock',
+                header: 'Stok Ditahan',
+                align: 'right',
+                cell: (mat) => {
+                  const reserved = reservedMaterialMap.get(mat.id) || 0;
+                  return (
+                    <span className={`font-mono ${reserved > 0 ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+                      {reserved}
+                    </span>
+                  );
+                },
               },
               {
                 key: 'unit',
@@ -1306,6 +1446,8 @@ export function InventoryContent() {
                 {
                   key: 'productName',
                   header: 'Nama Produk',
+                  width: '320px',
+                  className: 'min-w-[300px]',
                   cell: (fg) => {
                     const prod = products.find(p => p.id === fg.productId);
                     const variant = prod?.variants?.find(v => v.id === fg.variantId);
@@ -1313,14 +1455,18 @@ export function InventoryContent() {
                     const productName = fg.productName || prod?.name || 'Produk Tidak Ditemukan';
 
                     return (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-semibold text-slate-900 dark:text-white">
-                          {productName}
-                        </span>
+                      <div className="flex flex-col gap-0.5 max-w-[320px]">
+                        <TruncatedText
+                          text={productName}
+                          className="font-semibold text-slate-900 dark:text-white"
+                          maxWidth="300px"
+                        />
                         {variantText && (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {formatVariantLabel(variantText)}
-                          </span>
+                          <TruncatedText
+                            text={formatVariantLabel(variantText)}
+                            className="text-xs text-slate-500 dark:text-slate-400"
+                            maxWidth="300px"
+                          />
                         )}
                       </div>
                     );
@@ -1349,6 +1495,33 @@ export function InventoryContent() {
                       {fg.stock}
                     </span>
                   ),
+                },
+                {
+                  key: 'reservedStock',
+                  header: 'Stok Ditahan',
+                  align: 'right',
+                  cell: (fg) => {
+                    const reserved = reservedFinishedGoodMap.get(fg.id) || 0;
+                    return (
+                      <span className={`font-mono ${reserved > 0 ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {reserved}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: 'availableStock',
+                  header: 'Stok Bebas',
+                  align: 'right',
+                  cell: (fg) => {
+                    const reserved = reservedFinishedGoodMap.get(fg.id) || 0;
+                    const available = Math.max(0, fg.stock - reserved);
+                    return (
+                      <span className={`font-mono font-semibold ${available > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {available}
+                      </span>
+                    );
+                  },
                 },
                 {
                   key: 'unitHPP',
@@ -1389,6 +1562,37 @@ export function InventoryContent() {
                     );
                   },
                 },
+                ...(canManageInventory(currentUser.role)
+                  ? [
+                      {
+                        key: 'action',
+                        header: 'Aksi',
+                        align: 'center' as const,
+                        width: '120px',
+                        cell: (fg: FinishedGoodStock) => {
+                          const reserved = reservedFinishedGoodMap.get(fg.id) || 0;
+                          const available = Math.max(0, fg.stock - reserved);
+                          return (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={available <= 0}
+                              onClick={() => {
+                                setSelectedFGForAllocation(fg);
+                                setSelectedUnitForAllocation('');
+                                setTargetOrderIdForAllocation('');
+                                setTargetComplaintIdForAllocation('');
+                                setAllocationPurpose('REGULAR');
+                                setAllocationError('');
+                              }}
+                            >
+                              Alokasikan
+                            </Button>
+                          );
+                        },
+                      },
+                    ]
+                  : []),
               ]}
             />
         </Card>
@@ -1396,104 +1600,201 @@ export function InventoryContent() {
 
       {/* Barang Retur Table */}
       {activeTab === 'returns' && (
-        <Card>
-          {filteredReturnedGoods.length === 0 ? (
-            <EmptyState
-              icon={<RotateCcw className="h-7 w-7" />}
-              title="Tidak ada barang retur"
-              description={
-                searchTerm || inventoryFilter
-                  ? "Tidak ada data barang retur yang sesuai dengan pencarian atau filter."
-                  : "Barang retur dari komplain refund / pembatalan pesanan akan otomatis tercatat di sini."
-              }
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Produk</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Ref</th>
-                    <th className="pb-3 pr-3 text-right font-medium text-slate-500">Qty</th>
-                    <th className="pb-3 pr-3 text-left font-medium text-slate-500">Alasan Retur</th>
-                    {canManageInventory(currentUser.role) && (
-                      <th className="pb-3 text-center font-medium text-slate-500 w-[140px] whitespace-nowrap">Action</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReturnedGoods.map(rg => {
-                    const prod = products.find(p => p.id === rg.productId || p.name === rg.productName);
-                    const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
-                    const soItem = salesOrders
-                      .find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber)
-                      ?.items.find(i => i.productId === rg.productId && (!rg.variantId || i.variantId === rg.variantId));
-                    const orderItemNotes = rg.customNotes || soItem?.customNotes;
+        <Card className="p-0 overflow-hidden">
+          <Table
+            data={filteredReturnedGoods}
+            keyExtractor={(rg) => rg.id}
+            embedded
+            emptyTitle="Tidak Ada Barang Retur"
+            emptyDescription={
+              searchTerm || inventoryFilter
+                ? "Tidak ada data barang retur yang cocok dengan pencarian atau filter."
+                : "Barang retur dari komplain yang telah disetujui (refund, penggantian, atau perbaikan) akan otomatis tercatat di sini."
+            }
+            emptyIcon={<RotateCcw className="h-7 w-7 text-slate-400" />}
+            columns={[
+              {
+                key: 'product',
+                header: 'Produk',
+                align: 'left',
+                width: '320px',
+                className: 'min-w-[300px]',
+                cell: (rg) => {
+                  const prod = products.find(p => p.id === rg.productId || p.name === rg.productName);
+                  const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
+                  const soItem = salesOrders
+                    .find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber)
+                    ?.items.find(i => i.productId === rg.productId && (!rg.variantId || i.variantId === rg.variantId));
+                  const orderItemNotes = rg.customNotes || soItem?.customNotes;
 
-                    return (
-                      <tr key={rg.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                        <td className="py-3.5 pr-3 font-normal text-slate-900 dark:text-white">
-                          <div className="flex items-start gap-3">
-                            {prod?.image ? (
-                              <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                                <img src={prod.image} alt={rg.productName} className="w-full h-full object-cover" />
-                              </div>
-                            ) : (
-                              <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                                <IconComp className="h-5 w-5" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <div className="font-semibold text-xs text-slate-900 dark:text-white">{rg.productName}</div>
-                              {rg.variantLabel && (
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {formatVariantLabel(rg.variantLabel)}
-                                </div>
-                              )}
-                              {orderItemNotes && (
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                                  Catatan: {orderItemNotes}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3.5 pr-3 whitespace-nowrap">
-                          <Link
-                            href={`/order/complaint/${rg.complaintId}`}
-                            className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-                          >
-                            {rg.complaintId}
-                          </Link>
-                        </td>
-                        <td className="py-3.5 pr-3 text-right font-mono text-xs font-semibold text-slate-900 dark:text-white whitespace-nowrap">
-                          {rg.qty}
-                        </td>
-                        <td className="py-3.5 pr-3 text-xs text-slate-600 dark:text-slate-400 max-w-xs truncate" title={rg.conditionReason}>
-                          {rg.conditionReason}
-                        </td>
-                        {canManageInventory(currentUser.role) && (
-                          <td className="py-3.5 text-center whitespace-nowrap w-[140px]">
-                            {rg.status === 'PENDING' ? (
+                  return (
+                    <div className="flex items-start gap-3 max-w-[320px]">
+                      {prod?.image ? (
+                        <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                          <img src={prod.image} alt={rg.productName} className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                          <IconComp className="h-5 w-5" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex flex-col gap-0.5">
+                        <TruncatedText
+                          text={rg.productName}
+                          className="font-semibold text-xs text-slate-900 dark:text-white"
+                          maxWidth="240px"
+                        />
+                        {rg.variantLabel && (
+                          <TruncatedText
+                            text={formatVariantLabel(rg.variantLabel)}
+                            className="text-[11px] text-slate-500 dark:text-slate-400"
+                            maxWidth="240px"
+                          />
+                        )}
+                        {orderItemNotes && (
+                          <TruncatedText
+                            text={`Catatan: ${orderItemNotes}`}
+                            className="text-[11px] text-slate-500 dark:text-slate-400 italic"
+                            maxWidth="240px"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                },
+              },
+              {
+                key: 'reference',
+                header: 'Referensi',
+                align: 'left',
+                width: '160px',
+                className: 'min-w-[150px]',
+                cell: (rg) => (
+                  <div>
+                    <Link
+                      href={`/order/complaint/${rg.complaintId}`}
+                      className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline block"
+                    >
+                      Komplain #{rg.complaintId}
+                    </Link>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                      {rg.salesOrderNumber}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                key: 'qty',
+                header: 'Qty',
+                align: 'right',
+                cell: (rg) => (
+                  <span className="font-mono text-xs font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                    {rg.qty} unit
+                  </span>
+                ),
+              },
+              {
+                key: 'reason',
+                header: 'Alasan Retur',
+                align: 'left',
+                width: '260px',
+                className: 'min-w-[240px]',
+                cell: (rg) => (
+                  <TruncatedText
+                    text={rg.conditionReason}
+                    className="text-xs text-slate-600 dark:text-slate-400"
+                    maxWidth="240px"
+                  />
+                ),
+              },
+              {
+                key: 'status',
+                header: 'Status',
+                align: 'center',
+                cell: (rg) => {
+                  const statusConfig: Record<string, { label: string; variant: 'warning' | 'success' | 'purple' | 'default' | 'danger' }> = {
+                    AWAITING_RECEIVAL: { label: 'Menunggu Fisik', variant: 'warning' },
+                    PENDING: { label: 'Menunggu Fisik', variant: 'warning' },
+                    RECEIVED: { label: 'Diterima di Gudang', variant: 'purple' },
+                    RESTOCKED: { label: 'Masuk Barang Jadi', variant: 'success' },
+                    REPAIR: { label: 'Diperbaiki', variant: 'purple' },
+                    DISASSEMBLED: { label: 'Dibongkar', variant: 'default' },
+                    SCRAPPED: { label: 'Afkir / Sampah', variant: 'danger' },
+                    CANCELED: { label: 'Dibatalkan', variant: 'default' },
+                  };
+                  const cfg = statusConfig[rg.status] || { label: rg.status, variant: 'default' };
+                  return (
+                    <Badge variant={cfg.variant} className="text-[11px]">
+                      {cfg.label}
+                    </Badge>
+                  );
+                },
+              },
+              ...(canManageInventory(currentUser.role)
+                ? [
+                    {
+                      key: 'action',
+                      header: 'Aksi',
+                      align: 'center' as const,
+                      width: '160px',
+                      cell: (rg: ReturnedGood) => {
+                        const order = salesOrders.find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber);
+                        const complaint = order?.complaints?.find(c => c.id === rg.complaintId);
+                        const isComplaintPending = complaint && (complaint.status === 'MENUNGGU' || complaint.status === 'DIAJUKAN');
+
+                        if (isComplaintPending) {
+                          return (
+                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
+                              Menunggu Resolusi CS
+                            </span>
+                          );
+                        }
+
+                        if (rg.status === 'AWAITING_RECEIVAL' || (rg.status === 'PENDING' && !rg.receivedAt)) {
+                          return (
+                            <div className="flex items-center justify-center gap-1.5">
                               <Button
                                 size="sm"
-                                variant="secondary"
-                                onClick={() => openReturnActionModal(rg)}
+                                variant="outline"
+                                onClick={() => {
+                                  confirmReceiveReturnedGood(rg.id);
+                                  toast.success('Barang Diterima', 'Fisik barang retur telah dikonfirmasi tiba di gudang.');
+                                }}
                               >
-                                Tindak Lanjuti
+                                Terima Fisik
                               </Button>
-                            ) : (
-                              <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">-</span>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  processReturnedGoodAction(rg.id, 'CANCEL', 'Dibatalkan / tidak ditarik');
+                                  toast.info('Retur Dibatalkan', 'Barang retur ditandai batal/tidak ditarik.');
+                                }}
+                              >
+                                Batal
+                              </Button>
+                            </div>
+                          );
+                        }
+
+                        if (rg.status === 'RECEIVED' || rg.status === 'PENDING') {
+                          return (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openReturnActionModal(rg)}
+                            >
+                              Tindak Lanjuti
+                            </Button>
+                          );
+                        }
+                        return <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">-</span>;
+                      },
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </Card>
       )}
 
@@ -1549,10 +1850,14 @@ export function InventoryContent() {
               {
                 key: 'materialName',
                 header: 'Item / Material',
+                width: '280px',
+                className: 'min-w-[260px]',
                 cell: (mv) => (
-                  <span className="font-medium text-slate-800 dark:text-slate-200">
-                    {mv.materialName}
-                  </span>
+                  <TruncatedText
+                    text={mv.materialName}
+                    className="font-medium text-slate-800 dark:text-slate-200"
+                    maxWidth="260px"
+                  />
                 ),
               },
               {
@@ -1636,20 +1941,32 @@ export function InventoryContent() {
                 {
                   key: 'supplier',
                   header: 'Vendor',
-                  cell: (po) => <span className="text-sm font-normal text-slate-700 dark:text-slate-300">{po.supplier}</span>,
+                  width: '220px',
+                  className: 'min-w-[200px]',
+                  cell: (po) => (
+                    <TruncatedText
+                      text={po.supplier}
+                      className="text-sm font-normal text-slate-700 dark:text-slate-300"
+                      maxWidth="200px"
+                    />
+                  ),
                 },
                 {
                   key: 'itemsSummary',
                   header: 'Item Material',
+                  width: '280px',
+                  className: 'min-w-[250px]',
                   cell: (po) => {
                     if (!po.items || po.items.length === 0) return <span className="text-slate-400 text-xs">-</span>;
                     const firstItem = po.items[0];
                     const extraCount = po.items.length - 1;
                     return (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                          {firstItem.materialName}
-                        </span>
+                      <div className="flex flex-col gap-0.5 max-w-[280px]">
+                        <TruncatedText
+                          text={firstItem.materialName}
+                          className="text-sm font-medium text-slate-900 dark:text-white"
+                          maxWidth="240px"
+                        />
                         {extraCount > 0 && (
                           <span className="text-indigo-600 dark:text-indigo-400 font-semibold text-xs">
                             +{extraCount} lainnya
@@ -1839,11 +2156,15 @@ export function InventoryContent() {
                 {
                   key: 'name',
                   header: 'Nama Aset & Kategori',
+                  width: '280px',
+                  className: 'min-w-[260px]',
                   cell: (ast) => (
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-semibold text-slate-900 dark:text-white">
-                        {ast.name}
-                      </span>
+                    <div className="flex flex-col gap-0.5 max-w-[280px]">
+                      <TruncatedText
+                        text={ast.name}
+                        className="font-semibold text-slate-900 dark:text-white"
+                        maxWidth="260px"
+                      />
                       <span className="text-[11px] text-slate-500 dark:text-slate-400">
                         {ast.category}
                       </span>
@@ -3156,10 +3477,10 @@ export function InventoryContent() {
                 value={returnAction}
                 onChange={(e) => setReturnAction(e.target.value as ReturnedGoodAction)}
                 options={[
-                  { value: 'RESTOCK', label: 'Masuk ke Stok Barang Jadi (Restock)' },
-                  { value: 'REPAIR', label: 'Perbaiki Ulang / Reparasi (Rework)' },
+                  { value: 'RESTOCK', label: 'Masuk ke Stok Bebas Barang Jadi (Restock)' },
                   { value: 'DISASSEMBLE', label: 'Bongkar ke Bahan Baku (Disassemble)' },
                   { value: 'SCRAP', label: 'Afkir / Dibuang ke Sampah (Scrap)' },
+                  { value: 'CANCEL', label: 'Batalkan / Tidak Ditarik' },
                 ]}
               />
             </div>
@@ -3173,6 +3494,174 @@ export function InventoryContent() {
                 onChange={(e) => setReturnActionNotes(e.target.value)}
               />
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Alokasi Barang Jadi ke Sales Order / Pengiriman */}
+      <Modal
+        isOpen={!!selectedFGForAllocation}
+        onClose={() => {
+          setSelectedFGForAllocation(null);
+          setAllocationError('');
+        }}
+        title="Alokasikan ke Pengiriman"
+        size="md"
+        actions={
+          <div className="flex items-center justify-end gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSelectedFGForAllocation(null);
+                setAllocationError('');
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmAllocation}
+              disabled={!targetOrderIdForAllocation}
+            >
+              Alokasikan Unit
+            </Button>
+          </div>
+        }
+      >
+        {selectedFGForAllocation && (
+          <div className="space-y-4 text-xs text-slate-700 dark:text-slate-300">
+            {/* Info Produk & Stok Bebas */}
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-1.5">
+              <div className="font-semibold text-sm text-slate-900 dark:text-white">
+                {selectedFGForAllocation.productName}
+              </div>
+              {selectedFGForAllocation.variantLabel && (
+                <div className="text-slate-500">
+                  {formatVariantLabel(selectedFGForAllocation.variantLabel)}
+                </div>
+              )}
+              <div className="pt-2 flex items-center justify-between border-t border-slate-200/60 dark:border-slate-700/60 text-xs">
+                <span className="text-slate-500">Stok Bebas Tersedia:</span>
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {Math.max(0, selectedFGForAllocation.stock - (reservedFinishedGoodMap.get(selectedFGForAllocation.id) || 0))} unit
+                </span>
+              </div>
+            </div>
+
+            {/* Pilihan Fisik Unit (jika ada unit spesifik dengan catatan/SPK) */}
+            {(selectedFGForAllocation.units || []).filter(u => u.status === 'AVAILABLE').length > 0 && (
+              <div>
+                <Select
+                  label="Pilih Unit Fisik Spesifik (Opsional)"
+                  value={selectedUnitForAllocation}
+                  onChange={e => setSelectedUnitForAllocation(e.target.value)}
+                  options={[
+                    { value: '', label: 'Unit Pertama yang Tersedia (Otomatis)' },
+                    ...(selectedFGForAllocation.units || [])
+                      .filter(u => u.status === 'AVAILABLE')
+                      .map(u => ({
+                        value: u.id,
+                        label: `${u.spkNumber ? `SPK ${u.spkNumber}` : u.id}${u.customNotes ? ` (Catatan: ${u.customNotes})` : ''}`,
+                      })),
+                  ]}
+                />
+              </div>
+            )}
+
+            {/* Pilihan Sales Order Tujuan (Filter Otomatis) */}
+            <div>
+              <Select
+                label="Pilih Sales Order Tujuan"
+                required
+                value={targetOrderIdForAllocation}
+                onChange={e => {
+                  setTargetOrderIdForAllocation(e.target.value);
+                  const so = salesOrders.find(o => o.id === e.target.value);
+                  const hasCmp = (so?.complaints || []).some(c =>
+                    (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
+                    c.replacementStatus !== 'DELIVERED'
+                  );
+                  if (hasCmp) {
+                    setAllocationPurpose('COMPLAINT');
+                    const cmp = so?.complaints?.find(c => (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') && c.replacementStatus !== 'DELIVERED');
+                    setTargetComplaintIdForAllocation(cmp?.id || '');
+                  } else {
+                    setAllocationPurpose('REGULAR');
+                    setTargetComplaintIdForAllocation('');
+                  }
+                  if (allocationError) setAllocationError('');
+                }}
+                options={[
+                  { value: '', label: eligibleOrdersForAllocation.length === 0 ? 'Tidak ada SO aktif yang membutuhkan produk ini' : '-- Pilih Sales Order --' },
+                  ...eligibleOrdersForAllocation.map(so => {
+                    const hasCmp = (so.complaints || []).some(c =>
+                      (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
+                      c.replacementStatus !== 'DELIVERED'
+                    );
+                    return {
+                      value: so.id,
+                      label: `${so.orderNumber} - ${so.customer.name} (${hasCmp ? 'Komplain Aktif' : `Status: ${so.status}`})`,
+                    };
+                  }),
+                ]}
+              />
+              {eligibleOrdersForAllocation.length === 0 && (
+                <p className="mt-1 text-[11px] text-slate-500 italic">
+                  Hanya Sales Order aktif atau yang memiliki komplain berjalan dan memesan produk ini yang dapat dialokasikan.
+                </p>
+              )}
+            </div>
+
+            {/* Jika Order memiliki komplain dan item reguler */}
+            {targetOrderIdForAllocation && (() => {
+              const so = salesOrders.find(o => o.id === targetOrderIdForAllocation);
+              const hasCmp = (so?.complaints || []).some(c =>
+                (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
+                c.replacementStatus !== 'DELIVERED'
+              );
+              const hasReg = (so?.items || []).some(it =>
+                it.productId === selectedFGForAllocation.productId &&
+                (!selectedFGForAllocation.variantId || it.variantId === selectedFGForAllocation.variantId) &&
+                (it.producedQty || 0) < it.qty
+              );
+
+              if (hasCmp && hasReg) {
+                return (
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Tujuan Alokasi
+                    </label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="allocPurpose"
+                          checked={allocationPurpose === 'REGULAR'}
+                          onChange={() => setAllocationPurpose('REGULAR')}
+                        />
+                        <span>Pemenuhan Pesanan Reguler</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="allocPurpose"
+                          checked={allocationPurpose === 'COMPLAINT'}
+                          onChange={() => setAllocationPurpose('COMPLAINT')}
+                        />
+                        <span>Penggantian Komplain</span>
+                      </label>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {allocationError && (
+              <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                {allocationError}
+              </p>
+            )}
           </div>
         )}
       </Modal>

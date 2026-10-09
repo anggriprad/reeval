@@ -21,7 +21,7 @@ export type POStatus = 'DRAFT' | 'ORDERED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' |
 
 export type StockMovementType = 'IN' | 'OUT' | 'INIT';
 
-export type DeliveryStatus = 'READY_TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'PENDING';
+export type DeliveryStatus = 'READY_TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED' | 'PENDING';
 
 // --- Dynamic Form Builder Types ---
 
@@ -302,7 +302,7 @@ export interface SalesOrderItem {
   unitCustomProcesses?: UnitCustomProcess[];
 }
 
-export type OrderComplaintStatus = 'DIAJUKAN' | 'DITANGANI' | 'SELESAI';
+export type OrderComplaintStatus = 'DIAJUKAN' | 'MENUNGGU' | 'DITANGANI' | 'SELESAI' | 'DITOLAK';
 
 export interface OrderComplaintItem {
   productId: string;
@@ -328,8 +328,14 @@ export interface OrderComplaint {
   status: OrderComplaintStatus;
   items: OrderComplaintItem[];
   attachments?: ComplaintAttachment[];
-  resolution?: 'Batalkan Pesanan (Refund)' | 'Kirim Barang Pengganti' | 'Perbaikan';
+  resolution?: 'Batalkan Pesanan (Refund)' | 'Penuhi Barang Pengganti' | 'Kirim Barang Pengganti' | 'Perbaikan' | 'Tolak Komplain';
   resolutionNotes?: string;
+  replacementSource?: 'NEW_SPK' | 'FINISHED_STOCK';
+  isReturnRequested?: boolean;
+  returnGoodId?: string;
+  rejectionReason?: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
   createdAt: string;
   resolvedAt?: string;
   handledAt?: string;
@@ -464,6 +470,22 @@ export interface StockMovement {
 
 // --- Finished Good Stock (Barang Jadi) ---
 
+export interface FinishedGoodUnit {
+  id: string;
+  finishedGoodStockId: string;
+  productId: string;
+  variantId?: string;
+  productName: string;
+  variantLabel?: string;
+  spkNumber?: string;
+  customNotes?: string;
+  status: 'AVAILABLE' | 'RESERVED';
+  reservedForOrderId?: string;
+  reservedForOrderNumber?: string;
+  complaintId?: string;
+  createdAt: string;
+}
+
 export interface FinishedGoodStock {
   id: string;
   productId: string;
@@ -474,6 +496,7 @@ export interface FinishedGoodStock {
   minStock: number;
   unit: string; // default 'unit'
   isActive?: boolean; // Soft delete flag (default: true)
+  units?: FinishedGoodUnit[]; // Unit fisik individual di gudang
 }
 
 export interface DeleteResult {
@@ -483,8 +506,8 @@ export interface DeleteResult {
 
 // --- Returned Good (Barang Retur dari Komplain / Refund) ---
 
-export type ReturnedGoodAction = 'RESTOCK' | 'REPAIR' | 'DISASSEMBLE' | 'SCRAP';
-export type ReturnedGoodStatus = 'PENDING' | 'RESTOCKED' | 'REPAIR' | 'DISASSEMBLED' | 'SCRAPPED';
+export type ReturnedGoodAction = 'RESTOCK' | 'DISASSEMBLE' | 'SCRAP' | 'CANCEL' | 'REPAIR';
+export type ReturnedGoodStatus = 'AWAITING_RECEIVAL' | 'RECEIVED' | 'RESTOCKED' | 'DISASSEMBLED' | 'SCRAPPED' | 'CANCELED' | 'PENDING' | 'REPAIR';
 
 export interface ReturnedGood {
   id: string;
@@ -501,6 +524,8 @@ export interface ReturnedGood {
   conditionReason: string;
   customNotes?: string;
   returnedAt: string;
+  receivedAt?: string;
+  receivedBy?: string;
   status: ReturnedGoodStatus;
   actionTaken?: ReturnedGoodAction;
   actionNotes?: string;
@@ -555,6 +580,10 @@ export interface DeliveryOrder {
   deliveryProofNote?: string;   // Driver's confirmation note / handover note
   deliveryProofPhoto?: string;  // Uploaded proof photo (base64 data URL or photo URL)
   deliveredAt?: string;
+  failureReason?: string;
+  failureNote?: string;
+  failurePhoto?: string;
+  failedAt?: string;
   createdAt: string;
   isReplacement?: boolean;
   complaintId?: string;

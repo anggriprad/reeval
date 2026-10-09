@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Eye,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function TripDetailPage() {
@@ -54,9 +55,10 @@ export default function TripDetailPage() {
     }
 
     const firstDO = matchingDOs[0];
-    const isAllDelivered = matchingDOs.every(d => d.status === 'DELIVERED');
+    const isAllCompleted = matchingDOs.every(d => d.status === 'DELIVERED' || d.status === 'FAILED');
     const isAnyInTransit = matchingDOs.some(d => d.status === 'IN_TRANSIT');
     const deliveredCount = matchingDOs.filter(d => d.status === 'DELIVERED').length;
+    const failedCount = matchingDOs.filter(d => d.status === 'FAILED').length;
 
     // Total units count across all DOs in this trip
     const totalUnitsCount = matchingDOs.reduce((sum, d) => {
@@ -76,10 +78,11 @@ export default function TripDetailPage() {
         armadaName: firstDO.armadaName || 'Armada Standar',
         vehiclePlate: firstDO.vehiclePlate || '-',
         scheduledDate: firstDO.scheduledDate || firstDO.createdAt,
-        status: isAllDelivered ? 'DELIVERED' : isAnyInTransit ? 'IN_TRANSIT' : 'READY_TO_SHIP',
-        isAllDelivered,
+        status: isAllCompleted ? 'DELIVERED' : isAnyInTransit ? 'IN_TRANSIT' : 'READY_TO_SHIP',
+        isAllDelivered: isAllCompleted,
         isInTransit: isAnyInTransit,
         deliveredCount,
+        failedCount,
         totalDestinationsCount: matchingDOs.length,
         totalUnitsCount,
         loadedAt: firstDO.loadedAt,
@@ -185,6 +188,7 @@ export default function TripDetailPage() {
           <div className="space-y-3">
             {targetTripDOs.map((dOrder) => {
               const isDelivered = dOrder.status === 'DELIVERED';
+              const isFailed = dOrder.status === 'FAILED';
               const unitsCount = dOrder.orderItems?.length || dOrder.items?.length || 1;
               const matchingSO = salesOrders.find(
                 s => s.id === dOrder.salesOrderId || s.orderNumber === dOrder.salesOrderNumber
@@ -200,7 +204,7 @@ export default function TripDetailPage() {
                   <div className="flex items-center justify-between gap-4">
                     {/* Info Kiri */}
                     <div className="min-w-0 flex-1 space-y-1">
-                      {/* ID Pesanan & Status Terkirim Saja */}
+                      {/* ID Pesanan & Status */}
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 group-hover:underline">
                           #{dOrder.salesOrderNumber}
@@ -211,6 +215,14 @@ export default function TripDetailPage() {
                             className="text-[10px] px-1.5 py-0"
                           >
                             Terkirim
+                          </Badge>
+                        )}
+                        {isFailed && (
+                          <Badge
+                            variant="danger"
+                            className="text-[10px] px-1.5 py-0"
+                          >
+                            Gagal Kirim
                           </Badge>
                         )}
                       </div>
@@ -238,6 +250,14 @@ export default function TripDetailPage() {
                           <CheckCircle2 className="h-3 w-3" />
                           Diterima oleh {dOrder.receiverName || dOrder.customerName}
                           {dOrder.deliveredAt && ` (${formatDateTime(dOrder.deliveredAt)})`}
+                        </div>
+                      )}
+
+                      {/* Info Gagal Kirim jika gagal */}
+                      {isFailed && (
+                        <div className="text-[11px] pt-0.5 text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
+                          <span>Gagal: {dOrder.failureReason || 'Kendala Lapangan'}</span>
                         </div>
                       )}
                     </div>

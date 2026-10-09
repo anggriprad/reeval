@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SegmentedControl, SegmentOption } from '@/components/ui/SegmentedControl';
-import { formatCurrency, formatDateTime, formatPhoneDisplay, formatVariantLabel, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel } from '@/lib/utils';
+import { formatCurrency, formatDateTime, formatPhoneDisplay, formatVariantLabel, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel, getComplaintStatusLabel } from '@/lib/utils';
 import { canApproveOrder, canCreateOrder } from '@/lib/roles';
 import type { OrderStatus, SalesOrder } from '@/lib/types';
 import { CustomProcessModal } from '@/components/order/CustomProcessModal';
@@ -320,10 +320,11 @@ export function OrderListContent() {
                     <div className="flex items-center sm:flex-col sm:items-end gap-1.5 shrink-0">
                       <Badge className={
                         complaint.status === 'SELESAI' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800' :
+                        complaint.status === 'DITOLAK' ? 'bg-red-100 text-red-800 border-red-300 dark:bg-red-950 dark:text-red-300 dark:border-red-800' :
                         complaint.status === 'DITANGANI' ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800' :
                         'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                       }>
-                        {complaint.status}
+                        {getComplaintStatusLabel(complaint.status)}
                       </Badge>
                       <span className="text-[11px] text-slate-500">
                         {formatDateTime(complaint.createdAt)}
@@ -406,7 +407,7 @@ export function OrderListContent() {
                             Kustom Proses
                           </Badge>
                         )}
-                        {order.complaints && order.complaints.some(c => c.status !== 'SELESAI') && (
+                        {order.complaints && order.complaints.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK') && (
                           <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
                             Dikomplain
                           </Badge>
