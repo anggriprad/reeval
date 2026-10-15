@@ -133,7 +133,6 @@ function DeliveryContent() {
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState<string | null>(null);
-  const [showProofModal, setShowProofModal] = useState<string | null>(null);
 
   // Accordion state in Create Surat Jalan modal
   const [expandedCreateOrderIds, setExpandedCreateOrderIds] = useState<Record<string, boolean>>({});
@@ -144,10 +143,6 @@ function DeliveryContent() {
       [orderId]: !prev[orderId],
     }));
   };
-
-
-  // Preview Photo Modal state
-  const [previewPhotoModal, setPreviewPhotoModal] = useState<{ url: string; title: string } | null>(null);
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -184,13 +179,6 @@ function DeliveryContent() {
   const [customVehiclePlate, setCustomVehiclePlate] = useState('');
   const [scheduledShipDate, setScheduledShipDate] = useState(new Date().toISOString().split('T')[0]);
   const [shipmentNotes, setShipmentNotes] = useState('');
-
-  // Driver proof of delivery confirmation state
-  const [receiverName, setReceiverName] = useState('');
-  const [proofNote, setProofNote] = useState('');
-  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
-  const [uploadedPhotoName, setUploadedPhotoName] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter Sales Orders in "Antrean Kirim": Grouped by Sales Order, showing all units with their respective production/shipping status
   const queueOrderGroups = useMemo<QueueOrderGroup[]>(() => {
@@ -562,7 +550,6 @@ function DeliveryContent() {
   const loadingTrip = tripGroups.find(
     g => g.tripId === showLoadingModal || g.deliveryOrders.some(d => d.id === showLoadingModal)
   );
-  const deliveryToConfirm = deliveryOrders.find(d => d.id === showProofModal);
 
   // Checkbox state for loading confirmation (item level checklist)
   const [checkedLoadingItemKeys, setCheckedLoadingItemKeys] = useState<Record<string, boolean>>({});
@@ -820,59 +807,6 @@ function DeliveryContent() {
     setShowLoadingModal(null);
     setCheckedLoadingItemKeys({});
     setActiveTab('in-transit');
-  };
-
-  // Photo upload handlers
-  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadedPhotoName(file.name);
-    const reader = new FileReader();
-    reader.onload = event => {
-      if (event.target?.result) {
-        setUploadedPhotoUrl(event.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSelectMockPhoto = (key: 'photo-1' | 'photo-2') => {
-    const mock = DEFAULT_MOCK_PHOTOS[key];
-    setUploadedPhotoUrl(mock.url);
-    setUploadedPhotoName(mock.title);
-  };
-
-  // Submit proof of delivery
-  const handleSubmitDeliveryProof = () => {
-    if (!showProofModal || !receiverName.trim()) {
-      toast.error('Nama penerima barang wajib diisi.');
-      return;
-    }
-
-    const targetDOId = showProofModal;
-    const targetDO = deliveryOrders.find(d => d.id === targetDOId);
-    const targetTrip = targetDO ? tripGroups.find(t => t.tripId === (targetDO.tripId || targetDO.id)) : null;
-    const willBeAllDelivered = targetTrip ? targetTrip.deliveredCount + 1 >= targetTrip.totalDestinationsCount : true;
-
-    confirmDelivery(targetDOId, {
-      receiverName: receiverName.trim(),
-      proofNote: proofNote.trim(),
-      proofPhoto: uploadedPhotoUrl || undefined,
-    });
-
-    setShowProofModal(null);
-    setReceiverName('');
-    setProofNote('');
-    setUploadedPhotoUrl(null);
-    setUploadedPhotoName('');
-
-    if (willBeAllDelivered) {
-      toast.success('Seluruh pesanan dalam kloter telah selesai diserahkan! Kloter berpindah ke tab Terkirim.');
-      setActiveTab('delivered');
-    } else {
-      toast.success(`Pengiriman pesanan ${targetDO?.salesOrderNumber || ''} berhasil diserahterimakan!`);
-    }
   };
 
   // Tab definitions matching user workflow
@@ -1921,196 +1855,6 @@ function DeliveryContent() {
                 <span>Masih ada {kloterLoadingItems.length - checkedLoadingCount} barang yang belum diceklis.</span>
               </p>
             )}
-          </div>
-        )}
-      </Modal>
-
-      {/* ========================================================================= */}
-      {/* MODAL 3: KONFIRMASI TIBA DI TUJUAN & UPLOAD BUKTI SERAH TERIMA (POD)       */}
-      {/* ========================================================================= */}
-      <Modal
-        isOpen={!!deliveryToConfirm}
-        onClose={() => setShowProofModal(null)}
-        title={`Konfirmasi Tiba di Tujuan — Pesanan ${deliveryToConfirm?.salesOrderNumber || ''}`}
-        description="Input nama penerima di lokasi dan lampirkan bukti foto pengiriman untuk menyelesaikan pesanan."
-        size="lg"
-        actions={
-          deliveryToConfirm ? (
-            <>
-              <Button variant="outline" onClick={() => setShowProofModal(null)}>
-                Batal
-              </Button>
-              <Button
-                variant="success"
-                onClick={handleSubmitDeliveryProof}
-                disabled={!receiverName.trim()}
-              >
-                Simpan & Selesaikan Pengiriman
-              </Button>
-            </>
-          ) : undefined
-        }
-      >
-        {deliveryToConfirm && (
-          <div className="space-y-4">
-            <div className="rounded-xl bg-slate-50 p-3.5 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-xs space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Nomor Pesanan:</span>
-                <strong className="font-mono text-indigo-600 dark:text-indigo-400">{deliveryToConfirm.salesOrderNumber}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Tujuan Pengiriman:</span>
-                <strong className="text-slate-900 dark:text-white">{deliveryToConfirm.customerName}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Alamat:</span>
-                <span className="text-slate-700 dark:text-slate-300 truncate max-w-sm text-right">
-                  {deliveryToConfirm.customerAddress}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Barang yang Diserahkan:</span>
-                <span className="text-slate-800 dark:text-slate-200 font-medium">
-                  {deliveryToConfirm.items.join(', ')}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <Input
-                label="Nama Penerima Barang di Lokasi"
-                required
-                value={receiverName}
-                onChange={e => setReceiverName(e.target.value)}
-                placeholder="Contoh: Ibu Ratna (Resepsionis) / Pak Hendra"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Catatan Kondisi Serah Terima Barang
-              </label>
-              <textarea
-                value={proofNote}
-                onChange={e => setProofNote(e.target.value)}
-                placeholder="Barang diterima lengkap, tidak ada cacat atau lecet, terpasang rapi di lokasi..."
-                className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                rows={2}
-              />
-            </div>
-
-            {/* Upload Bukti Foto Pengiriman */}
-            <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Camera className="h-4 w-4 text-indigo-500" />
-                  Upload Bukti Foto Pengiriman (Proof of Delivery / POD)
-                </label>
-                {uploadedPhotoUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUploadedPhotoUrl(null);
-                      setUploadedPhotoName('');
-                    }}
-                    className="text-xs text-rose-500 hover:underline flex items-center gap-1"
-                  >
-                    <X className="h-3 w-3" /> Hapus Foto
-                  </button>
-                )}
-              </div>
-
-              {/* Real File Input / Camera Capture */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handlePhotoFileChange}
-              />
-
-              {uploadedPhotoUrl ? (
-                <div className="relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-black/10 flex flex-col items-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={uploadedPhotoUrl}
-                    alt="Bukti Pengiriman"
-                    className="max-h-52 w-auto object-contain rounded-md"
-                  />
-                  <div className="w-full bg-slate-900/80 text-white text-[11px] p-2 text-center flex items-center justify-between px-3">
-                    <span className="truncate">{uploadedPhotoName || 'Foto Bukti Pengiriman'}</span>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-indigo-300 hover:text-white underline text-[10px] shrink-0 ml-2"
-                    >
-                      Ganti Foto
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 p-6 text-center cursor-pointer hover:border-indigo-500 transition-colors bg-white dark:bg-slate-800"
-                >
-                  <Camera className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Klik untuk Ambil Foto Kamera / Pilih File Gambar
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-1">Mendukung format JPG, PNG, WEBP</p>
-                </div>
-              )}
-
-              {/* Sample Preset Buttons for Easy Testing */}
-              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
-                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2">
-                  Atau gunakan contoh foto pengiriman cepat:
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMockPhoto('photo-1')}
-                    className="rounded-lg border border-slate-200 bg-white p-2 text-left hover:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all text-[11px] flex items-center gap-1.5"
-                  >
-                    <ImageIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                    <span className="truncate">Contoh: Unit di Lokasi</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMockPhoto('photo-2')}
-                    className="rounded-lg border border-slate-200 bg-white p-2 text-left hover:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all text-[11px] flex items-center gap-1.5"
-                  >
-                    <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                    <span className="truncate">Contoh: Tanda Tangan SJ</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Modal Zoom Foto Bukti Serah Terima */}
-      <Modal
-        isOpen={!!previewPhotoModal}
-        onClose={() => setPreviewPhotoModal(null)}
-        title={previewPhotoModal?.title || 'Bukti Serah Terima'}
-        size="lg"
-        actions={
-          <Button variant="outline" onClick={() => setPreviewPhotoModal(null)}>
-            Tutup
-          </Button>
-        }
-      >
-        {previewPhotoModal && (
-          <div className="flex flex-col items-center justify-center p-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={previewPhotoModal.url}
-              alt="Bukti Serah Terima"
-              className="max-h-[70vh] w-auto object-contain rounded-lg border border-slate-200 dark:border-slate-800"
-            />
           </div>
         )}
       </Modal>

@@ -11,7 +11,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { formatCurrency, formatDate, formatDateTime, formatDurationBetween, formatVariantLabel } from '@/lib/utils';
 import { canManageProduction } from '@/lib/roles';
-import type { JobCard } from '@/lib/types';
+import type { JobCard, WorkOrder } from '@/lib/types';
+import { ActionMenu } from '@/components/ui/ActionMenu';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -63,12 +64,17 @@ function ProductionContent() {
     completeJobCard,
     createSubAssemblyWorkOrder,
     createNormalWorkOrder,
+    cancelWorkOrder,
   } = useApp();
 
   const canManage = canManageProduction(currentUser.role);
   const [activeTab, setActiveTab] = useUrlTab(['active', 'completed', 'canceled', 'analytics'] as const, 'active');
   const [searchTerm, setSearchTerm] = useState('');
   const [spkTypeFilter, setSpkTypeFilter] = useState('');
+
+  // SPK Cancel Modal state
+  const [cancelTargetWO, setCancelTargetWO] = useState<WorkOrder | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
 
   // SPK Creation Modal state (Normal Barang Jadi & WIP)
   const [showSpkModal, setShowSpkModal] = useState(false);
@@ -424,7 +430,7 @@ function ProductionContent() {
                         <strong className="text-slate-800 dark:text-slate-200 font-semibold">{formatDateTime(wo.issuedAt)}</strong>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
                         <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-100 dark:border-indigo-900/50 text-xs font-bold">
                           <span>{completedJc} / {totalJc} Tahap</span>
                         </div>
@@ -440,6 +446,29 @@ function ProductionContent() {
                           <Info className="h-3.5 w-3.5 text-indigo-500" />
                           Analisis KPI
                         </button>
+
+                        {canManage && (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ActionMenu
+                              align="right"
+                              triggerTitle="Opsi SPK"
+                              items={[
+                                {
+                                  label: 'Batalkan SPK',
+                                  icon: <XCircle className="h-4 w-4" />,
+                                  variant: 'danger',
+                                  disabled: wo.jobCards.some(
+                                    j => j.status !== 'PENDING' || (j.completedQty || 0) > 0 || Boolean(j.startedAt) || (j.actualMinutes || 0) > 0
+                                  ),
+                                  onClick: () => {
+                                    setCancelTargetWO(wo);
+                                    setCancelReason('');
+                                  },
+                                },
+                              ]}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -706,8 +735,13 @@ function ProductionContent() {
                     Status SPK
                   </div>
                   <div className="font-medium text-slate-700 dark:text-slate-300 text-xs mt-0.5">
-                    Dibatalkan oleh Sales Order
+                    {wo.cancelReason || 'Dibatalkan'}
                   </div>
+                  {wo.canceledAt && (
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                      {formatDateTime(wo.canceledAt)}
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -1428,6 +1462,78 @@ function ProductionContent() {
             );
           })()}
         </form>
+      </Modal>
+
+      {/* Modal Konfirmasi Pembatalan SPK */}
+      <Modal
+        isOpen={!!cancelTargetWO}
+        onClose={() => setCancelTargetWO(null)}
+        title={`Batalkan SPK ${cancelTargetWO?.spkNumber || ''}`}
+        description="Apakah Anda yakin ingin membatalkan SPK ini? Tindakan ini tidak dapat dibatalkan."
+        size="md"
+        actions={
+          cancelTargetWO ? (
+            <>
+              <Button variant="outline" onClick={() => setCancelTargetWO(null)}>
+                Batal
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (!cancelTargetWO) return;
+                  const res = cancelWorkOrder(cancelTargetWO.id, cancelReason);
+                  if (res.success) {
+                    toast.success(`SPK ${cancelTargetWO.spkNumber} berhasil dibatalkan.`);
+                    setCancelTargetWO(null);
+                    setActiveTab('canceled');
+                  } else {
+                    toast.error(res.error || 'Gagal membatalkan SPK.');
+                  }
+                }}
+              >
+                Batalkan SPK
+              </Button>
+            </>
+          ) : undefined
+        }
+      >
+        {cancelTargetWO && (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-slate-50 p-3.5 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Nomor SPK:</span>
+                <strong className="font-mono text-slate-900 dark:text-white">{cancelTargetWO.spkNumber}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Produk:</span>
+                <strong className="text-slate-900 dark:text-white">{cancelTargetWO.productName}</strong>
+              </div>
+              {cancelTargetWO.variantName && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Varian:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">{formatVariantLabel(cancelTargetWO.variantName)}</span>
+                </div>
+              )}
+              {cancelTargetWO.salesOrderNumber && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Referensi Order:</span>
+                  <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">{cancelTargetWO.salesOrderNumber}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Alasan Pembatalan (Opsional)
+              </label>
+              <Input
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Contoh: Perubahan rencana produksi / dibatalkan"
+              />
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

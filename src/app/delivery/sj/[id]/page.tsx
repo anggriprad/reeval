@@ -76,7 +76,6 @@ export default function DeliveryOrderDetailPage() {
 
   // Modal Proof of Delivery (POD) State
   const [showProofModal, setShowProofModal] = useState(false);
-  const [receiverName, setReceiverName] = useState('');
   const [proofNote, setProofNote] = useState('');
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
   const [uploadedPhotoName, setUploadedPhotoName] = useState<string>('');
@@ -161,19 +160,16 @@ export default function DeliveryOrderDetailPage() {
   };
 
   const handleSubmitDeliveryProof = () => {
-    if (!receiverName.trim()) {
-      toast.error('Nama penerima barang di lokasi wajib diisi.');
-      return;
-    }
-
     confirmDelivery(dOrder.id, {
-      receiverName: receiverName.trim(),
       proofNote: proofNote.trim(),
       proofPhoto: uploadedPhotoUrl || undefined,
     });
 
     toast.success('Pengiriman pesanan berhasil diselesaikan.');
     setShowProofModal(false);
+    setProofNote('');
+    setUploadedPhotoUrl(null);
+    setUploadedPhotoName('');
   };
 
   const handleFailurePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -609,8 +605,6 @@ export default function DeliveryOrderDetailPage() {
                   variant="success"
                   size="md"
                   onClick={() => {
-                    setReceiverName('');
-                    setProofNote('');
                     setUploadedPhotoUrl(null);
                     setUploadedPhotoName('');
                     setShowProofModal(true);
@@ -660,7 +654,6 @@ export default function DeliveryOrderDetailPage() {
             <Button
               variant="success"
               onClick={handleSubmitDeliveryProof}
-              disabled={!receiverName.trim()}
             >
               Simpan &amp; Selesaikan
             </Button>
@@ -683,29 +676,6 @@ export default function DeliveryOrderDetailPage() {
                 {dOrder.customerAddress}
               </span>
             </div>
-          </div>
-
-          <div>
-            <Input
-              label="Nama Penerima Barang di Lokasi"
-              required
-              value={receiverName}
-              onChange={e => setReceiverName(e.target.value)}
-              placeholder="Contoh: Ibu Ratna (Resepsionis) / Pak Hendra"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Catatan Kondisi Serah Terima Barang
-            </label>
-            <textarea
-              value={proofNote}
-              onChange={e => setProofNote(e.target.value)}
-              placeholder="Contoh: Barang diterima dalam kondisi baik dan lengkap, sudah ditaruh di lantai 2."
-              className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-              rows={3}
-            />
           </div>
 
           <div>

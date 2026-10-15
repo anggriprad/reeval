@@ -416,6 +416,8 @@ export interface WorkOrder {
   subAssemblyId?: string;
   isComplaintReplacement?: boolean;
   complaintId?: string;
+  cancelReason?: string;
+  canceledAt?: string;
 }
 
 // --- Purchase Order ---

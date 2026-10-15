@@ -225,6 +225,7 @@ interface AppContextType extends AppState {
   completeJobCard: (workOrderId: string, jobCardId: string, completedQty: number, picName: string, actualMinutes?: number, operatorId?: string) => { success: boolean; error?: string };
   createSubAssemblyWorkOrder: (subAssemblyId: string, targetQty: number, customNotes?: string) => { success: boolean; error?: string };
   createNormalWorkOrder: (productId: string, variantId: string | undefined, targetQty: number, customNotes?: string) => { success: boolean; error?: string };
+  cancelWorkOrder: (workOrderId: string, reason?: string) => { success: boolean; error?: string };
   syncWorkOrderRouting: (workOrderId: string) => void;
   addOperation: (op: Omit<ProductionOperation, 'id'>) => string;
   updateOperation: (id: string, op: Partial<Omit<ProductionOperation, 'id'>>) => void;
@@ -259,8 +260,8 @@ interface AppContextType extends AppState {
   confirmLoadingDelivery: (deliveryOrderId: string, driverName?: string) => void;
   confirmDelivery: (
     deliveryOrderId: string,
-    proofData: {
-      receiverName: string;
+    proofData?: {
+      receiverName?: string;
       proofNote?: string;
       proofPhoto?: string;
     } | string
@@ -3169,7 +3170,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const childBom = subMat.childBom || [];
 
         const woId = `wo-sa-${generateId()}`;
-        const spkNumber = String(prev.workOrders.length + newWorkOrders.length + 1);
+        let saSeq = prev.workOrders.length + newWorkOrders.length + 1;
+        let spkNumber = String(saSeq);
+        while (prev.workOrders.some(w => w.spkNumber === spkNumber) || newWorkOrders.some(w => w.spkNumber === spkNumber)) {
+          saSeq++;
+          spkNumber = String(saSeq);
+        }
         const materialsConsumed = childBom.map(b => ({
           materialId: b.materialId,
           qty: b.qty * deficit,
@@ -3355,7 +3361,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          const spkNum = generateItemUnitNumber(order.orderNumber, spkCounter);
+          let spkNum = generateItemUnitNumber(order.orderNumber, spkCounter);
+          while (prev.workOrders.some(w => w.spkNumber === spkNum) || newWorkOrders.some(w => w.spkNumber === spkNum)) {
+            spkCounter++;
+            spkNum = generateItemUnitNumber(order.orderNumber, spkCounter);
+          }
           spkCounter++;
 
           newWorkOrders.push({
@@ -3773,7 +3783,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       const woId = `wo-sa-${generateId()}`;
-      const spkNumber = String(prev.workOrders.length + 1);
+      let saSeq = prev.workOrders.length + 1;
+      let spkNumber = String(saSeq);
+      while (prev.workOrders.some(w => w.spkNumber === spkNumber)) {
+        saSeq++;
+        spkNumber = String(saSeq);
+      }
       const materialsConsumed = subMat.childBom.map(b => ({
         materialId: b.materialId,
         qty: b.qty * targetQty,
@@ -4000,6 +4015,102 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return result;
   }, []);
+
+  const cancelWorkOrder = useCallback((workOrderId: string, reason?: string) => {
+    let result = { success: true, error: '' };
+
+    setState(prev => {
+      const wo = prev.workOrders.find(w => w.id === workOrderId);
+      if (!wo) {
+        result = { success: false, error: 'SPK tidak ditemukan.' };
+        return prev;
+      }
+
+      if (wo.status === 'CANCELED') {
+        result = { success: false, error: 'SPK sudah dibatalkan sebelumnya.' };
+        return prev;
+      }
+
+      if (wo.status === 'COMPLETED') {
+        result = { success: false, error: 'SPK yang sudah selesai tidak dapat dibatalkan.' };
+        return prev;
+      }
+
+      // Validasi: belum ada operasi yang dikerjakan
+      const hasStarted = wo.jobCards.some(
+        jc => jc.status !== 'PENDING' || (jc.completedQty || 0) > 0 || Boolean(jc.startedAt) || (jc.actualMinutes || 0) > 0
+      );
+
+      if (hasStarted) {
+        result = { success: false, error: 'SPK tidak dapat dibatalkan karena operasi produksi sudah mulai berjalan.' };
+        return prev;
+      }
+
+      const now = new Date().toISOString();
+      const cancelReason = reason?.trim() || 'Dibatalkan';
+
+      // 1. Update Work Order status ke CANCELED
+      const updatedWorkOrders = prev.workOrders.map(w =>
+        w.id === workOrderId
+          ? {
+              ...w,
+              status: 'CANCELED' as const,
+              canceledAt: now,
+              cancelReason,
+            }
+          : w
+      );
+
+      // 2. Cek apakah SPK berasal dari Sales Order
+      let updatedSalesOrders = prev.salesOrders;
+      const isManual = !wo.salesOrderId || wo.salesOrderId === 'INTERNAL-SA' || wo.salesOrderId === 'INTERNAL-PROD';
+
+      if (!isManual) {
+        const targetSO = prev.salesOrders.find(so => so.id === wo.salesOrderId);
+        if (targetSO) {
+          // Cari sisa SPK aktif untuk SO ini (selain yang baru saja dibatalkan)
+          const remainingActiveWOs = updatedWorkOrders.filter(
+            w => w.salesOrderId === targetSO.id && w.status !== 'CANCELED'
+          );
+
+          if (remainingActiveWOs.length === 0) {
+            // Semua SPK untuk SO ini telah dibatalkan -> kembalikan status SO ke 'PENDING'
+            updatedSalesOrders = prev.salesOrders.map(so =>
+              so.id === targetSO.id
+                ? {
+                    ...so,
+                    status: 'PENDING' as const,
+                    spkIssuedAt: undefined,
+                    updatedAt: now,
+                    updatedBy: currentUser.name,
+                  }
+                : so
+            );
+          } else {
+            // Masih ada SPK aktif lain dari SO yang sama -> hitung ulang status SO
+            updatedSalesOrders = prev.salesOrders.map(so =>
+              so.id === targetSO.id
+                ? {
+                    ...so,
+                    status: computeSOStatus(so),
+                    updatedAt: now,
+                    updatedBy: currentUser.name,
+                  }
+                : so
+            );
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        workOrders: updatedWorkOrders,
+        salesOrders: updatedSalesOrders,
+      };
+    });
+
+    return result;
+  }, [currentUser.name]);
 
   const updateJobCardProgress = useCallback((workOrderId: string, jobCardId: string, completedQty: number, picName: string) => {
     setState(prev => {
@@ -4401,8 +4512,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const confirmDelivery = useCallback((
     deliveryOrderId: string,
-    proofData: {
-      receiverName: string;
+    proofData?: {
+      receiverName?: string;
       proofNote?: string;
       proofPhoto?: string;
     } | string
@@ -4417,16 +4528,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (typeof proofData === 'string') {
         proofNote = proofData;
-        receiverName = 'Penerima di Lokasi';
-      } else {
-        receiverName = proofData.receiverName || '';
+        receiverName = dOrder.customerName || '';
+      } else if (proofData) {
+        receiverName = proofData.receiverName?.trim() || dOrder.customerName || '';
         proofNote = proofData.proofNote || '';
         proofPhoto = proofData.proofPhoto;
+      } else {
+        receiverName = dOrder.customerName || '';
       }
 
       const fullProofNote = proofNote
-        ? `Diterima oleh: ${receiverName}. ${proofNote}`
-        : `Diterima oleh: ${receiverName}. Barang lengkap dan tidak ada kerusakan.`;
+        ? (receiverName ? `Diterima oleh: ${receiverName}. ${proofNote}` : proofNote)
+        : (receiverName ? `Diterima oleh: ${receiverName}. Barang lengkap dan tidak ada kerusakan.` : 'Barang lengkap dan tidak ada kerusakan.');
 
       const now = new Date().toISOString();
 
@@ -5342,6 +5455,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     completeJobCard,
     createSubAssemblyWorkOrder,
     createNormalWorkOrder,
+    cancelWorkOrder,
     syncWorkOrderRouting,
     addOperation,
     updateOperation,
