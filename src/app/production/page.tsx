@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useUrlTab } from '@/lib/useUrlTab';
 import { useApp } from '@/context/AppContext';
@@ -8,8 +8,10 @@ import { useToast } from '@/context/ToastContext';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { Card } from '@/components/ui/Card';
+import { Table, type TableColumn } from '@/components/ui/Table';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
-import { formatCurrency, formatDate, formatDateTime, formatDurationBetween, formatVariantLabel } from '@/lib/utils';
+import { formatCurrency, formatDate, formatDateTime, formatDurationBetween, formatVariantLabel, cn } from '@/lib/utils';
 import { canManageProduction } from '@/lib/roles';
 import type { JobCard, WorkOrder } from '@/lib/types';
 import { ActionMenu } from '@/components/ui/ActionMenu';
@@ -50,6 +52,47 @@ import {
   XCircle,
 } from 'lucide-react';
 
+type AnalyticsPeriod = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'ALL';
+
+const ANALYTICS_PERIOD_OPTIONS = [
+  { value: 'THIS_MONTH', label: 'Bulan Ini' },
+  { value: 'LAST_MONTH', label: 'Bulan Lalu' },
+  { value: 'THIS_QUARTER', label: 'Kuartal Ini' },
+  { value: 'THIS_YEAR', label: 'Tahun Ini' },
+  { value: 'ALL', label: 'Semua Periode' },
+];
+
+function isDateInPeriod(dateStr: string | undefined, period: AnalyticsPeriod): boolean {
+  if (!dateStr) return false;
+  if (period === 'ALL') return true;
+
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return false;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  switch (period) {
+    case 'THIS_MONTH':
+      return date.getFullYear() === currentYear && date.getMonth() === currentMonth;
+    case 'LAST_MONTH': {
+      const targetMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+      const targetYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+      return date.getFullYear() === targetYear && date.getMonth() === targetMonth;
+    }
+    case 'THIS_QUARTER': {
+      const currentQuarter = Math.floor(currentMonth / 3);
+      const dateQuarter = Math.floor(date.getMonth() / 3);
+      return date.getFullYear() === currentYear && dateQuarter === currentQuarter;
+    }
+    case 'THIS_YEAR':
+      return date.getFullYear() === currentYear;
+    default:
+      return true;
+  }
+}
+
 function ProductionContent() {
   const { toast } = useToast();
   const {
@@ -71,6 +114,7 @@ function ProductionContent() {
   const [activeTab, setActiveTab] = useUrlTab(['active', 'completed', 'canceled', 'analytics'] as const, 'active');
   const [searchTerm, setSearchTerm] = useState('');
   const [spkTypeFilter, setSpkTypeFilter] = useState('');
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('THIS_MONTH');
 
   // SPK Cancel Modal state
   const [cancelTargetWO, setCancelTargetWO] = useState<WorkOrder | null>(null);
@@ -163,28 +207,44 @@ function ProductionContent() {
   const displayCanceledWOs = filterWO(canceledWOs);
 
   // =========================================================================
-  // EXECUTIVE PRODUCTION ANALYTICS CALCULATIONS (BoD Level)
+  // PRODUCTION PERFORMANCE ANALYTICS (Period-Filtered)
   // =========================================================================
-  const completedJobCards = workOrders.flatMap(w => w.jobCards).filter(j => j.status === 'COMPLETED');
+  const periodWorkOrders = useMemo(() => {
+    return workOrders.filter(w => isDateInPeriod(w.completedAt || w.issuedAt, analyticsPeriod));
+  }, [workOrders, analyticsPeriod]);
 
-  // 1. Time Efficiency Rate (% of completed jobs done on-time or faster)
-  const onTimeJobsCount = completedJobCards.filter(j => (j.actualMinutes || 0) <= (j.plannedMinutes || 0)).length;
-  const timeEfficiencyRate = completedJobCards.length > 0
-    ? Math.round((onTimeJobsCount / completedJobCards.length) * 100)
+  const periodCompletedWOs = useMemo(() => {
+    return periodWorkOrders.filter(w => w.status === 'COMPLETED');
+  }, [periodWorkOrders]);
+
+  const periodCompletedJobCards = useMemo(() => {
+    return workOrders.flatMap(w =>
+      w.jobCards.filter(j => {
+        if (j.status !== 'COMPLETED') return false;
+        const relevantDate = j.completedAt || w.completedAt || w.issuedAt;
+        return isDateInPeriod(relevantDate, analyticsPeriod);
+      })
+    );
+  }, [workOrders, analyticsPeriod]);
+
+  // 1. Time Efficiency Rate (% of completed jobs done on-time or faster in selected period)
+  const onTimeJobsCount = periodCompletedJobCards.filter(j => (j.actualMinutes || 0) <= (j.plannedMinutes || 0)).length;
+  const timeEfficiencyRate = periodCompletedJobCards.length > 0
+    ? Math.round((onTimeJobsCount / periodCompletedJobCards.length) * 100)
     : 100;
 
-  // 2. SPK On-Time Delivery Rate
-  const completedWOsCount = completedWOs.length;
-  const totalWOsCount = workOrders.length;
+  // 2. SPK Completion Rate in selected period
+  const completedWOsCount = periodCompletedWOs.length;
+  const totalWOsCount = periodWorkOrders.length;
   const spkCompletionRate = totalWOsCount > 0 ? Math.round((completedWOsCount / totalWOsCount) * 100) : 0;
 
-  // 3. Labor Cost Budget & Variance
-  const totalPlannedLaborCost = workOrders.reduce((acc, w) => acc + (w.plannedLaborCost || 0), 0);
-  const totalActualLaborCost = workOrders.reduce((acc, w) => acc + (w.actualLaborCost || 0), 0);
+  // 3. Labor Cost Budget & Variance in selected period
+  const totalPlannedLaborCost = periodWorkOrders.reduce((acc, w) => acc + (w.plannedLaborCost || 0), 0);
+  const totalActualLaborCost = periodWorkOrders.reduce((acc, w) => acc + (w.actualLaborCost || 0), 0);
   const laborCostSavings = totalPlannedLaborCost - totalActualLaborCost;
 
-  // 4. Average SPK Lead Time (Hours)
-  const completedWOsWithTimes = completedWOs.filter(w => w.completedAt && w.issuedAt);
+  // 4. Average SPK Lead Time (Hours) in selected period
+  const completedWOsWithTimes = periodCompletedWOs.filter(w => w.completedAt && w.issuedAt);
   const avgLeadTimeHours = completedWOsWithTimes.length > 0
     ? (completedWOsWithTimes.reduce((acc, w) => {
       const ms = new Date(w.completedAt!).getTime() - new Date(w.issuedAt).getTime();
@@ -192,57 +252,189 @@ function ProductionContent() {
     }, 0) / completedWOsWithTimes.length).toFixed(1)
     : '0';
 
-  // 5. Bottleneck Analysis per Master Operation
-  const operationAnalytics = operations.map(op => {
-    const matchingJcs = completedJobCards.filter(j => j.operationId === op.id || j.operationName === op.name);
-    const count = matchingJcs.length;
-    const targetMins = op.durationMinutes || 45;
-    const avgActualMins = count > 0
-      ? Math.round(matchingJcs.reduce((acc, j) => acc + (j.actualMinutes || targetMins), 0) / count)
-      : targetMins;
-    const delayCount = matchingJcs.filter(j => (j.actualMinutes || targetMins) > targetMins).length;
-    const delayPercentage = count > 0 ? Math.round((delayCount / count) * 100) : 0;
-    const isBottleneck = delayPercentage > 30 || avgActualMins > targetMins * 1.15;
+  // 5. Bottleneck Analysis per Master Operation (in selected period)
+  const operationAnalytics = useMemo(() => {
+    return operations.map(op => {
+      const matchingJcs = periodCompletedJobCards.filter(j => j.operationId === op.id || j.operationName === op.name);
+      const count = matchingJcs.length;
+      const targetMins = op.durationMinutes || 45;
+      const avgActualMins = count > 0
+        ? Math.round(matchingJcs.reduce((acc, j) => acc + (j.actualMinutes || targetMins), 0) / count)
+        : targetMins;
+      const diffMins = count > 0 ? avgActualMins - targetMins : 0;
+      const delayCount = matchingJcs.filter(j => (j.actualMinutes || targetMins) > targetMins).length;
+      const delayPercentage = count > 0 ? Math.round((delayCount / count) * 100) : 0;
+      const isBottleneck = count > 0 && (delayPercentage > 30 || avgActualMins > targetMins * 1.15);
 
-    return {
-      id: op.id,
-      name: op.name,
-      targetMins,
-      avgActualMins,
-      completedCount: count,
-      delayPercentage,
-      isBottleneck,
-      costingMethod: op.costingMethod,
-    };
-  }).sort((a, b) => (b.avgActualMins - b.targetMins) - (a.avgActualMins - a.targetMins));
+      return {
+        id: op.id,
+        name: op.name,
+        targetMins,
+        avgActualMins: count > 0 ? avgActualMins : targetMins,
+        diffMins,
+        completedCount: count,
+        delayPercentage,
+        isBottleneck,
+        costingMethod: op.costingMethod,
+      };
+    }).sort((a, b) => b.diffMins - a.diffMins);
+  }, [operations, periodCompletedJobCards]);
 
-  // 6. Operator Performance & Efficiency Leaderboard
-  const operatorAnalytics = operators.map(op => {
-    const matchingJcs = completedJobCards.filter(j => j.operatorId === op.id || j.picName === op.name);
-    const completedCount = matchingJcs.length;
-    const totalPlannedMins = matchingJcs.reduce((acc, j) => acc + (j.plannedMinutes || 0), 0);
-    const totalActualMins = matchingJcs.reduce((acc, j) => acc + (j.actualMinutes || j.plannedMinutes || 0), 0);
-    const efficiencyScore = totalActualMins > 0 ? Math.round((totalPlannedMins / totalActualMins) * 100) : 100;
-    const onTimeCount = matchingJcs.filter(j => (j.actualMinutes || 0) <= (j.plannedMinutes || 0)).length;
+  // 6. Operator Performance & Efficiency Leaderboard (Only active operators in selected period, prevents overflowing millions of rows)
+  const operatorAnalytics = useMemo(() => {
+    return operators.map(op => {
+      const matchingJcs = periodCompletedJobCards.filter(j => j.operatorId === op.id || j.picName === op.name);
+      const completedCount = matchingJcs.length;
+      const totalPlannedMins = matchingJcs.reduce((acc, j) => acc + (j.plannedMinutes || 0), 0);
+      const totalActualMins = matchingJcs.reduce((acc, j) => acc + (j.actualMinutes || j.plannedMinutes || 0), 0);
+      const efficiencyScore = totalActualMins > 0 ? Math.round((totalPlannedMins / totalActualMins) * 100) : 100;
+      const onTimeCount = matchingJcs.filter(j => (j.actualMinutes || 0) <= (j.plannedMinutes || 0)).length;
 
-    const totalEarnedCost = matchingJcs.reduce((acc, j) => {
-      const foundOp = operations.find(o => o.id === j.operationId);
-      if (!foundOp) return acc;
-      if (foundOp.costingMethod === 'fixed') return acc + ((foundOp.fixedLaborCost || 0) * j.targetQty);
-      return acc + (((j.actualMinutes || j.plannedMinutes) / 60) * (foundOp.laborCostPerHour || 0));
-    }, 0);
+      const totalEarnedCost = matchingJcs.reduce((acc, j) => {
+        const foundOp = operations.find(o => o.id === j.operationId);
+        if (!foundOp) return acc;
+        if (foundOp.costingMethod === 'fixed') return acc + ((foundOp.fixedLaborCost || 0) * j.targetQty);
+        return acc + (((j.actualMinutes || j.plannedMinutes) / 60) * (foundOp.laborCostPerHour || 0));
+      }, 0);
 
-    return {
-      id: op.id,
-      name: op.name,
-      role: op.roleSpecialization || 'Umum',
-      completedCount,
-      totalHours: (totalActualMins / 60).toFixed(1),
-      efficiencyScore,
-      onTimeRatio: completedCount > 0 ? `${onTimeCount}/${completedCount}` : '-',
-      totalEarnedCost,
-    };
-  }).sort((a, b) => b.efficiencyScore - a.efficiencyScore);
+      return {
+        id: op.id,
+        name: op.name,
+        role: op.roleSpecialization || 'Umum',
+        completedCount,
+        totalHours: (totalActualMins / 60).toFixed(1),
+        efficiencyScore,
+        onTimeRatio: completedCount > 0 ? `${onTimeCount}/${completedCount}` : '-',
+        totalEarnedCost,
+      };
+    })
+    .filter(op => op.completedCount > 0)
+    .sort((a, b) => b.efficiencyScore - a.efficiencyScore || b.completedCount - a.completedCount);
+  }, [operators, periodCompletedJobCards, operations]);
+
+  const operatorColumns = useMemo<TableColumn<typeof operatorAnalytics[0]>[]>(() => [
+    {
+      key: 'rank_name',
+      header: 'Operator',
+      align: 'left',
+      cell: (item, idx) => (
+        <div className="flex items-center gap-2.5">
+          <span className={cn(
+            "flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold font-mono",
+            idx === 0 ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" :
+            idx === 1 ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" :
+            idx === 2 ? "bg-amber-50 text-amber-900 border border-amber-300/60 dark:bg-amber-950/50 dark:text-amber-400" :
+            "text-slate-400"
+          )}>
+            {idx + 1}
+          </span>
+          <span className="font-semibold text-slate-900 dark:text-white">{item.name}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Spesialisasi',
+      align: 'left',
+      cell: (item) => <span className="text-slate-600 dark:text-slate-400 text-xs">{item.role}</span>,
+    },
+    {
+      key: 'completedCount',
+      header: 'Tugas Selesai',
+      align: 'right',
+      cell: (item) => <span className="font-mono font-medium">{item.completedCount}</span>,
+    },
+    {
+      key: 'totalHours',
+      header: 'Jam Kerja',
+      align: 'right',
+      cell: (item) => <span className="font-mono text-slate-600 dark:text-slate-400">{item.totalHours} jam</span>,
+    },
+    {
+      key: 'efficiencyScore',
+      header: 'Skor Efisiensi',
+      align: 'center',
+      cell: (item) => {
+        const variant = item.efficiencyScore >= 100 ? 'success' : item.efficiencyScore >= 80 ? 'info' : 'warning';
+        return (
+          <Badge variant={variant} className="font-mono font-semibold">
+            {item.efficiencyScore}%
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'totalEarnedCost',
+      header: 'Total Upah',
+      align: 'right',
+      cell: (item) => (
+        <span className="font-mono font-semibold text-slate-900 dark:text-white">
+          {formatCurrency(item.totalEarnedCost)}
+        </span>
+      ),
+    },
+  ], []);
+
+  const operationColumns = useMemo<TableColumn<typeof operationAnalytics[0]>[]>(() => [
+    {
+      key: 'name',
+      header: 'Tahapan Operasi',
+      align: 'left',
+      cell: (item) => <span className="font-semibold text-slate-900 dark:text-white">{item.name}</span>,
+    },
+    {
+      key: 'completedCount',
+      header: 'Frekuensi Kerja',
+      align: 'right',
+      cell: (item) => (
+        <span className="font-mono text-slate-600 dark:text-slate-400">
+          {item.completedCount} kali
+        </span>
+      ),
+    },
+    {
+      key: 'targetMins',
+      header: 'Target Durasi',
+      align: 'right',
+      cell: (item) => <span className="font-mono text-slate-600 dark:text-slate-400">{item.targetMins} mnt</span>,
+    },
+    {
+      key: 'avgActualMins',
+      header: 'Rata-rata Durasi',
+      align: 'right',
+      cell: (item) => (
+        <span className={cn("font-mono font-semibold", item.diffMins > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-white")}>
+          {item.avgActualMins} mnt
+        </span>
+      ),
+    },
+    {
+      key: 'diffMins',
+      header: 'Selisih',
+      align: 'right',
+      cell: (item) => {
+        if (item.completedCount === 0) return <span className="text-slate-400 font-mono text-xs">-</span>;
+        if (item.diffMins > 0) {
+          return <span className="font-mono font-bold text-amber-600 dark:text-amber-400">+{item.diffMins} mnt</span>;
+        }
+        return <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400">{item.diffMins} mnt</span>;
+      },
+    },
+    {
+      key: 'status',
+      header: 'Status Alur',
+      align: 'center',
+      cell: (item) => {
+        if (item.completedCount === 0) {
+          return <Badge variant="default">Belum Ada Data</Badge>;
+        }
+        if (item.isBottleneck) {
+          return <Badge variant="warning">Hambatan</Badge>;
+        }
+        return <Badge variant="success">Lancar</Badge>;
+      },
+    },
+  ], []);
 
   const handleOpenSpkModal = () => {
     setSpkCategory('NORMAL');
@@ -326,8 +518,8 @@ function ProductionContent() {
         options={[
           { key: 'active', label: 'SPK Berjalan', count: activeWOs.length, icon: Factory },
           { key: 'completed', label: 'SPK Selesai', icon: CheckCircle },
-          { key: 'canceled', label: 'SPK Dibatalkan', count: canceledWOs.length || undefined, icon: XCircle },
-          { key: 'analytics', label: 'Analitik Kinerja (BoD)', icon: BarChart3 },
+          { key: 'canceled', label: 'SPK Dibatalkan', icon: XCircle },
+          { key: 'analytics', label: 'Analitik Kinerja', icon: BarChart3 },
         ]}
         filterValue={spkTypeFilter}
         onFilterChange={setSpkTypeFilter}
@@ -750,328 +942,149 @@ function ProductionContent() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: EXECUTIVE PRODUCTION ANALYTICS (BoD & MANAGEMENT LEVEL) */}
+      {/* TAB: PRODUCTION PERFORMANCE ANALYTICS */}
       {/* ========================================================================= */}
       {activeTab === 'analytics' && (
         <div className="space-y-6">
-          {/* Executive Header Banner */}
-          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-6 shadow-md border border-slate-800">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold mb-2 border border-indigo-400/30">
-                  <Sparkles className="h-3.5 w-3.5 text-indigo-400" /> Executive Production Evaluation Dashboard
-                </div>
-                <h2 className="text-xl font-black tracking-tight text-white">
-                  Analitik Kinerja Divisi Produksi & Evaluasi BoD
-                </h2>
-                <p className="text-slate-400 text-xs mt-1 max-w-xl">
-                  Ikhtisar metrik efisiensi waktu, varians anggaran upah, deteksi titik hambatan (*bottleneck*), dan skor performa operator untuk evaluasi keputusan manajemen.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/10 shrink-0">
-                <div className="text-right font-mono">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Status Output Produksi</span>
-                  <span className="text-base font-bold text-emerald-400">{completedWOsCount} / {totalWOsCount} SPK Selesai</span>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-sm">
-                  {spkCompletionRate}%
-                </div>
-              </div>
+          {/* Header & Period Filter */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-1 border-b border-slate-200 dark:border-slate-800">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                Analitik Kinerja Produksi
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Evaluasi efisiensi waktu pengerjaan, realisasi biaya upah, dan deteksi titik hambatan operasi.
+              </p>
+            </div>
+            <div className="w-full sm:w-48 shrink-0">
+              <Select
+                value={analyticsPeriod}
+                onValueChange={(val) => setAnalyticsPeriod(val as AnalyticsPeriod)}
+                options={ANALYTICS_PERIOD_OPTIONS}
+              />
             </div>
           </div>
 
-          {/* 4 Key Executive KPI Cards */}
+          {/* 4 Clean Industrial KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* KPI 1: Time Efficiency Rate */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {/* KPI 1: Time Efficiency */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider">Efisiensi Waktu Operasi</span>
-                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
-                  <Zap className="h-5 w-5" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Efisiensi Waktu</span>
+                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                  <Zap className="h-4 w-4" />
                 </div>
               </div>
-              <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+              <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
                 {timeEfficiencyRate}%
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                {onTimeJobsCount} dari {completedJobCards.length} operasi selesai tepat waktu
+                {onTimeJobsCount} dari {periodCompletedJobCards.length} tahap tepat waktu
               </p>
-              <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 mt-3 overflow-hidden">
-                <div
-                  className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, timeEfficiencyRate)}%` }}
-                />
-              </div>
             </div>
 
-            {/* KPI 2: On-Time Delivery Rate */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {/* KPI 2: SPK Completion Rate */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider">Penyelesaian SPK</span>
-                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
-                  <Award className="h-5 w-5" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Penyelesaian SPK</span>
+                <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
+                  <CheckCircle className="h-4 w-4" />
                 </div>
               </div>
-              <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+              <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
                 {spkCompletionRate}%
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                {completedWOsCount} SPK Selesai • {activeWOs.length} SPK Berjalan
+                {completedWOsCount} dari {totalWOsCount} SPK selesai
               </p>
-              <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 mt-3 overflow-hidden">
-                <div
-                  className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, spkCompletionRate)}%` }}
-                />
-              </div>
             </div>
 
-            {/* KPI 3: Labor Cost Variance */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {/* KPI 3: Labor Cost & Variance */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider">Varians Anggaran Upah</span>
-                <div className={`p-2 rounded-xl ${laborCostSavings >= 0 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950' : 'bg-red-50 text-red-600 dark:bg-red-950'}`}>
-                  <DollarSign className="h-5 w-5" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Realisasi Upah</span>
+                <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <DollarSign className="h-4 w-4" />
                 </div>
               </div>
-              <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
+              <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
                 {formatCurrency(totalActualLaborCost)}
               </div>
-              <div className="flex items-center gap-1 text-xs mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 {laborCostSavings >= 0 ? (
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-0.5">
-                    <TrendingDown className="h-3.5 w-3.5" /> Hemat {formatCurrency(laborCostSavings)}
-                  </span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">Hemat {formatCurrency(laborCostSavings)} vs rencana</span>
                 ) : (
-                  <span className="text-red-600 dark:text-red-400 font-bold flex items-center gap-0.5">
-                    <TrendingUp className="h-3.5 w-3.5" /> Over {formatCurrency(Math.abs(laborCostSavings))}
-                  </span>
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Over {formatCurrency(Math.abs(laborCostSavings))} vs rencana</span>
                 )}
-                <span className="text-slate-400">vs Rencana</span>
-              </div>
+              </p>
             </div>
 
-            {/* KPI 4: Rata-Rata Lead Time */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {/* KPI 4: Lead Time */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider">Rata-Rata Lead Time</span>
-                <div className="p-2 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-                  <Clock className="h-5 w-5" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Rata-rata Lead Time</span>
+                <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                  <Clock className="h-4 w-4" />
                 </div>
               </div>
-              <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                {avgLeadTimeHours} <span className="text-sm font-semibold text-slate-500">Jam / SPK</span>
+              <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
+                {avgLeadTimeHours} <span className="text-sm font-medium text-slate-500">Jam</span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Dihitung dari penerbitan hingga selesai
+                Siklus penerbitan hingga selesai SPK
               </p>
             </div>
           </div>
 
-          {/* Section 2: Bottleneck Analysis & Executive Insights */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Widget 1: Bottleneck Operations (Analisis Hambatan lantai pabrik) */}
-            <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                    <ShieldAlert className="h-5 w-5 text-amber-500" />
-                    Analisis Hambatan Operasi Produksi (Bottleneck)
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Membandingkan Durasi Standar Target vs Durasi Realisasi di lapangan per operasi
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {operationAnalytics.length === 0 ? (
-                  <div className="p-6 text-center text-slate-400 text-xs">Belum ada data operasi terdaftar.</div>
-                ) : (
-                  operationAnalytics.map(op => {
-                    const isDelayed = op.avgActualMins > op.targetMins;
-                    const diffMins = op.avgActualMins - op.targetMins;
-
-                    return (
-                      <div key={op.id} className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-800/40 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-slate-900 dark:text-white">{op.name}</span>
-                            {op.isBottleneck ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 flex items-center gap-1">
-                                <AlertTriangle className="h-3 w-3" /> HAMBATAN
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                LANCAR
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
-                            Target: {op.targetMins}m • Realisasi: <span className={isDelayed ? 'text-amber-600 font-extrabold' : 'text-emerald-600'}>{op.avgActualMins}m</span>
-                          </div>
-                        </div>
-
-                        {/* Progress comparison bar */}
-                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden flex">
-                          <div
-                            className="bg-indigo-600 h-2"
-                            style={{ width: `${Math.min(100, (op.targetMins / (Math.max(op.targetMins, op.avgActualMins))) * 100)}%` }}
-                            title={`Target: ${op.targetMins}m`}
-                          />
-                          {isDelayed && (
-                            <div
-                              className="bg-amber-500 h-2"
-                              style={{ width: `${Math.min(100, (diffMins / (Math.max(op.targetMins, op.avgActualMins))) * 100)}%` }}
-                              title={`Delay: +${diffMins}m`}
-                            />
-                          )}
-                        </div>
-
-                        <div className="flex justify-between items-center text-[10px] text-slate-400 font-medium">
-                          <span>Dikerjakan {op.completedCount} kali</span>
-                          {isDelayed ? (
-                            <span className="text-amber-600 dark:text-amber-400 font-bold">Rata-rata terlambat +{diffMins} menit</span>
-                          ) : (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">Sesuai target standar</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Widget 2: Strategic Insights & Executive Evaluation (BoD Callout) */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
-              <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-indigo-500" />
-                Rekomendasi Evaluasi BoD
-              </h3>
-
-              <div className="space-y-3 text-xs">
-                <div className="p-3 rounded-xl bg-indigo-50/80 border border-indigo-100 text-indigo-900 dark:bg-indigo-950/50 dark:border-indigo-900/50 dark:text-indigo-200">
-                  <div className="font-bold mb-1 flex items-center gap-1">
-                    <TrendingUp className="h-4 w-4 text-indigo-600" />
-                    Evaluasi Efisiensi Biaya
-                  </div>
-                  <p className="leading-relaxed">
-                    {laborCostSavings >= 0
-                      ? `Anggaran upah produksi berada dalam batas efisien dengan penghematan ${formatCurrency(laborCostSavings)} dari standar rencana.`
-                      : `Terjadi pembengkakan upah sebesar ${formatCurrency(Math.abs(laborCostSavings))} akibat over-durasi pada beberapa alur SPK.`
-                    }
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-100 text-amber-900 dark:bg-amber-950/50 dark:border-amber-900/50 dark:text-amber-200">
-                  <div className="font-bold mb-1 flex items-center gap-1">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    Fokus Alokasi Sumber Daya
-                  </div>
-                  <p className="leading-relaxed">
-                    {operationAnalytics.some(o => o.isBottleneck)
-                      ? `Operasi "${operationAnalytics.find(o => o.isBottleneck)?.name}" teridentifikasi sebagai titik hambatan. Disarankan penambahan operator atau peralatan kerja pendukung.`
-                      : 'Alur operasi lantai produksi berjalan sangat lancar tanpa titik hambatan signifikan.'
-                    }
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-100 text-emerald-900 dark:bg-emerald-950/50 dark:border-emerald-900/50 dark:text-emerald-200">
-                  <div className="font-bold mb-1 flex items-center gap-1">
-                    <Award className="h-4 w-4 text-emerald-600" />
-                    Performa Operator Tertinggi
-                  </div>
-                  <p className="leading-relaxed">
-                    {operatorAnalytics.length > 0 && operatorAnalytics[0].completedCount > 0
-                      ? `Operator "${operatorAnalytics[0].name}" memiliki skor efisiensi tertinggi (${operatorAnalytics[0].efficiencyScore}%) dengan ${operatorAnalytics[0].completedCount} tugas selesai.`
-                      : 'Data evaluasi operator akan terbarui secara otomatis seiring penyelesaian tahap SPK.'
-                    }
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Operator Evaluation & Leaderboard Table */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
-            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          {/* Section: Operator Evaluation Leaderboard */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                  <Users className="h-5 w-5 text-indigo-600" />
-                  Evaluasi Performa & Skor Efisiensi Operator Produksi
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  Evaluasi Performa Operator
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Daftar peringkat efisiensi waktu, akumulasi jam kerja, dan total upah yang dihasilkan oleh masing-masing operator
+                  Peringkat skor efisiensi kerja, jam kerja, dan akumulasi perolehan upah operator aktif pada periode ini.
                 </p>
               </div>
+              {operatorAnalytics.length > 0 && (
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                  {operatorAnalytics.length} operator aktif
+                </span>
+              )}
             </div>
+            <Card className="p-0 overflow-hidden">
+              <Table
+                embedded
+                columns={operatorColumns}
+                data={operatorAnalytics}
+                keyExtractor={(item) => item.id}
+                emptyTitle="Tidak Ada Aktivitas Operator"
+                emptyDescription="Belum ada pengerjaan tugas produksi yang selesai pada periode yang dipilih."
+              />
+            </Card>
+          </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
-                  <tr>
-                    <th className="px-5 py-3.5">Rank & Operator</th>
-                    <th className="px-5 py-3.5">Spesialisasi</th>
-                    <th className="px-5 py-3.5 text-center">Tugas Selesai</th>
-                    <th className="px-5 py-3.5 text-center">Total Jam Kerja</th>
-                    <th className="px-5 py-3.5 text-center">Rasio Ketepatan Waktu</th>
-                    <th className="px-5 py-3.5 text-center">Skor Efisiensi KPI</th>
-                    <th className="px-5 py-3.5 text-right">Hasil Upah</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                  {operatorAnalytics.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-400">
-                        Belum ada operator terdaftar.
-                      </td>
-                    </tr>
-                  ) : (
-                    operatorAnalytics.map((op, idx) => (
-                      <tr key={op.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="px-5 py-4 font-bold text-slate-900 dark:text-white flex items-center gap-3">
-                          <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-extrabold ${idx === 0 ? 'bg-amber-400 text-amber-950' : idx === 1 ? 'bg-slate-300 text-slate-900' : idx === 2 ? 'bg-amber-700 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                            }`}>
-                            {idx + 1}
-                          </span>
-                          <div>
-                            <div className="font-bold text-slate-900 dark:text-white">{op.name}</div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-xs text-slate-600 dark:text-slate-300">
-                          {op.role}
-                        </td>
-                        <td className="px-5 py-4 text-center font-mono font-bold text-slate-900 dark:text-white">
-                          {op.completedCount}
-                        </td>
-                        <td className="px-5 py-4 text-center font-mono text-slate-600 dark:text-slate-300">
-                          {op.totalHours} Jam
-                        </td>
-                        <td className="px-5 py-4 text-center font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                          {op.onTimeRatio}
-                        </td>
-                        <td className="px-5 py-4 text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold font-mono ${op.efficiencyScore >= 100
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                            : op.efficiencyScore >= 80
-                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                            }`}>
-                            {op.efficiencyScore}%
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                          {formatCurrency(op.totalEarnedCost)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+          {/* Section: Bottleneck Analysis */}
+          <div className="space-y-3">
+            <div>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                Analisis Hambatan Operasi (Bottleneck)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Perbandingan target durasi standar dengan realisasi lapangan untuk mendeteksi perlambatan pada tahapan kerja.
+              </p>
             </div>
+            <Card className="p-0 overflow-hidden">
+              <Table
+                embedded
+                columns={operationColumns}
+                data={operationAnalytics}
+                keyExtractor={(item) => item.id}
+                emptyTitle="Tidak Ada Data Operasi"
+                emptyDescription="Belum ada riwayat operasi kerja pada periode yang dipilih."
+              />
+            </Card>
           </div>
         </div>
       )}
