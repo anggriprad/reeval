@@ -24,6 +24,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
    - **Form Bersih & To-the-Point**: JANGAN PERNAH menambahkan container banner edukasi/informasi alur kerja (seperti kotak alert biru/indigo penjelas alur) di dalam modal atau form kecuali diminta secara eksplisit oleh user. Form harus bersih, rapi, dan fungsional tanpa teks menggurui yang merusak estetika.
    - **Pesan Notifikasi & Toast Singkat**: Toast/notifikasi harus to-the-point dan wajar seperti aplikasi profesional pada umumnya (contoh: "Pengajuan berhasil dibuat", bukan narasi panjang yang memberitahu data dikirim ke divisi mana).
    - **Hindari Detail Gimmick & Over-explanation**: JANGAN ngide menambah detail berlebihan yang tidak penting, membingungkan, atau tidak lazim ada pada aplikasi profesional. Tetap sederhana, intuitif, dan sesuai standar industri.
+   - **Larangan Menambah Garis Pemisah / Elemen Dekoratif Liar (Zero Unprompted Dividers)**: DILARANG KERAS berinisiatif (*ngide*) menambahkan garis pemisah (`border-t`, `border-b`, `<hr>`, divider, dsb.), kotak pembatas, atau ornamen dekoratif lain yang tidak pernah diinstruksikan secara eksplisit oleh user. Eksekusi HANYA apa yang diperintahkan secara presisi tanpa menambah-nambahkan elemen atau garis pemisah sendiri.
 8. **Bebas Double Scroll pada Konten Modal**: Untuk setiap konten di dalam modal (`Modal.tsx`), defaultnya JANGAN PERNAH membuat container anak dengan pembatasan tinggi (seperti `max-h-... overflow-y-auto` atau `overflow-scroll`) yang memicu double scroll di dalam modal. Seluruh konten harus mengalir secara normal dan biarkan container modal (`Modal.tsx`) yang mengontrol scrolling alaminya secara penuh.
 9. **Dev Server Start Trigger**: Jika user menyebut frasa seperti "ayo mulai", "lets go", "let's go", atau semacamnya yang menandakan permulaan sesi/pekerjaan, asisten WAJIB langsung menjalankan development server di terminal (`npm run dev` / `npm.cmd run dev` di Windows) secara background/daemon.
 10. **Harmonisasi Card & Table (Edge-to-Edge Table Rule)**:
@@ -47,6 +48,38 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 13. **Standarisasi PageHeader (Tanpa Deskripsi & Tombol Ukuran Normal)**:
     - **Header Bersih Tanpa Deskripsi**: DILARANG menambahkan paragraf deskripsi, subtitle, atau metadata sekunder (seperti "Dibuat pada...", tanggal, nama pembuat) di dalam `PageHeader`. Judul `PageHeader` WAJIB bersih dan to-the-point (hanya judul halaman/nama entitas). Informasi metadata sekunder adalah ranah grid/kartu ringkasan konten halaman.
     - **Tombol Berukuran Normal**: Seluruh action button di dalam `PageHeader` WAJIB menggunakan ukuran normal (`size="md"` / default Button, DILARANG menggunakan `size="sm"`). Trigger icon menu (`ActionMenu`) di PageHeader juga wajib diselaraskan ke ukuran normal (`triggerSize="md"` / `h-9 w-9`) agar ketinggian tombol serasi dan proporsional.
+14. **Larangan Mutlak Inisiatif Git (Zero Autonomous Commit/Push - Mutlak Haram)**:
+    - **DILARANG KERAS** menjalankan perintah `git commit` maupun `git push` tanpa instruksi eksplisit dan langsung dari user.
+    - Setiap tindakan menyimpan riwayat ke git (`git commit`) atau mengirim ke remote repository (`git push`) adalah wewenang mutlak user. Asisten HANYA bertugas mengedit dan menguji kode di lokal, kemudian menunggu konfirmasi dan perintah user sebelum menyentuh git commit/push.
+    - JANGAN PERNAH berasumsi, mengambil inisiatif, atau menambahkan langkah git commit/push otomatis di akhir pekerjaan.
+15. **Standar Design System Mobile & Dual-Viewport (Mobile-First Ergonomics & Typography)**:
+    - **Skala Tipografi Dual-Viewport (Anti-Teks Mikroskopis di Mobile)**:
+      - Tampilan desktop menggunakan tipografi padat (`text-xs` / 12px untuk teks body/tabel, `text-[11px]` untuk metadata). Di layar mobile (`< 768px`), ukuran `text-xs` ke bawah terlalu kecil untuk dibaca pada jarak genggam.
+      - **Standar Hirarki Font (Mobile -> Desktop)**:
+        - **Judul Halaman (Page Title)**: `text-lg font-bold` di mobile (`MobileHeader`), `md:text-2xl font-bold` di desktop (`PageHeader`).
+        - **Judul Seksi / Grup Form (Section Header)**: `text-base md:text-sm font-bold text-slate-900 dark:text-white`.
+        - **Judul Entitas / Nama Produk Primer**: `text-[15px] md:text-sm font-semibold` (atau `text-sm font-semibold`).
+        - **Teks Body / Paragraf Bebas / Span Informasi / Baris Key-Value**: WAJIB `text-[13.5px] md:text-xs` (atau `text-sm md:text-xs`). DILARANG membiarkan paragraf bebas, catatan, alamat, atau rincian data menggunakan `text-xs` murni di mobile.
+        - **Label Form Input**: `text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300` dengan jarak bawah `mb-2 md:mb-1.5`.
+        - **Teks di Dalam Input (`<input>`, `<select>`, `<textarea>`)**: WAJIB `text-[16px] md:text-xs` (ukuran 16px di mobile mencegah bug auto-zoom browser iOS Safari saat input difokuskan).
+        - **Metadata Sekunder / Timestamp / Helper / Badge**: `text-xs md:text-[11px]`. DILARANG menggunakan `text-[9px]` atau `text-[10px]` pada tampilan mobile (batas minimum keterbacaan mobile adalah `11px`–`12px`).
+    - **Ukuran Tombol & Touch Target Ergonomis (Standar 44px Mobile)**:
+      - Komponen `Button`, `Input`, `Select`, `CurrencyInput`, dan `Textarea` wajib memiliki tinggi sentuh yang konsisten di mobile:
+        - **Ukuran Default (`size="md"` / `inputSize="md"`)**: `h-11` (44px) di mobile, `md:h-9` (36px) di desktop, dengan `rounded-xl md:rounded-md` dan `text-sm md:text-xs`.
+        - **Ukuran Kecil (`size="sm"`) / Pill Filter**: `h-9` (36px) di mobile, `md:h-8` (32px) di desktop, dengan `text-[13px] md:text-xs` dan `rounded-lg md:rounded-md`.
+        - **Ukuran Besar / CTA Utama (`size="lg"`)**: `h-12` (48px) di mobile, `md:h-10` (40px) di desktop, dengan `text-[15px] md:text-sm font-semibold`.
+        - **Tombol Ikon (`size="icon"`)**: `h-10 w-10` (40px) di mobile, `md:h-9 md:w-9` (36px) di desktop.
+    - **Arsitektur Surface & Layout Mobile (Edge-to-Edge)**:
+      - **Card List & Form Section (`noRounded="mobile"`)**: Pada tampilan mobile, kartu daftar item dan grup form menggunakan mode *edge-to-edge* (`max-md:-mx-4`, `max-md:rounded-none max-md:border-0 max-md:shadow-none`) agar ruang horizontal layar HP termanfaatkan maksimal.
+      - **Jarak Antar Input Form**: Gunakan jarak vertikal antar field yang lega di mobile (`gap-5` atau `space-y-5`, dan `md:gap-4 md:space-y-4` di desktop) untuk mencegah salah sentuh (*fat-finger*).
+      - **EmptyState Tanpa Border/Background di Mobile**: Komponen `EmptyState` pada halaman list (baik berdiri sendiri maupun di dalam `<Card><EmptyState /></Card>` atau `<Table />`) wajib tampil bersih tanpa border, shadow, dan background kotak di mobile (`max-md:bg-transparent max-md:border-0 max-md:shadow-none`).
+    - **Standar Bottom Sheet & Overlay Mobile**:
+      - Seluruh `<Modal>` secara default bertransformasi menjadi **Bottom Sheet** pada layar mobile (`mobileBottomSheet = true` sebagai default), lengkap dengan drag handle di bagian atas dan fitur *drag-to-dismiss* yang mulus.
+      - **Konfigurasi Tinggi (`sheetHeight`)**: Gunakan `sheetHeight="full"` (`h-[100dvh] rounded-none border-0` menempel penuh ke ujung atas layar) untuk alur pemilihan katalog/varian atau kustomisasi kompleks, dan `'lg'` / `'auto'` (`rounded-t-2xl`) untuk form ringkas atau filter.
+      - **Aturan Title Container Bottom Sheet**:
+        - *Default (Tanpa `onBack`)*: Label title di sebelah kiri (`text-left`), ikon tutup (`X`) di sebelah kanan.
+        - *Dengan Tombol Kembali (`onBack`)*: Tombol `ArrowLeft` di kiri, label title tepat di tengah (`text-center`), ikon tutup (`X`) di kanan.
+        - *Tanpa Title (`!title` / ActionMenu)*: Container title beserta ikon close dan garis pembatasnya disembunyikan penuh; tombol Batal di bagian bawah tampil bersih tanpa border atas (`border-t-0`).
 
 
 

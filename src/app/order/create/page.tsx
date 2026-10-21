@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useApp, initialOrderFormConfiguration } from '@/context/AppContext';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { formatCurrency, formatVariantLabel } from '@/lib/utils';
@@ -167,6 +170,14 @@ export function CreateOrderContent() {
         cleanPhone = cleanPhone.replace(/^0+/, '');
         setCustomerPhone(cleanPhone);
         setCustomerAddress(orderToEdit.customer.address || '');
+        if (orderToEdit.customer.city) {
+          const reg = regionsData.regencies.find(r => r.id === orderToEdit.customer.city || r.name.toLowerCase() === orderToEdit.customer.city?.toLowerCase());
+          if (reg) setCustomerCity(reg.id);
+        }
+        if (orderToEdit.customer.district) {
+          const dist = regionsData.districts.find(d => d.id === orderToEdit.customer.district || d.name.toLowerCase() === orderToEdit.customer.district?.toLowerCase());
+          if (dist) setCustomerDistrict(dist.id);
+        }
         setOrderNotes(orderToEdit.orderNotes || '');
         setOrderItems(orderToEdit.items);
       }
@@ -185,34 +196,36 @@ export function CreateOrderContent() {
   // --- Handlers: Catalog & Variant Selection ---
   const openProductSelector = (product: Product) => {
     setSelectedProduct(product);
-    // Initialize default attribute values with first value of each variant type
-    const vts = product.variantTypes || [];
-    const initialAttrs: Record<string, string> = {};
-    vts.forEach(vt => {
-      if (vt.values.length > 0) {
-        initialAttrs[vt.name] = vt.values[0];
-      }
-    });
-    setSelectedAttributeValues(initialAttrs);
+    // User requested NO default attribute values selected initially
+    setSelectedAttributeValues({});
     setSelectedModifiersState({});
     setModalIsCustom(false);
     setModalCustomNotes('');
   };
 
+  const isAllAttributesSelected = React.useMemo(() => {
+    if (!selectedProduct) return false;
+    const vts = selectedProduct.variantTypes || [];
+    if (vts.length === 0) return true;
+    return vts.every(vt => Boolean(selectedAttributeValues[vt.name]));
+  }, [selectedProduct, selectedAttributeValues]);
+
   // Find matching SKU based on selected attribute values
   const getMatchingVariant = React.useCallback((): ProductVariantSKU | undefined => {
-    if (!selectedProduct) return undefined;
+    if (!selectedProduct || !isAllAttributesSelected) return undefined;
     return selectedProduct.variants.find(v => {
       return Object.entries(selectedAttributeValues).every(
         ([key, val]) => v.combination[key] === val
       );
-    }) || selectedProduct.variants[0];
-  }, [selectedProduct, selectedAttributeValues]);
+    });
+  }, [selectedProduct, isAllAttributesSelected, selectedAttributeValues]);
 
   const calculatedModalUnitPrice = React.useMemo(() => {
     if (!selectedProduct) return 0;
     const matchingVariant = getMatchingVariant();
-    const basePrice = matchingVariant ? matchingVariant.price : 0;
+    const basePrice = matchingVariant 
+      ? matchingVariant.price 
+      : Math.min(...(selectedProduct.variants?.map(v => v.price) || [0]));
 
     let modifierPrice = 0;
     const productModifiers = selectedProduct.modifierGroupIds
@@ -231,8 +244,9 @@ export function CreateOrderContent() {
   }, [selectedProduct, getMatchingVariant, selectedModifiersState, masterModifierGroups]);
 
   const handleAddItemToCart = () => {
-    if (!selectedProduct) return;
+    if (!selectedProduct || !isAllAttributesSelected) return;
     const matchingVariant = getMatchingVariant();
+    if (!matchingVariant && (selectedProduct.variantTypes || []).length > 0) return;
     const basePrice = matchingVariant ? matchingVariant.price : 0;
 
     // Calculate modifier price
@@ -362,9 +376,13 @@ export function CreateOrderContent() {
     const finalPhone = `62${customerPhone.trim()}`;
 
     let finalAddress = customerAddress.trim();
+    let selectedCityName = '';
+    let selectedDistrictName = '';
     if (isShippingRateEnabled) {
-      const cityName = regionsData.regencies.find(r => r.id === customerCity)?.name || '';
-      const districtName = regionsData.districts.find(d => d.id === customerDistrict)?.name || '';
+      const cityName = regionsData.regencies.find(r => r.id === customerCity)?.name || customerCity || '';
+      const districtName = regionsData.districts.find(d => d.id === customerDistrict)?.name || customerDistrict || '';
+      selectedCityName = cityName;
+      selectedDistrictName = districtName;
       if (cityName && districtName) {
         const suffix = `Kec. ${districtName}, ${cityName}`;
         if (!finalAddress.includes(suffix)) {
@@ -376,7 +394,9 @@ export function CreateOrderContent() {
     const customerObj = {
       name: customerName.trim(),
       phone: finalPhone,
-      address: finalAddress
+      address: finalAddress,
+      city: selectedCityName || undefined,
+      district: selectedDistrictName || undefined,
     };
 
     // Serialize custom fields into orderNotes
@@ -418,10 +438,10 @@ export function CreateOrderContent() {
   const renderProductCart = () => (
     <div className="space-y-4 w-full">
       {orderItems.length === 0 ? (
-        <div className="p-10 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+        <div className="p-8 sm:p-10 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
           <ShoppingCart className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-          <p className="font-bold text-slate-700 dark:text-slate-300 text-xs">Keranjang pesanan masih kosong</p>
-          <p className="text-xs text-slate-400 mt-1">Klik tombol "Tambah Produk" untuk memilih katalog produk dan variasi.</p>
+          <p className="font-bold text-slate-700 dark:text-slate-300 text-sm sm:text-xs">Keranjang pesanan masih kosong</p>
+          <p className="text-xs text-slate-400 mt-1">Klik tombol &quot;Tambah Produk&quot; untuk memilih katalog produk dan variasi.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -434,8 +454,10 @@ export function CreateOrderContent() {
                 key={idx}
                 className="p-4 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-800/50 shadow-sm space-y-3"
               >
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                {/* DESKTOP LAYOUT (sm:grid hidden on mobile, visible on desktop) */}
+                <div className="hidden sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center gap-4">
+                  {/* Left: Product Info */}
+                  <div className="flex items-start gap-3 min-w-0">
                     {product?.image ? (
                       <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
                         <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
@@ -446,92 +468,169 @@ export function CreateOrderContent() {
                       </div>
                     )}
 
-                    <div className="space-y-1 flex-1 min-w-0">
-                      {/* Line 1: Pure Main Product Title */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-1.5 py-0.5 rounded">
-                          #{idx + 1}
-                        </span>
+                    <div className="space-y-1 min-w-0">
+                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                        {item.productName}
+                      </h4>
+
+                      {item.variantLabel && (
+                        <div className="text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-0.5 rounded-md border border-slate-100 dark:border-slate-700/60 inline-block">
+                          {formatVariantLabel(item.variantLabel)}
+                        </div>
+                      )}
+
+                      {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {item.selectedModifiers.map(mGroup => (
+                            mGroup.selectedOptions.map(opt => (
+                              <span key={opt.optionId} className="text-[10px] bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                                +{opt.name} ({formatCurrency(opt.additionalPrice)})
+                              </span>
+                            ))
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Middle (Desktop): Action Qty - diposisikan tepat di tengah card */}
+                  <div className="flex justify-center px-2">
+                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleItemQtyChange(idx, item.qty - 1)}
+                        className="h-8 w-8 flex items-center justify-center rounded-lg font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 shadow-xs hover:bg-slate-50 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm cursor-pointer"
+                        title="Kurangi Kuantitas"
+                      >
+                        -
+                      </button>
+                      <span className="min-w-[48px] text-center font-mono font-bold text-sm text-slate-900 dark:text-white">
+                        {item.qty}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleItemQtyChange(idx, item.qty + 1)}
+                        className="h-8 w-8 flex items-center justify-center rounded-lg font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 shadow-xs hover:bg-slate-50 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm cursor-pointer"
+                        title="Tambah Kuantitas"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Right (Desktop): Total Price (hanya harga total setelah dikali qty) + Delete button */}
+                  <div className="flex items-center justify-end gap-4 min-w-0">
+                    <div className="text-right font-mono font-extrabold text-sm text-slate-900 dark:text-white">
+                      {formatCurrency(item.unitPrice * item.qty)}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(idx)}
+                      className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer shrink-0"
+                      title="Hapus Item"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* MOBILE LAYOUT (sm:hidden, visible on mobile) */}
+                <div className="sm:hidden space-y-3">
+                  {/* Baris 1: Product image/icon, Nama item, Nama varian, dan Icon button hapus di pojok kanan */}
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      {product?.image ? (
+                        <div className="h-11 w-11 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                          <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="h-11 w-11 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                          <IconComp className="h-5 w-5" />
+                        </div>
+                      )}
+
+                      <div className="space-y-1 min-w-0 flex-1">
                         <h4 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
                           {item.productName}
                         </h4>
+
+                        {item.variantLabel && (
+                          <div className="text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-100 dark:border-slate-700/60 inline-block truncate max-w-full">
+                            {formatVariantLabel(item.variantLabel)}
+                          </div>
+                        )}
+
+                        {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {item.selectedModifiers.map(mGroup => (
+                              mGroup.selectedOptions.map(opt => (
+                                <span key={opt.optionId} className="text-[11.5px] bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full font-medium">
+                                  +{opt.name} ({formatCurrency(opt.additionalPrice)})
+                                </span>
+                              ))
+                            ))}
+                          </div>
+                        )}
                       </div>
-
-                  {/* Line 2: Distinct Sub-Line Underneath for Variant Attributes */}
-                  {item.variantLabel && (
-                    <div className="text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700/60 inline-block">
-                      {formatVariantLabel(item.variantLabel)}
                     </div>
-                  )}
 
-                  {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {item.selectedModifiers.map(mGroup => (
-                        mGroup.selectedOptions.map(opt => (
-                          <span key={opt.optionId} className="text-[10px] bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full font-medium">
-                            +{opt.name} ({formatCurrency(opt.additionalPrice)})
-                          </span>
-                        ))
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-                <div className="flex items-center gap-4 shrink-0">
-                  {/* Qty controls */}
-                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                    {/* Pojok Kanan: Icon button hapus */}
                     <button
                       type="button"
-                      onClick={() => handleItemQtyChange(idx, item.qty - 1)}
-                      className="px-2 py-0.5 font-bold text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded text-xs"
+                      onClick={() => handleRemoveItem(idx)}
+                      className="p-2 -mr-1.5 -mt-1 text-slate-400 hover:text-red-600 active:text-red-600 rounded-lg hover:bg-red-50 active:bg-red-50 dark:hover:bg-red-950/30 transition-colors shrink-0 touch-manipulation cursor-pointer"
+                      title="Hapus Item"
+                      aria-label="Hapus Item"
                     >
-                      -
-                    </button>
-                    <span className="px-2 font-mono font-bold text-xs text-slate-900 dark:text-white">
-                      {item.qty} Unit
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleItemQtyChange(idx, item.qty + 1)}
-                      className="px-2 py-0.5 font-bold text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded text-xs"
-                    >
-                      +
+                      <Trash2 className="h-4.5 w-4.5" />
                     </button>
                   </div>
 
-                  {/* Price Subtotal */}
-                  <div className="text-right font-mono">
-                    <div className="text-[11px] text-slate-400">@ {formatCurrency(item.unitPrice)}</div>
-                    <div className="font-extrabold text-xs text-slate-900 dark:text-white">
+                  {/* Baris 2: Action button kuantitas di kiri & Nominal total harga di kanan (menghemat 1 baris) */}
+                  <div className="flex items-center justify-between gap-3 pt-0.5">
+                    <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => handleItemQtyChange(idx, item.qty - 1)}
+                        className="h-9 w-9 flex items-center justify-center rounded-lg font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 shadow-xs active:scale-95 transition-all text-base touch-manipulation cursor-pointer"
+                        title="Kurangi Kuantitas"
+                        aria-label="Kurangi Kuantitas"
+                      >
+                        -
+                      </button>
+                      <span className="min-w-[44px] text-center font-mono font-bold text-sm text-slate-900 dark:text-white">
+                        {item.qty}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleItemQtyChange(idx, item.qty + 1)}
+                        className="h-9 w-9 flex items-center justify-center rounded-lg font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 shadow-xs active:scale-95 transition-all text-base touch-manipulation cursor-pointer"
+                        title="Tambah Kuantitas"
+                        aria-label="Tambah Kuantitas"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Nominal Total Harga tanpa label "Total Harga" */}
+                    <span className="font-mono font-extrabold text-base text-slate-900 dark:text-white shrink-0">
                       {formatCurrency(item.unitPrice * item.qty)}
-                    </div>
+                    </span>
                   </div>
-
-                  {/* Delete Item */}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveItem(idx)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                    title="Hapus Item"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
                 </div>
-              </div>
 
-              {/* Always display Catatan Kustom Produk (Opsional) */}
-              <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
-                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Catatan Produk (Opsional)
-                </label>
-                <Input
-                  type="text"
-                  value={item.customNotes || ''}
-                  onChange={e => handleItemNotesChange(idx, e.target.value)}
-                  inputSize="sm"
-                />
-              </div>
+                {/* Always display Catatan Kustom Produk (Opsional) */}
+                <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+                  <Textarea
+                    autoResize
+                    rows={1}
+                    inputSize="sm"
+                    placeholder="Catatan produk (opsional)"
+                    value={item.customNotes || ''}
+                    onChange={e => handleItemNotesChange(idx, e.target.value)}
+                  />
+                </div>
             </div>
           );
         })}
@@ -540,8 +639,8 @@ export function CreateOrderContent() {
       )}
       <Button
         onClick={() => setShowCatalogModal(true)}
-        size='sm'
-        variant='outline'
+        variant="outline-primary"
+        className="w-full md:w-auto"
       >
         <Plus className="h-4 w-4" />
         Tambah Produk
@@ -550,33 +649,25 @@ export function CreateOrderContent() {
   );
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+    <div className="space-y-5 md:space-y-6 max-w-5xl mx-auto max-md:-mx-4 max-md:-mt-4 pb-4 md:pb-8">
       <PageHeader
         backHref={targetListHref}
-        title={editId ? "Edit Sales Order" : "Buat Sales Order Baru"}
+        title={editId ? "Edit Pesanan" : "Buat Pesanan"}
       />
 
       {/* DYNAMIC FORM RENDERING */}
       {activeFormConfig.map((container) => {
         return (
-          <div key={container.id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
+          <Card key={container.id} noRounded="mobile" className="p-4 sm:p-6 space-y-5 sm:space-y-4">
             {container.title && container.title.trim().length > 0 && (
-              <h3 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="font-bold text-base sm:text-sm text-slate-900 dark:text-white flex items-center gap-2">
                 {container.title}
               </h3>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-4">
               {container.fields.map(field => {
                 const hasLabel = Boolean(field.label && field.label.trim().length > 0);
-                const renderLabel = () => {
-                  if (!hasLabel) return null;
-                  return (
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                      {field.label} {field.isRequired && <span className="text-red-500">*</span>}
-                    </label>
-                  );
-                };
 
                 if (field.type === 'product_list') {
                   return (
@@ -589,8 +680,9 @@ export function CreateOrderContent() {
                 if (field.id === 'field-customer-name') {
                   return (
                     <div key={field.id} className="md:col-span-1">
-                      {renderLabel()}
                       <Input
+                        label={hasLabel ? field.label : undefined}
+                        required={field.isRequired}
                         type="text"
                         placeholder={field.placeholder}
                         value={customerName}
@@ -603,8 +695,9 @@ export function CreateOrderContent() {
                 if (field.id === 'field-customer-phone') {
                   return (
                     <div key={field.id} className="md:col-span-1">
-                      {renderLabel()}
                       <Input
+                        label={hasLabel ? field.label : undefined}
+                        required={field.isRequired}
                         type="text"
                         inputMode="numeric"
                         prefix="+62"
@@ -623,32 +716,30 @@ export function CreateOrderContent() {
                       {isShippingRateEnabled && (
                         <>
                           <div className="md:col-span-1">
-                            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                              Kota / Kabupaten <span className="text-red-500">*</span>
-                            </label>
                             <Select
+                              label="Kota / Kabupaten"
+                              required
                               value={customerCity}
                               onChange={e => {
                                 setCustomerCity(e.target.value);
                                 setCustomerDistrict('');
                               }}
                             >
-                              <option value="">-- Pilih Kota/Kab. --</option>
+                              <option value="" disabled></option>
                               {availableRegencies.map(r => (
                                 <option key={r.id} value={r.id}>{r.name}</option>
                               ))}
                             </Select>
                           </div>
                           <div className="md:col-span-1">
-                            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                              Kecamatan <span className="text-red-500">*</span>
-                            </label>
                             <Select
+                              label="Kecamatan"
+                              required
                               value={customerDistrict}
                               onChange={e => setCustomerDistrict(e.target.value)}
                               disabled={!customerCity}
                             >
-                              <option value="">-- Pilih Kecamatan --</option>
+                              <option value="" disabled></option>
                               {availableDistricts.map(d => (
                                 <option key={d.id} value={d.id}>{d.name}</option>
                               ))}
@@ -657,13 +748,13 @@ export function CreateOrderContent() {
                         </>
                       )}
                       <div className="md:col-span-2">
-                        {renderLabel()}
-                        <textarea
-                          rows={2}
+                        <Textarea
+                          label={hasLabel ? field.label : undefined}
+                          required={field.isRequired}
+                          rows={3}
                           placeholder={field.placeholder}
                           value={customerAddress}
                           onChange={e => setCustomerAddress(e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors shadow-xs"
                         />
                       </div>
                     </React.Fragment>
@@ -673,13 +764,13 @@ export function CreateOrderContent() {
                 if (field.id === 'field-order-notes') {
                   return (
                     <div key={field.id} className="md:col-span-2">
-                      {renderLabel()}
-                      <textarea
-                        rows={2}
+                      <Textarea
+                        label={hasLabel ? field.label : undefined}
+                        required={field.isRequired}
+                        rows={3}
                         placeholder={field.placeholder}
                         value={orderNotes}
                         onChange={e => setOrderNotes(e.target.value)}
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors shadow-xs"
                       />
                     </div>
                   );
@@ -688,52 +779,59 @@ export function CreateOrderContent() {
                 // Fallback generic field handling
                 return (
                   <div key={field.id} className={field.type === 'textarea' ? 'md:col-span-2' : 'md:col-span-1'}>
-                    {renderLabel()}
                     {field.type === 'textarea' ? (
-                      <textarea
-                        rows={2}
+                      <Textarea
+                        label={hasLabel ? field.label : undefined}
+                        required={field.isRequired}
+                        rows={3}
                         placeholder={field.placeholder}
                         value={(customFieldsData[field.id] as string) || ''}
                         onChange={(e) => handleCustomFieldChange(field.id, e.target.value)}
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors shadow-xs"
                       />
                     ) : field.type === 'dropdown' ? (
                       <Select
+                        label={hasLabel ? field.label : undefined}
+                        required={field.isRequired}
                         value={(customFieldsData[field.id] as string) || ''}
                         onChange={(e: any) => handleCustomFieldChange(field.id, e.target.value)}
                         className="w-full"
                       >
-                        <option value="" disabled>{hasLabel ? `Pilih ${field.label}` : 'Pilih Opsi'}</option>
+                        <option value="" disabled></option>
                         {field.options?.map((opt, i) => (
                           <option key={i} value={opt}>{opt}</option>
                         ))}
                       </Select>
                     ) : field.type === 'checkbox' ? (
-                      <div className="space-y-2">
-                        {field.options?.map((opt, i) => {
-                          const checkedArr = (customFieldsData[field.id] as string[]) || [];
-                          return (
-                            <label key={i} className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 dark:text-slate-300">
-                              <input
-                                type="checkbox"
-                                value={opt}
+                      <div>
+                        {hasLabel && (
+                          <label className="mb-2 md:mb-1.5 block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {field.label} {field.isRequired && <span className="ml-1 text-red-500 font-bold">*</span>}
+                          </label>
+                        )}
+                        <div className="space-y-2">
+                          {field.options?.map((opt, i) => {
+                            const checkedArr = (customFieldsData[field.id] as string[]) || [];
+                            return (
+                              <Checkbox
+                                key={i}
+                                label={opt}
                                 checked={checkedArr.includes(opt)}
-                                onChange={(e: any) => {
-                                  if (e.target.checked) {
+                                onChange={(checked) => {
+                                  if (checked) {
                                     handleCustomFieldChange(field.id, [...checkedArr, opt]);
                                   } else {
                                     handleCustomFieldChange(field.id, checkedArr.filter(v => v !== opt));
                                   }
                                 }}
-                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
                               />
-                              {opt}
-                            </label>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : (
                       <Input
+                        label={hasLabel ? field.label : undefined}
+                        required={field.isRequired}
                         type={field.type}
                         placeholder={field.placeholder}
                         value={(customFieldsData[field.id] as string) || ''}
@@ -744,41 +842,41 @@ export function CreateOrderContent() {
                 );
               })}
             </div>
-          </div>
+          </Card>
         );
       })}
 
       {formError && (
-        <div className="flex items-center gap-3 rounded-xl bg-red-50 p-3.5 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-300 border border-red-200 dark:border-red-900/60">
+        <div className="mx-4 md:mx-0 flex items-center gap-3 rounded-xl bg-red-50 p-3.5 text-[13.5px] md:text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-300 border border-red-200 dark:border-red-900/60">
           <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
           <span>{formError}</span>
         </div>
       )}
 
       {/* SECTION 4: SUMMARY & SUBMIT FOOTER */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="space-y-1.5 w-1/3">
+      <div className="mt-8 md:mt-10 px-4 md:px-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-transparent border-0 shadow-none">
+        <div className="space-y-1.5 w-full sm:w-auto sm:min-w-[280px]">
           {isShippingRateEnabled ? (
             <>
-              <div className='flex w-full justify-between text-xs text-slate-500 dark:text-slate-400'>
+              <div className='flex w-full justify-between text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400'>
                 <span>Subtotal Produk ({orderItems.length} item)</span>
                 <strong className="font-mono text-slate-700 dark:text-slate-200">{formatCurrency(totalAmount)}</strong>
               </div>
-              <div className='flex w-full justify-between text-xs text-slate-500 dark:text-slate-400'>
+              <div className='flex w-full justify-between text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400'>
                 <span>Ongkos Kirim</span>
                 <strong className="font-mono text-slate-700 dark:text-slate-200">{formatCurrency(calculatedShippingCost)}</strong>
               </div>
-              <div className="flex w-full items-center justify-between">
+              <div className="flex w-full items-center justify-between pt-1">
                 <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Total Pesanan</span>
-                <span className="text-2xl font-black font-mono text-indigo-600 dark:text-indigo-400">
+                <span className="text-lg sm:text-xl font-bold font-mono text-indigo-600 dark:text-indigo-400">
                   {formatCurrency(totalAmount + calculatedShippingCost)}
                 </span>
               </div>
             </>
           ) : (
-            <div className="flex flex-col w-full">
+            <div className="flex flex-row items-center justify-between md:flex-col md:items-start w-full">
               <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">Total Pesanan</span>
-              <span className="text-2xl font-black font-mono text-indigo-600 dark:text-indigo-400">
+              <span className="text-lg sm:text-xl md:text-2xl font-bold md:font-black font-mono text-indigo-600 dark:text-indigo-400">
                 {formatCurrency(totalAmount)}
               </span>
             </div>
@@ -787,7 +885,8 @@ export function CreateOrderContent() {
 
         <Button
           onClick={handleSubmitOrder}
-          size='lg'
+          size="lg"
+          className="w-full sm:w-auto"
         >
           <Check className="h-4 w-4" />
           {editId ? "Simpan Perubahan" : "Buat Pesanan"}
@@ -806,25 +905,33 @@ export function CreateOrderContent() {
         onBack={selectedProduct ? () => setSelectedProduct(null) : undefined}
         title={selectedProduct ? `Pilih Varian` : 'Katalog Produk'}
         size="lg"
+        mobileBottomSheet
+        sheetHeight="full"
         actions={
           selectedProduct ? (
-            <>
-              <div className="mr-auto font-mono text-left">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Harga Satuan</span>
-                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-base">
-                  {formatCurrency(calculatedModalUnitPrice)}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-3">
+              {/* Informasi Harga Satuan: di atas tombol aksi pada mobile, di kiri pada desktop */}
+              <div className="flex items-center justify-between sm:flex-col sm:items-start font-mono">
+                <span className="text-xs sm:text-[11px] text-slate-500 dark:text-slate-400 font-sans font-medium">
+                  Harga Satuan
+                </span>
+                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-lg sm:text-base">
+                  {isAllAttributesSelected ? formatCurrency(calculatedModalUnitPrice) : '-'}
                 </span>
               </div>
-              <Button type="button" variant="ghost" onClick={() => setSelectedProduct(null)}>
-                Batal
-              </Button>
-              <Button
-                type="button"
-                onClick={handleAddItemToCart}
-              >
-                Tambahkan ke Pesanan
-              </Button>
-            </>
+
+              {/* Tombol Aksi: diletakkan di paling bawah pada mobile, di kanan pada desktop */}
+              <div className="w-full sm:w-auto">
+                <Button
+                  type="button"
+                  onClick={handleAddItemToCart}
+                  disabled={!isAllAttributesSelected}
+                  className="w-full sm:w-auto"
+                >
+                  Tambahkan ke Pesanan
+                </Button>
+              </div>
+            </div>
           ) : undefined
         }
       >
@@ -840,7 +947,6 @@ export function CreateOrderContent() {
                 value={catalogSearch}
                 onChange={e => setCatalogSearch(e.target.value)}
                 containerClassName="w-full"
-                inputSize="sm"
               />
 
               {/* Category Pills */}
@@ -848,7 +954,7 @@ export function CreateOrderContent() {
                 <button
                   type="button"
                   onClick={() => setSelectedCategory('ALL')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg shrink-0 transition-all ${selectedCategory === 'ALL'
+                  className={`px-3.5 py-2 md:px-3 md:py-1 text-[13px] md:text-xs font-semibold rounded-xl md:rounded-lg shrink-0 transition-all cursor-pointer ${selectedCategory === 'ALL'
                     ? 'bg-indigo-600 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
                     }`}
@@ -860,7 +966,7 @@ export function CreateOrderContent() {
                     key={cat}
                     type="button"
                     onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1 text-xs font-semibold rounded-lg shrink-0 transition-all ${selectedCategory === cat
+                    className={`px-3.5 py-2 md:px-3 md:py-1 text-[13px] md:text-xs font-semibold rounded-xl md:rounded-lg shrink-0 transition-all cursor-pointer ${selectedCategory === cat
                       ? 'bg-indigo-600 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
                       }`}
@@ -872,9 +978,9 @@ export function CreateOrderContent() {
             </div>
 
             {/* Products Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto p-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-0.5">
               {filteredProducts.length === 0 ? (
-                <div className="col-span-full p-8 text-center text-slate-400 text-xs">
+                <div className="col-span-full p-8 text-center text-slate-400 text-[13.5px] md:text-xs">
                   Tidak ada produk yang cocok dengan pencarian.
                 </div>
               ) : (
@@ -903,13 +1009,13 @@ export function CreateOrderContent() {
                       )}
 
                       <div className="flex-1 min-w-0">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        <span className="text-[11px] md:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                           {prod.category}
                         </span>
-                        <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate group-hover:text-indigo-600">
+                        <h4 className="font-bold text-sm md:text-xs text-slate-900 dark:text-white truncate group-hover:text-indigo-600">
                           {prod.name}
                         </h4>
-                        <div className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                        <div className="text-[13.5px] md:text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-1">
                           {priceStr}
                         </div>
                       </div>
@@ -940,7 +1046,7 @@ export function CreateOrderContent() {
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    <span className="text-[11px] md:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                       {selectedProduct.category}
                     </span>
                     <h4 className="font-bold text-base text-slate-900 dark:text-white truncate">
@@ -958,15 +1064,10 @@ export function CreateOrderContent() {
 
               return (
                 <div key={vt.name} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 block">
+                  <div>
+                    <label className="text-[13px] sm:text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 block">
                       {vt.name}
                     </label>
-                    {selectedAttributeValues[vt.name] && (
-                      <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                        {selectedAttributeValues[vt.name]}
-                      </span>
-                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-2.5">
@@ -980,14 +1081,14 @@ export function CreateOrderContent() {
                             key={val}
                             type="button"
                             onClick={() => setSelectedAttributeValues({ ...selectedAttributeValues, [vt.name]: val })}
-                            className={`group relative flex flex-col items-center p-2 rounded-xl border-2 transition-all text-center min-w-[76px] sm:min-w-[88px] max-w-[120px] ${
+                            className={`group relative flex flex-col items-center p-2.5 sm:p-2 rounded-xl border-2 transition-all text-center min-w-[84px] sm:min-w-[88px] max-w-[120px] ${
                               isSelected
                                 ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 shadow-sm ring-2 ring-indigo-500/20 dark:border-indigo-500 dark:bg-indigo-950/40 dark:text-indigo-100'
                                 : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600'
                             }`}
                           >
                             {/* Preview Gambar Atribut di atas label */}
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 shrink-0 mb-1.5 flex items-center justify-center">
+                            <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 shrink-0 mb-1.5 flex items-center justify-center">
                               {imgUrl ? (
                                 <img
                                   src={imgUrl}
@@ -997,13 +1098,13 @@ export function CreateOrderContent() {
                               ) : (
                                 <div className="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
                                   <ImageIcon className="h-5 w-5" />
-                                  <span className="text-[9px] mt-0.5">Polos</span>
+                                  <span className="text-[10px] mt-0.5">Polos</span>
                                 </div>
                               )}
                             </div>
 
                             {/* Label Pilihan Atribut */}
-                            <span className="text-xs font-semibold leading-tight line-clamp-2 break-words">
+                            <span className="text-sm sm:text-xs font-semibold leading-tight line-clamp-2 break-words">
                               {val}
                             </span>
 
@@ -1022,7 +1123,7 @@ export function CreateOrderContent() {
                           key={val}
                           type="button"
                           onClick={() => setSelectedAttributeValues({ ...selectedAttributeValues, [vt.name]: val })}
-                          className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-all ${
+                          className={`px-4 py-2.5 sm:px-3.5 sm:py-1.5 text-sm sm:text-xs font-semibold rounded-xl border transition-all min-h-[42px] sm:min-h-0 flex items-center justify-center active:scale-95 touch-manipulation ${
                             isSelected
                               ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                               : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
@@ -1046,8 +1147,8 @@ export function CreateOrderContent() {
                 {masterModifierGroups
                   .filter(g => selectedProduct.modifierGroupIds?.includes(g.id))
                   .map(group => (
-                    <div key={group.id} className="space-y-1.5 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl">
-                      <span className="text-[11px] font-semibold text-slate-500 uppercase block">{group.name}</span>
+                    <div key={group.id} className="space-y-2 bg-slate-50 dark:bg-slate-800/40 p-3 sm:p-2.5 rounded-xl">
+                      <span className="text-xs sm:text-[11px] font-semibold text-slate-500 uppercase block">{group.name}</span>
                       <div className="flex flex-wrap gap-2">
                         {group.options.map(opt => {
                           const currentSelected = selectedModifiersState[group.id] || [];
@@ -1067,7 +1168,7 @@ export function CreateOrderContent() {
                                   setSelectedModifiersState({ ...selectedModifiersState, [group.id]: updated });
                                 }
                               }}
-                              className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-all ${isChecked
+                              className={`px-3.5 py-2 sm:px-2.5 sm:py-1 text-[13px] sm:text-xs font-medium rounded-xl sm:rounded-lg border transition-all min-h-[40px] sm:min-h-0 flex items-center cursor-pointer ${isChecked
                                 ? 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950 dark:text-indigo-300'
                                 : 'bg-white text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400'
                                 }`}

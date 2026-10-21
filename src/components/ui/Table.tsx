@@ -80,7 +80,7 @@ export function Table<T>({
           'w-full shadow-xs',
           isInsideCardOnly
             ? 'bg-transparent border-0 shadow-none rounded-none'
-            : 'rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900',
+            : 'max-md:bg-transparent max-md:border-0 max-md:shadow-none rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900',
           containerClassName
         )}
       >
@@ -106,13 +106,13 @@ export function Table<T>({
     const isLast = colIndex === columns.length - 1;
 
     if (dense) {
-      const leftPad = isFirst ? 'pl-4 sm:pl-5' : 'pl-3';
-      const rightPad = isLast ? 'pr-4 sm:pr-5' : 'pr-3';
+      const leftPad = isFirst ? 'pl-3.5 sm:pl-5' : 'pl-2.5 sm:pl-3';
+      const rightPad = isLast ? 'pr-3.5 sm:pr-5' : 'pr-2.5 sm:pr-3';
       return `py-2.5 ${leftPad} ${rightPad}`;
     }
 
-    const leftPad = isFirst ? 'pl-5 sm:pl-6' : 'pl-3.5';
-    const rightPad = isLast ? 'pr-5 sm:pr-6' : 'pr-3.5';
+    const leftPad = isFirst ? 'pl-3.5 sm:pl-6' : 'pl-3 sm:pl-3.5';
+    const rightPad = isLast ? 'pr-3.5 sm:pr-6' : 'pr-3 sm:pr-3.5';
     return `py-3.5 ${leftPad} ${rightPad}`;
   };
 

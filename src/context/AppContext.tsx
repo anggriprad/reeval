@@ -362,21 +362,21 @@ export const initialOrderFormConfiguration: FormContainer[] = [
     ]
   },
   {
-    id: 'container-notes',
-    title: 'Catatan Pesanan',
-    order: 1,
-    fields: [
-      { id: 'field-order-notes', label: '', type: 'textarea', isRequired: false, placeholder: 'Tambahkan catatan untuk pesanan ini', order: 0 }
-    ]
-  },
-  {
     id: 'container-customer',
     title: 'Informasi Pelanggan',
-    order: 2,
+    order: 1,
     fields: [
       { id: 'field-customer-name', label: 'Nama Pelanggan', type: 'text', isRequired: true, order: 0 },
       { id: 'field-customer-phone', label: 'Nomor Telepon', type: 'number', isRequired: true, order: 1 },
       { id: 'field-customer-address', label: 'Alamat Lengkap', type: 'textarea', isRequired: true, order: 2 },
+    ]
+  },
+  {
+    id: 'container-notes',
+    title: 'Catatan Pesanan',
+    order: 2,
+    fields: [
+      { id: 'field-order-notes', label: '', type: 'textarea', isRequired: false, placeholder: 'Tambahkan catatan untuk pesanan ini', order: 0 }
     ]
   }
 ];
@@ -425,6 +425,27 @@ function getDefaultState(): AppState {
 
 
 
+// Helper: compute SO status based on item-level fulfillment counters
+export function computeSOStatus(so: SalesOrder): OrderStatus {
+  if (so.status === 'CANCELED') return 'CANCELED';
+  if (so.status === 'PENDING') return 'PENDING';
+
+  const items = so.items;
+  const totalQty = items.reduce((s, i) => s + i.qty, 0);
+  const totalDelivered = items.reduce((s, i) => s + (i.deliveredQty || 0), 0);
+  const totalProduced = items.reduce((s, i) => s + (i.producedQty || 0), 0);
+
+  // Status hanya SENT jika seluruh item telah diterima pelanggan
+  if (totalDelivered >= totalQty) return 'SENT';
+  // Status hanya PARTIALLY_SHIPPED jika sebagian barang telah diterima di pelanggan
+  if (totalDelivered > 0) return 'PARTIALLY_SHIPPED';
+  // Jika seluruh barang telah selesai diproduksi dan belum ada serah terima, status adalah SIAP KIRIM (READY)
+  if (totalProduced >= totalQty) return 'READY';
+  // Jika sebagian barang telah selesai diproduksi
+  if (totalProduced > 0) return 'PARTIALLY_READY';
+  return 'PROCESSING';
+}
+
 // ========================================
 // Provider Component
 // ========================================
@@ -470,12 +491,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (initSo && so.id === 'so-3' && so.status === 'PARTIALLY_SHIPPED') {
               return { ...so, status: initSo.status, items: structuredClone(initSo.items) };
             }
-            if (!so.complaints || so.complaints.length === 0) return so;
+            // Auto-heal status if SO was wrongly marked PARTIALLY_SHIPPED before any items were actually delivered
+            const correctedStatus = computeSOStatus(so);
+            const sanitizedSO = { ...so, status: correctedStatus };
+
+            if (!sanitizedSO.complaints || sanitizedSO.complaints.length === 0) return sanitizedSO;
             return {
-              ...so,
-              complaints: so.complaints.map(cmp => {
+              ...sanitizedSO,
+              complaints: sanitizedSO.complaints.map(cmp => {
                 if (cmp.attachments && cmp.attachments.length > 0) return cmp;
-                const initSo = initialSalesOrders.find(iso => iso.id === so.id);
+                const initSo = initialSalesOrders.find(iso => iso.id === sanitizedSO.id);
                 const initCmp = initSo?.complaints?.find(ic => ic.id === cmp.id);
                 if (initCmp?.attachments && initCmp.attachments.length > 0) {
                   return { ...cmp, attachments: initCmp.attachments };
@@ -530,6 +555,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         journalEntries: (saved.journalEntries?.length ? saved.journalEntries : structuredClone(initialJournalEntries))
           .filter(j => j.sourceType !== 'OPENING_BALANCE' || !j.sourceId || validBankIds.has(j.sourceId))
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        orderFormConfiguration: (() => {
+          const cfg = saved.orderFormConfiguration;
+          if (!cfg || !Array.isArray(cfg) || cfg.length === 0) {
+            return structuredClone(initialOrderFormConfiguration);
+          }
+          const notesIdx = cfg.findIndex(c => c.id === 'container-notes');
+          const custIdx = cfg.findIndex(c => c.id === 'container-customer');
+          if (notesIdx !== -1 && custIdx !== -1 && notesIdx < custIdx && !saved.isCustomOrderFormEnabled) {
+            const reordered = [...cfg];
+            const [notes] = reordered.splice(notesIdx, 1);
+            const newCustIdx = reordered.findIndex(c => c.id === 'container-customer');
+            reordered.splice(newCustIdx + 1, 0, notes);
+            return reordered.map((c, idx) => ({ ...c, order: idx }));
+          }
+          return cfg;
+        })(),
       });
     }
   }, []);
@@ -3425,23 +3466,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ---- Production ----
 
   // Helper: update WO status and check SO completion / Bahan Setengah Jadi stock mutation
-  // Compute SO status based on item-level fulfillment counters
-  const computeSOStatus = (so: SalesOrder): OrderStatus => {
-    if (so.status === 'CANCELED') return 'CANCELED';
-    if (so.status === 'PENDING') return 'PENDING';
-
-    const items = so.items;
-    const totalQty = items.reduce((s, i) => s + i.qty, 0);
-    const totalDelivered = items.reduce((s, i) => s + (i.deliveredQty || 0), 0);
-    const totalShipped = items.reduce((s, i) => s + (i.shippedQty || 0), 0);
-    const totalProduced = items.reduce((s, i) => s + (i.producedQty || 0), 0);
-
-    if (totalDelivered >= totalQty) return 'SENT';
-    if (totalShipped > 0) return 'PARTIALLY_SHIPPED';
-    if (totalProduced >= totalQty) return 'READY';
-    if (totalProduced > 0) return 'PARTIALLY_READY';
-    return 'PROCESSING';
-  };
 
   const updateWOStatusAndSO = (prev: AppState, workOrderId: string, updatedWOs: WorkOrder[]): AppState => {
     let updatedSOs = prev.salesOrders;

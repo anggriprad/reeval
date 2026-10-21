@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { Textarea } from '@/components/ui/Textarea';
 import { Alert } from '@/components/ui/Alert';
 import {
   formatCurrency,
@@ -34,6 +35,7 @@ import {
   MapPin,
   MessageSquare,
   ExternalLink,
+  Check,
   CheckCircle,
   Edit,
   XCircle,
@@ -43,6 +45,7 @@ import {
   User,
   ShoppingBag,
   Circle,
+  CircleDot,
   Upload,
   Film,
   Trash2,
@@ -66,6 +69,9 @@ import {
   Archive,
   FolderTree,
   Sparkles,
+  ChevronDown,
+  FileText,
+  Copy,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ElementType> = {
@@ -115,7 +121,7 @@ export default function OrderDetailPage() {
 
   // Complaint State
   const [complaintModalOpen, setComplaintModalOpen] = useState(false);
-  const [complaintCategory, setComplaintCategory] = useState<'Barang tidak sesuai' | 'Barang rusak / cacat' | 'Barang kurang' | 'Lainnya'>('Barang rusak / cacat');
+  const [complaintCategory, setComplaintCategory] = useState<string>('');
   const [complaintDesc, setComplaintDesc] = useState('');
   const [complaintItems, setComplaintItems] = useState<{ idx: number, qty: number }[]>([]);
   const [complaintAttachments, setComplaintAttachments] = useState<ComplaintAttachment[]>([]);
@@ -123,10 +129,14 @@ export default function OrderDetailPage() {
   const [complaintError, setComplaintError] = useState('');
   const [selectedProofPhoto, setSelectedProofPhoto] = useState<string | null>(null);
   const [customProcessModalOpen, setCustomProcessModalOpen] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setCurrentUrl(window.location.href);
+      if (window.innerWidth >= 768) {
+        setIsHistoryExpanded(true);
+      }
     }
   }, []);
 
@@ -179,6 +189,23 @@ export default function OrderDetailPage() {
     setCancelReasonError('');
   };
 
+  const handleCopyOrderNumber = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (order?.orderNumber) {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(order.orderNumber);
+      } else if (typeof document !== 'undefined') {
+        const textarea = document.createElement('textarea');
+        textarea.value = order.orderNumber;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      toast.success('Disalin ke Clipboard', `Nomor pesanan ${order.orderNumber} berhasil disalin.`);
+    }
+  };
+
   const handleToggleComplaintItem = (idx: number, isChecked: boolean, maxQty: number) => {
     setComplaintItems(prev => {
       if (isChecked) {
@@ -217,8 +244,8 @@ export default function OrderDetailPage() {
         return;
       }
 
-      if (file.size > 50 * 1024 * 1024) {
-        toast.error('Ukuran Terlalu Besar', `${file.name} melebihi batas maksimal 50MB.`);
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('Ukuran Terlalu Besar', `${file.name} melebihi batas maksimal 10MB.`);
         processed++;
         if (processed === total) setUploadingFiles(false);
         return;
@@ -260,12 +287,16 @@ export default function OrderDetailPage() {
       setComplaintError('Komplain hanya dapat diajukan untuk pesanan yang sudah terkirim.');
       return;
     }
+    if (!complaintCategory) {
+      setComplaintError('Pilih kategori terlebih dahulu.');
+      return;
+    }
     if (complaintItems.length === 0) {
       setComplaintError('Pilih minimal satu item produk yang bermasalah.');
       return;
     }
     if (!complaintDesc.trim()) {
-      setComplaintError('Deskripsi komplain wajib diisi.');
+      setComplaintError('Detail keluhan wajib diisi.');
       return;
     }
     if (complaintAttachments.length === 0) {
@@ -286,7 +317,7 @@ export default function OrderDetailPage() {
     });
 
     submitOrderComplaint(order.id, {
-      category: complaintCategory,
+      category: complaintCategory as any,
       description: complaintDesc,
       items,
       attachments: complaintAttachments,
@@ -294,7 +325,7 @@ export default function OrderDetailPage() {
 
     toast.success('Komplain Diajukan', 'Komplain penjualan berhasil dicatat dan masuk status menunggu tinjauan.');
     setComplaintModalOpen(false);
-    setComplaintCategory('Barang rusak / cacat');
+    setComplaintCategory('');
     setComplaintDesc('');
     setComplaintItems([]);
     setComplaintAttachments([]);
@@ -311,11 +342,11 @@ export default function OrderDetailPage() {
 
   interface OrderTimelineEvent {
     id: string;
+    stage: string;
     title: string;
     description: string;
-    timestamp?: string;
+    timestamp: string;
     actor: string;
-    status: 'completed' | 'current';
     photo?: string;
   }
 
@@ -325,274 +356,168 @@ export default function OrderDetailPage() {
   if (order.createdAt) {
     rawEvents.push({
       id: 'order-created',
+      stage: 'order-created',
       title: 'Pesanan Dibuat',
-      description: `Sales order berhasil dicatat (${order.items.length} jenis item)`,
+      description: 'Menunggu persetujuan admin',
       timestamp: order.createdAt,
-      actor: order.createdBy,
-      status: 'completed',
+      actor: order.createdBy || 'Sales',
     });
   }
 
-  // 2. Pesanan Dikonfirmasi (jika ada confirmedAt)
-  if (order.confirmedAt) {
+  // Kondisi Khusus: Kustomisasi Pesanan (jika ada)
+  if (order.isCustomProcess && order.customProcessAt) {
     rawEvents.push({
-      id: 'order-confirmed',
-      title: 'Pesanan Dikonfirmasi',
-      description: 'Pesanan telah diverifikasi dan disetujui untuk diproses',
-      timestamp: order.confirmedAt,
-      actor: 'Admin',
-      status: 'completed',
+      id: 'custom-process',
+      stage: 'custom-process',
+      title: 'Kustomisasi Pesanan',
+      description: 'Penyesuaian kebutuhan bahan baku dan alur produksi',
+      timestamp: order.customProcessAt,
+      actor: order.customProcessBy || 'Admin Produksi',
     });
   }
 
-  // 3. SPK Diterbitkan (Work Orders reguler non-komplain)
+  // 2. Pesanan Diproses (disetujui admin / SPK produksi terbit)
   const regularWOs = relatedWorkOrders.filter(w => !w.isComplaintReplacement);
-  if (regularWOs.length > 0 || order.spkIssuedAt) {
-    const spkTime = order.spkIssuedAt || regularWOs.map(w => w.issuedAt).filter(Boolean).sort()[0];
-    if (spkTime) {
-      rawEvents.push({
-        id: 'spk-issued',
-        title: 'SPK Produksi Diterbitkan',
-        description: regularWOs.length > 0
-          ? `${regularWOs.length} SPK diterbitkan (${regularWOs.map(w => w.spkNumber).join(', ')})`
-          : 'Dokumen SPK diterbitkan untuk proses produksi',
-        timestamp: spkTime,
-        actor: 'Admin Produksi',
-        status: 'completed',
-      });
-    }
-  }
+  const hasProcessing = Boolean(
+    order.confirmedAt ||
+    order.spkIssuedAt ||
+    regularWOs.length > 0 ||
+    ['PROCESSING', 'PARTIALLY_READY', 'READY', 'PARTIALLY_SHIPPED', 'SENT'].includes(order.status)
+  );
 
-  // 4. SPK Produksi Selesai (Reguler)
-  const completedRegularWOs = regularWOs.filter(w => w.status === 'COMPLETED' && w.completedAt);
-  if (completedRegularWOs.length > 0) {
-    if (completedRegularWOs.length === regularWOs.length && regularWOs.length > 0) {
-      const latestFinish = completedRegularWOs.map(w => w.completedAt!).sort().reverse()[0];
-      rawEvents.push({
-        id: 'production-completed',
-        title: 'Produksi Selesai',
-        description: 'Seluruh barang pesanan telah selesai diproduksi dan siap dikirim',
-        timestamp: latestFinish,
-        actor: 'Tim Produksi & QC',
-        status: 'completed',
-      });
-    } else {
-      completedRegularWOs.forEach(w => {
-        rawEvents.push({
-          id: `production-done-${w.id}`,
-          title: `Produksi Selesai: ${w.productName}`,
-          description: `SPK ${w.spkNumber} telah selesai diproduksi`,
-          timestamp: w.completedAt!,
-          actor: 'Tim Produksi & QC',
-          status: 'completed',
-        });
-      });
-    }
-  }
-
-  // 5. Surat Jalan & Pengiriman (Delivery Orders)
-  relatedDeliveries.forEach(del => {
-    // 5a. DO Diterbitkan
-    if (del.createdAt) {
-      rawEvents.push({
-        id: `do-created-${del.id}`,
-        title: del.isReplacement ? `Surat Jalan Pengganti Dibuat (${del.doNumber})` : `Surat Jalan Dibuat (${del.doNumber})`,
-        description: `Armada: ${del.armadaName || 'Armada Pengiriman'} (${del.vehiclePlate}) · Driver: ${del.assignedDriverName || '-'}`,
-        timestamp: del.createdAt,
-        actor: 'Admin Logistik',
-        status: 'completed',
-      });
-    }
-
-    // 5b. Barang Dimuat
-    if (del.loadedAt) {
-      rawEvents.push({
-        id: `do-loaded-${del.id}`,
-        title: del.isReplacement ? 'Barang Pengganti Dimuat ke Armada' : 'Barang Dimuat ke Armada',
-        description: 'Barang telah dimuat dan armada sedang menuju lokasi pengiriman',
-        timestamp: del.loadedAt,
-        actor: del.loadedBy || del.assignedDriverName || 'Driver Logistik',
-        status: 'completed',
-      });
-    }
-
-    // 5c. Barang Diterima
-    if (del.deliveredAt) {
-      rawEvents.push({
-        id: `do-delivered-${del.id}`,
-        title: del.isReplacement ? 'Barang Pengganti Diterima Pelanggan' : 'Pesanan Diterima Pelanggan',
-        description: del.receiverName
-          ? `Diterima oleh ${del.receiverName}${del.deliveryProofNote ? ` (${del.deliveryProofNote})` : ''}`
-          : 'Barang berhasil diserahterimakan di alamat tujuan',
-        timestamp: del.deliveredAt,
-        actor: del.assignedDriverName || 'Driver Logistik',
-        status: 'completed',
-        photo: del.deliveryProofPhoto,
-      });
-    }
-  });
-
-  // Fallback jika order.status === 'SENT' dan order.deliveredAt ada tapi belum ada DO yang deliveredAt
-  if (order.status === 'SENT' && order.deliveredAt && !relatedDeliveries.some(d => d.deliveredAt)) {
-    const matchedDO = relatedDeliveries[0] || deliveryOrders.find(d =>
-      d.salesOrderId === order.id ||
-      d.salesOrderNumber === order.orderNumber ||
-      (d.salesOrderIds && d.salesOrderIds.includes(order.id)) ||
-      (d.orderItems && d.orderItems.some(i => i.orderId === order.id || i.orderNumber === order.orderNumber))
-    );
+  if (hasProcessing) {
+    const processTime = order.confirmedAt || order.spkIssuedAt || regularWOs[0]?.issuedAt || order.updatedAt || order.createdAt;
     rawEvents.push({
-      id: 'order-delivered-fallback',
-      title: 'Pesanan Diterima Pelanggan',
-      description: matchedDO?.receiverName
-        ? `Diterima oleh ${matchedDO.receiverName}${matchedDO.deliveryProofNote ? ` (${matchedDO.deliveryProofNote})` : ''}`
-        : 'Barang berhasil diserahterimakan di alamat tujuan',
-      timestamp: order.deliveredAt,
-      actor: matchedDO?.assignedDriverName || 'Driver Logistik',
-      status: 'completed',
-      photo: matchedDO?.deliveryProofPhoto,
+      id: 'order-processing',
+      stage: 'order-processing',
+      title: 'Pesanan Diproses',
+      description: 'Pesanan sedang dalam proses produksi',
+      timestamp: processTime,
+      actor: order.updatedBy || 'Admin Produksi',
     });
   }
 
-  // 6. SPK Pengganti dari Komplain (jika ada yang selesai)
-  const replacementWOs = relatedWorkOrders.filter(w => w.isComplaintReplacement);
-  replacementWOs.forEach(wo => {
-    if (wo.status === 'COMPLETED' && wo.completedAt) {
-      rawEvents.push({
-        id: `spk-repl-completed-${wo.id}`,
-        title: `Produksi Pengganti Selesai`,
-        description: `Unit pengganti ${wo.productName} telah selesai dan siap dikirim`,
-        timestamp: wo.completedAt,
-        actor: 'Tim Produksi & QC',
-        status: 'completed',
-      });
-    }
-  });
+  // 3. Siap Dikirim (seluruh barang pesanan selesai diproduksi)
+  const completedRegularWOs = regularWOs.filter(w => w.status === 'COMPLETED' && w.completedAt);
+  const isProductionDone = Boolean(
+    (completedRegularWOs.length > 0 && completedRegularWOs.length === regularWOs.length) ||
+    ['READY', 'PARTIALLY_SHIPPED', 'SENT'].includes(order.status)
+  );
 
-  // 7. Komplain Pelanggan
+  if (isProductionDone) {
+    const readyTime = completedRegularWOs.map(w => w.completedAt!).sort().reverse()[0] || order.updatedAt || order.createdAt;
+    rawEvents.push({
+      id: 'ready-to-ship',
+      stage: 'ready-to-ship',
+      title: 'Siap Dikirim',
+      description: 'Seluruh barang pesanan telah selesai diproduksi',
+      timestamp: readyTime,
+      actor: 'Tim Produksi & QC',
+    });
+  }
+
+  // 4. Dalam Pengiriman (armada dan supir sedang mengantar)
+  // Hanya berlaku jika barang SUDAH dimuat ke armada ATAU DO berstatus IN_TRANSIT / DELIVERED
+  const activeShippingDelivery = relatedDeliveries.find(d => Boolean(d.loadedAt || d.status === 'IN_TRANSIT' || d.status === 'DELIVERED'));
+  const isShipping = Boolean(
+    activeShippingDelivery ||
+    order.status === 'SENT'
+  );
+
+  if (isShipping) {
+    const deliveryToUse = activeShippingDelivery || relatedDeliveries[0];
+    const shippingTime = deliveryToUse?.loadedAt || deliveryToUse?.createdAt || order.updatedAt || order.createdAt;
+    const driverInfo = deliveryToUse?.assignedDriverName
+      ? `${deliveryToUse.assignedDriverName}${deliveryToUse.armadaName ? ` (${deliveryToUse.armadaName})` : ''}`
+      : 'Driver Logistik';
+    rawEvents.push({
+      id: 'in-transit',
+      stage: 'in-transit',
+      title: 'Dalam Pengiriman',
+      description: 'Barang sedang diantar armada menuju alamat tujuan',
+      timestamp: shippingTime,
+      actor: driverInfo,
+    });
+  }
+
+  // 5. Pesanan Diterima (serah terima pelanggan selesai)
+  const deliveredDelivery = relatedDeliveries.find(d => Boolean(d.deliveredAt || d.status === 'DELIVERED'));
+  const isDelivered = Boolean(
+    order.status === 'SENT' ||
+    deliveredDelivery
+  );
+
+  if (isDelivered) {
+    const deliveryToUse = deliveredDelivery || activeShippingDelivery || relatedDeliveries[0];
+    const deliveredTime = deliveryToUse?.deliveredAt || order.deliveredAt || order.updatedAt || order.createdAt;
+    const receiverInfo = deliveryToUse?.receiverName
+      ? `Diterima oleh ${deliveryToUse.receiverName}`
+      : deliveryToUse?.assignedDriverName || 'Driver Logistik';
+    rawEvents.push({
+      id: 'order-delivered',
+      stage: 'order-delivered',
+      title: 'Pesanan Diterima',
+      description: 'Barang telah diterima oleh pelanggan',
+      timestamp: deliveredTime,
+      actor: receiverInfo,
+      photo: deliveryToUse?.deliveryProofPhoto,
+    });
+  }
+
+  // Kondisi Khusus: Komplain Pelanggan
   (order.complaints || []).forEach(cmp => {
-    // 7a. Komplain Diajukan
     if (cmp.createdAt) {
       rawEvents.push({
         id: `cmp-filed-${cmp.id}`,
-        title: `Komplain Diajukan: ${cmp.category}`,
-        description: `Keluhan: "${cmp.description}" (${(cmp.items || []).map(i => `${i.productName} x${i.qty}`).join(', ')})`,
+        stage: 'complaint-filed',
+        title: 'Komplain Diajukan',
+        description: 'Keluhan pelanggan sedang dalam penanganan',
         timestamp: cmp.createdAt,
         actor: 'Pelanggan / Sales',
-        status: 'completed',
       });
     }
-
-    // 7b. Komplain Refund Selesai (Hanya untuk Refund, Kirim Barang Pengganti langsung ke Produksi/Pengiriman)
-    if (cmp.resolution === 'Batalkan Pesanan (Refund)' && cmp.status === 'SELESAI' && cmp.resolvedAt) {
+    if (cmp.status === 'SELESAI' && cmp.resolvedAt) {
       rawEvents.push({
         id: `cmp-resolved-${cmp.id}`,
-        title: 'Komplain Selesai (Refund)',
-        description: cmp.resolutionNotes || 'Dana telah dikembalikan kepada pelanggan',
-        timestamp: cmp.resolvedAt,
-        actor: 'Admin Customer Service',
-        status: 'completed',
-      });
-    } else if ((cmp.resolution === 'Penuhi Barang Pengganti' || cmp.resolution === 'Kirim Barang Pengganti') && cmp.status === 'SELESAI' && cmp.resolvedAt) {
-      rawEvents.push({
-        id: `cmp-resolved-${cmp.id}`,
+        stage: 'complaint-resolved',
         title: 'Komplain Selesai',
-        description: 'Barang pengganti telah diterima oleh pelanggan di lokasi',
+        description: 'Penanganan keluhan pelanggan telah selesai',
         timestamp: cmp.resolvedAt,
-        actor: 'Customer Service & Logistik',
-        status: 'completed',
+        actor: 'Customer Service',
       });
     }
   });
 
-  // 8. Kustom Proses Ditetapkan (jika ada)
-  if (order.isCustomProcess && order.customProcessAt) {
-    rawEvents.push({
-      id: 'custom-process-saved',
-      title: 'Kustom Proses Ditetapkan',
-      description: 'Penyesuaian kebutuhan bahan baku dan alur produksi (SPK) disimpan untuk pesanan ini',
-      timestamp: order.customProcessAt,
-      actor: order.customProcessBy || 'Admin Produksi',
-      status: 'completed',
-    });
-  }
-
-  // 9. Pembatalan Pesanan (jika ada)
-  if (order.status === 'CANCELED' && order.updatedAt) {
+  // Kondisi Khusus: Pesanan Dibatalkan
+  if (order.status === 'CANCELED') {
     rawEvents.push({
       id: 'order-canceled',
+      stage: 'order-canceled',
       title: 'Pesanan Dibatalkan',
       description: order.cancelReason || 'Pesanan dibatalkan',
-      timestamp: order.updatedAt,
+      timestamp: order.updatedAt || order.createdAt,
       actor: order.updatedBy || (order.cancelledByRole ? `User (${order.cancelledByRole})` : 'Admin'),
-      status: 'completed',
     });
   }
 
-  // SORTING KRONOLOGIS SEMPURNA BERDASARKAN TIMESTAMP (Earliest -> Latest)
-  const sortedEvents = rawEvents
-    .filter(e => Boolean(e.timestamp))
-    .sort((a, b) => new Date(a.timestamp!).getTime() - new Date(b.timestamp!).getTime());
+  // Urutkan kronologis murni berdasarkan urutan tahapan & waktu kejadian
+  const STAGE_ORDER: Record<string, number> = {
+    'order-created': 1,
+    'custom-process': 2,
+    'order-processing': 3,
+    'ready-to-ship': 4,
+    'in-transit': 5,
+    'order-delivered': 6,
+    'complaint-filed': 7,
+    'complaint-resolved': 8,
+    'order-canceled': 9,
+  };
 
-  // 9. Status Aktif Saat Ini (Next Step / Pending Action) jika belum selesai
-  if (order.status === 'PENDING') {
-    sortedEvents.push({
-      id: 'step-pending',
-      title: 'Menunggu Persetujuan & SPK',
-      description: 'Pesanan menunggu tinjauan admin untuk penerbitan SPK produksi',
-      actor: '',
-      status: 'current',
-    });
-  } else if ((order.status === 'PROCESSING' || order.status === 'PARTIALLY_READY') && regularWOs.some(w => w.status !== 'COMPLETED')) {
-    sortedEvents.push({
-      id: 'step-processing',
-      title: 'Proses Produksi Sedang Berjalan',
-      description: 'Item pesanan sedang dalam proses pengerjaan di pabrik',
-      actor: '',
-      status: 'current',
-    });
-  } else if (order.status === 'READY') {
-    sortedEvents.push({
-      id: 'step-ready-delivery',
-      title: 'Menunggu Pengiriman',
-      description: 'Barang telah selesai diproduksi dan menunggu penerbitan surat jalan',
-      actor: '',
-      status: 'current',
-    });
-  } else if (relatedDeliveries.some(d => d.status === 'READY_TO_SHIP')) {
-    sortedEvents.push({
-      id: 'step-loading',
-      title: 'Menunggu Muat Armada',
-      description: 'Surat jalan siap, menunggu konfirmasi muat barang oleh supir',
-      actor: '',
-      status: 'current',
-    });
-  } else if (relatedDeliveries.some(d => d.status === 'IN_TRANSIT')) {
-    sortedEvents.push({
-      id: 'step-transit',
-      title: 'Dalam Perjalanan Menuju Pelanggan',
-      description: 'Armada sedang dalam perjalanan mengantarkan pesanan',
-      actor: '',
-      status: 'current',
-    });
-  } else if ((order.complaints || []).some(c => (c.status === 'MENUNGGU' || c.status === 'DITANGANI') && c.replacementStatus === 'WAITING_PRODUCTION')) {
-    sortedEvents.push({
-      id: 'step-comp-prod',
-      title: 'Produksi Barang Pengganti',
-      description: 'SPK barang pengganti sedang dalam proses pengerjaan produksi',
-      actor: '',
-      status: 'current',
-    });
-  } else if ((order.complaints || []).some(c => (c.status === 'MENUNGGU' || c.status === 'DITANGANI') && c.replacementStatus === 'READY_FOR_DELIVERY')) {
-    sortedEvents.push({
-      id: 'step-comp-delivery',
-      title: 'Menunggu Pengiriman Barang Pengganti',
-      description: 'Barang pengganti siap dan berada di antrean kirim logistik',
-      actor: '',
-      status: 'current',
-    });
-  }
-
-  const timelineEvents = sortedEvents;
+  const timelineEvents = rawEvents.sort((a, b) => {
+    const orderDiff = (STAGE_ORDER[a.stage] || 0) - (STAGE_ORDER[b.stage] || 0);
+    if (orderDiff !== 0) return orderDiff;
+    return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+  });
 
   const salesWaMsg = `Halo ${order.createdBy}, perihal Sales Order ${order.orderNumber}. Detail pesanan dapat dilihat di: ${currentUrl}`;
   const customerWaMsg = `Halo ${order.customer.name}, kami dari Reeval ERP perihal Sales Order ${order.orderNumber}...`;
@@ -636,21 +561,11 @@ export default function OrderDetailPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
-      {/* PAGE HEADER: Nomor SO + Badge Status + Navigation Back + Native Actions & Action Menu */}
+    <div className="space-y-6 max-w-6xl mx-auto pb-24 md:pb-12">
+      {/* PAGE HEADER: Detail Pesanan */}
       <PageHeader
         backHref="/order"
-        title={
-          <div className="flex items-center gap-3 flex-wrap">
-            <span>{order.orderNumber}</span>
-            <Badge variant={getOrderStatusVariant(order.status)}>
-              {getOrderStatusLabel(order.status, order.cancelledByRole)}
-            </Badge>
-            {order.items.some(i => i.isBomCustomized) && (
-              <Badge variant="purple">Kustom Proses</Badge>
-            )}
-          </div>
-        }
+        title="Detail Pesanan"
         actionMenuItems={
           (() => {
             const items = [];
@@ -687,9 +602,10 @@ export default function OrderDetailPage() {
                 label: 'Ajukan Komplain',
                 icon: AlertCircle,
                 onClick: () => {
-                  setComplaintCategory('Barang rusak / cacat');
+                  setComplaintCategory('');
                   setComplaintDesc('');
                   setComplaintItems([]);
+                  setComplaintAttachments([]);
                   setComplaintError('');
                   setComplaintModalOpen(true);
                 },
@@ -710,18 +626,18 @@ export default function OrderDetailPage() {
             .map(complaint => (
             <div
               key={complaint.id}
-              className="text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-3 flex-wrap shadow-xs"
+              className="text-[13.5px] sm:text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-3 flex-wrap shadow-xs"
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
                 <div className="min-w-0">
                   <span className="font-bold mr-1.5">Komplain: {complaint.category}</span>
-                  <span className="text-amber-700/80 dark:text-amber-300/80 text-[11px]">({getComplaintStatusLabel(complaint.status)}) — "{complaint.description}"</span>
+                  <span className="text-amber-700/80 dark:text-amber-300/80 text-xs sm:text-[11px]">({getComplaintStatusLabel(complaint.status)}) — "{complaint.description}"</span>
                 </div>
               </div>
               <Link
                 href={`/order/complaint/${complaint.id}`}
-                className="font-bold text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 shrink-0 ml-auto"
+                className="font-bold text-[13px] sm:text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 shrink-0 ml-auto"
               >
                 Lihat Detail Komplain &rarr;
               </Link>
@@ -745,13 +661,28 @@ export default function OrderDetailPage() {
       )}
 
       {/* 2-COLUMN LAYOUT */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-xs">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-[13.5px] sm:text-xs">
         {/* KOLOM KIRI (7 COLS): DAFTAR CARD ITEM PRODUK & TOTAL AMOUNT */}
         <div className="lg:col-span-7 space-y-4">
-          {/* CONTAINER: INFORMASI PELANGGAN (TANPA JUDUL LABEL) */}
+          {/* CONTAINER: INFORMASI PELANGGAN (DENGAN STATUS BADGE DI KANAN NAMA) */}
           <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2">
-            <div className="text-base font-bold text-slate-900 dark:text-white">
-              {order.customer.name}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                {order.customer.name}
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                <Badge variant={getOrderStatusVariant(order.status)}>
+                  {getOrderStatusLabel(order.status, order.cancelledByRole)}
+                </Badge>
+                {order.items.some(i => i.isBomCustomized) && (
+                  <Badge variant="purple">Kustom Proses</Badge>
+                )}
+                {order.complaints && order.complaints.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK') && (
+                  <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
+                    Dikomplain
+                  </Badge>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
               <Phone className="h-3.5 w-3.5 shrink-0" />
@@ -767,9 +698,9 @@ export default function OrderDetailPage() {
             )}
           </div>
           {/* SINGLE CONTAINER UNTUK SELURUH ITEM PESANAN DAN TOTAL AMOUNT */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xs overflow-hidden">
             {/* DAFTAR ITEM PESANAN */}
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
               {order.items.map((item, idx) => {
                 const product = products.find(p => p.id === item.productId || p.name === item.productName);
                 const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
@@ -791,24 +722,23 @@ export default function OrderDetailPage() {
                           : ''
                     }`}
                   >
-                    {/* Header Card Item: Product Thumbnail, Product Name, Variant & Modifiers */}
-                    <div className="flex justify-between items-start gap-3 min-w-0">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        {product?.image ? (
-                          <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                            <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
-                          </div>
-                        ) : (
-                          <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                            <IconComp className="h-6 w-6" />
-                          </div>
-                        )}
+                    {/* BAGIAN ATAS: Visual Produk + Nama, Varian, Modifiers, Catatan Produk */}
+                    <div className="flex items-start gap-3 min-w-0">
+                      {product?.image ? (
+                        <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                          <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                          <IconComp className="h-6 w-6" />
+                        </div>
+                      )}
 
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-sm font-semibold ${isFullyRefunded ? 'text-slate-500 line-through dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                              {item.productName}
-                            </span>
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-sm font-semibold ${isFullyRefunded ? 'text-slate-500 line-through dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                            {item.productName}
+                          </span>
                           {item.isBomCustomized && (
                             <Badge variant="purple" className="text-[10px] py-0 px-1.5 font-semibold">
                               {item.qty > 1 && item.unitCustomProcesses
@@ -827,69 +757,64 @@ export default function OrderDetailPage() {
                             </Badge>
                           )}
                         </div>
+
                         {item.variantLabel && (
-                          <div className={`text-xs font-medium ${isFullyRefunded ? 'text-slate-400 line-through' : 'text-slate-500 dark:text-slate-400'}`}>
+                          <div className={`text-[13px] sm:text-xs font-medium ${isFullyRefunded ? 'text-slate-400 line-through' : 'text-slate-500 dark:text-slate-400'}`}>
                             {formatVariantLabel(item.variantLabel)}
                           </div>
                         )}
+
                         {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                          <div className="flex flex-wrap gap-1 pt-1">
+                          <div className="flex flex-wrap gap-1 pt-0.5">
                             {item.selectedModifiers.map(mGroup => (
                               mGroup.selectedOptions.map(opt => (
-                                <span key={opt.optionId} className="text-xs bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-md font-medium">
+                                <span key={opt.optionId} className="text-xs bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium">
                                   +{opt.name}
                                 </span>
                               ))
                             ))}
                           </div>
                         )}
-                        {/* Catatan Khusus (If Any) */}
-                        {item.customNotes && (
-                          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
-                            <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{item.customNotes}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-col text-right shrink-0">
-                        {isFullyRefunded ? (
-                          <>
-                            <span className="font-semibold text-sm text-slate-400 line-through">x {item.qty}</span>
-                            <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold">0 unit aktif</span>
-                          </>
-                        ) : isPartiallyRefunded ? (
-                          <>
-                            <div className="flex items-center justify-end gap-1.5">
-                              <span className="text-xs text-slate-400 line-through">x {item.qty}</span>
-                              <span className="font-semibold text-base text-slate-900 dark:text-white">x {activeQty}</span>
-                            </div>
-                            <span className="text-xs text-slate-600 dark:text-slate-400">{formatCurrency(item.unitPrice)}</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="font-semibold text-base text-slate-900 dark:text-white">x {item.qty}</span>
-                            <span className="text-xs text-slate-600 dark:text-slate-400">{formatCurrency(item.unitPrice)}</span>
-                          </>
-                        )}
                       </div>
                     </div>
 
-                    {/* Subtotal Item Bar */}
-                    <div className="flex justify-between items-center gap-2.5 border-t border-slate-100 dark:border-slate-800/80 pt-2.5 font-semibold">
-                      <span className="text-slate-700 dark:text-slate-300">Subtotal</span>
-                      {isFullyRefunded ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400 line-through text-xs font-normal">{formatCurrency(originalSubtotal)}</span>
-                          <span className="text-rose-600 dark:text-rose-400 text-sm font-bold">Rp 0</span>
-                        </div>
-                      ) : isPartiallyRefunded ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400 line-through text-xs font-normal">{formatCurrency(originalSubtotal)}</span>
-                          <span className="text-slate-900 dark:text-white text-sm font-bold">{formatCurrency(activeSubtotal)}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-700 dark:text-slate-300 text-sm">{formatCurrency(originalSubtotal)}</span>
-                      )}
+                    {/* Catatan Khusus Produk: Baris baru di bawah gambar visual dan varian, tepat sebelum baris qty dan nominal subtotal */}
+                    {item.customNotes && (
+                      <p className="text-[13.5px] sm:text-xs text-amber-800 dark:text-amber-300 font-normal leading-relaxed">
+                        {item.customNotes}
+                      </p>
+                    )}
+
+                    {/* BAGIAN BAWAH: Info QTY dan Harga berada di baris setelah gambar visual, nama produk, varian, dan catatan produk */}
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-white">
+                        {isFullyRefunded ? (
+                          <span className="text-slate-400 line-through">x {item.qty}</span>
+                        ) : isPartiallyRefunded ? (
+                          <>
+                            <span className="text-xs text-slate-400 line-through">x {item.qty}</span>
+                            <span className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white">x {activeQty}</span>
+                          </>
+                        ) : (
+                          <span className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white">x {item.qty}</span>
+                        )}
+                      </div>
+
+                      <div className="text-right">
+                        {isFullyRefunded ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400 line-through font-normal">{formatCurrency(originalSubtotal)}</span>
+                            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">Rp 0 (Refund)</span>
+                          </div>
+                        ) : isPartiallyRefunded ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400 line-through font-normal">{formatCurrency(originalSubtotal)}</span>
+                            <span className="text-sm text-slate-900 dark:text-white">{formatCurrency(activeSubtotal)}</span>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-slate-900 dark:text-white">{formatCurrency(originalSubtotal)}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -898,7 +823,7 @@ export default function OrderDetailPage() {
 
             {/* Total Amount Summary Section & Refund Adjustments */}
             {(totalRefundAmount > 0 || !!order.shippingCost) && (
-              <div className="p-4 bg-slate-50/80 dark:bg-slate-900/60 border-t border-slate-200/80 dark:border-slate-800 text-xs font-semibold space-y-2.5">
+              <div className="p-4 bg-slate-50/80 dark:bg-slate-900/60 border-t border-slate-200/80 dark:border-slate-800 text-[13.5px] sm:text-xs font-semibold space-y-2.5">
                 <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
                   <span>Subtotal Produk</span>
                   <span className="font-mono text-slate-900 dark:text-white">{formatCurrency(originalItemsSubtotal)}</span>
@@ -911,7 +836,7 @@ export default function OrderDetailPage() {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span>Penyesuaian Refund ({cmp.id})</span>
                         {cmp.items && cmp.items.length > 0 && (
-                          <span className="text-[11px] font-normal text-rose-500/90 dark:text-rose-400/80">
+                          <span className="text-xs sm:text-[11px] font-normal text-rose-500/90 dark:text-rose-400/80">
                             • {cmp.items.map(i => `${i.productName} x${i.qty}`).join(', ')}
                           </span>
                         )}
@@ -932,7 +857,7 @@ export default function OrderDetailPage() {
 
             <div className="flex justify-between items-center p-4 bg-indigo-50 dark:bg-indigo-950/40 border-t border-slate-200/80 dark:border-slate-800 font-bold text-sm">
               <span className="text-slate-800 dark:text-slate-200">Total Pembayaran</span>
-              <span className="text-indigo-600 dark:text-indigo-400 text-lg font-mono">
+              <span className="text-indigo-600 dark:text-indigo-400 text-base sm:text-lg font-mono">
                 {formatCurrency(order.totalAmount)}
               </span>
             </div>
@@ -940,13 +865,16 @@ export default function OrderDetailPage() {
 
           {/* TERPISAH: Container Catatan Pesanan (Jika Ada) */}
           {order.orderNotes && (
-            <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 rounded-xl p-4 shadow-xs space-y-1">
-              <span className="font-semibold text-xs text-slate-600 dark:text-slate-400 block">
-                Catatan Pesanan
-              </span>
-              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                {order.orderNotes}
-              </p>
+            <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 rounded-xl p-4 shadow-xs flex items-start gap-3">
+              <FileText className="h-5 w-5 text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <span className="text-xs sm:text-[10px] font-semibold text-slate-400 dark:text-slate-500 block leading-tight">
+                  Catatan Pesanan:
+                </span>
+                <p className="text-[13.5px] sm:text-xs text-slate-600 dark:text-slate-300 font-normal leading-relaxed mt-1">
+                  {order.orderNotes}
+                </p>
+              </div>
             </div>
           )}
 
@@ -955,9 +883,24 @@ export default function OrderDetailPage() {
 
         {/* KOLOM KANAN (5 COLS): PELANGGAN, RIWAYAT PESANAN, KONTAK WHATSAPP */}
         <div className="lg:col-span-5 space-y-5">
-          {/* CONTAINER: INFORMASI PESANAN & SALES */}
-          <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2.5 text-xs">
-            <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-700/60">
+          {/* CONTAINER: INFORMASI PESANAN & SALES (Tanpa garis pemisah) */}
+          <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2.5 text-[13.5px] sm:text-xs">
+            <div className="flex items-center justify-between py-1">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">Nomor Pesanan</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-900 dark:text-white font-medium">{order.orderNumber}</span>
+                <button
+                  type="button"
+                  onClick={handleCopyOrderNumber}
+                  className="p-1 -mr-1 text-slate-400 hover:text-indigo-600 active:text-indigo-600 dark:hover:text-indigo-400 dark:active:text-indigo-400 active:scale-95 transition-all cursor-pointer rounded"
+                  title="Salin Nomor Pesanan"
+                  aria-label="Salin Nomor Pesanan"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between py-1">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Tanggal / Waktu Pesanan</span>
               <span className="text-slate-900 dark:text-white font-medium">{formatDateTime(order.createdAt)}</span>
             </div>
@@ -967,133 +910,184 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* CONTAINER: LOG PROSES / RIWAYAT PESANAN */}
+          {/* CONTAINER: LOG PROSES / RIWAYAT PESANAN (ACCORDION DEFAULT COLLAPSE) */}
           {(() => {
             const displayedEvents = timelineEvents;
             if (displayedEvents.length === 0) return null;
 
             return (
-              <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
-                <div className="space-y-0">
-                  {displayedEvents.map((evt, idx) => {
-                    const isLast = idx === displayedEvents.length - 1;
-                    const isDone = evt.status === 'completed';
-                    const isCurrent = evt.status === 'current';
+              <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+                  className="w-full flex items-center justify-between p-4 text-[15px] sm:text-base font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors cursor-pointer select-none"
+                >
+                  <span>Riwayat Pesanan</span>
+                  <ChevronDown
+                    className={`w-4.5 h-4.5 text-slate-400 transition-transform duration-200 ${
+                      isHistoryExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
 
-                    return (
-                      <div key={evt.id || idx} className="flex gap-3 text-xs">
-                        {/* Node & Connector Line */}
-                        <div className="flex flex-col items-center shrink-0">
-                          <div className={`flex items-center justify-center rounded-full bg-white dark:bg-slate-900 mt-0.5 ${
-                            isDone ? 'text-emerald-600 dark:text-emerald-400' :
-                            isCurrent ? 'text-indigo-600 dark:text-indigo-400' :
-                            'text-slate-300 dark:text-slate-600'
-                          }`}>
-                            {isDone ? (
-                              <CheckCircle className="w-4 h-4 fill-emerald-50 dark:fill-emerald-950/40" />
-                            ) : (
-                              <div className="w-4 h-4 rounded-full border-2 border-indigo-600 dark:border-indigo-400 flex items-center justify-center">
-                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
-                              </div>
-                            )}
-                          </div>
-                          {!isLast && (
-                            <div className="w-0.5 grow min-h-[22px] bg-slate-200 dark:bg-slate-700 my-1" />
-                          )}
-                        </div>
+                {isHistoryExpanded && (
+                  <div className="p-4 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                    <div className="space-y-0 pt-2">
+                      {displayedEvents.map((evt, idx) => {
+                        const isOrderFinished = order.status === 'SENT';
+                        const isLast = idx === displayedEvents.length - 1;
+                        const isDone = isOrderFinished ? true : !isLast;
+                        const isCurrent = isOrderFinished ? false : isLast;
 
-                        {/* Content */}
-                        <div className={`space-y-0.5 ${!isLast ? 'pb-3.5' : ''}`}>
-                          <div className={`font-semibold ${
-                            isDone ? 'text-slate-900 dark:text-white' : 'text-indigo-600 dark:text-indigo-400 font-bold'
-                          }`}>
-                            {evt.title}
-                          </div>
-                          <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-                            {evt.description}
-                          </p>
-                          {(evt.timestamp || (isDone && evt.actor && evt.actor !== '-')) && (
-                            <div className="text-[10px] text-slate-400 dark:text-slate-500 pt-0.5 flex items-center gap-1.5 flex-wrap">
-                              {evt.timestamp && (
-                                <span>{formatDateTime(evt.timestamp)}</span>
-                              )}
-                              {isDone && evt.actor && evt.actor !== '-' && (
-                                <>
-                                  {evt.timestamp && <span>·</span>}
-                                  <span>Oleh: {evt.actor}</span>
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Bukti Foto Penerimaan (Jika Ada) */}
-                          {evt.photo && (
-                            <div className="pt-2">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedProofPhoto(evt.photo!)}
-                                className="group relative block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-500 hover:ring-2 hover:ring-indigo-500/20 transition-all cursor-pointer shadow-2xs text-left"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={evt.photo}
-                                  alt="Bukti Serah Terima"
-                                  className="w-32 h-20 sm:w-36 sm:h-24 object-cover rounded-lg group-hover:scale-105 transition-transform duration-200"
-                                />
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 backdrop-blur-xs">
-                                    <Eye className="w-3 h-3" />
-                                    <span>Lihat Foto</span>
+                        return (
+                          <div key={evt.id || idx} className="flex gap-3 text-xs sm:text-sm">
+                            {/* Node & Connector Line */}
+                            <div className="flex flex-col items-center shrink-0">
+                              <div className="flex items-center justify-center mt-0.5">
+                                {isDone ? (
+                                  <Check className="w-4.5 h-4.5 text-slate-400 dark:text-slate-500 shrink-0 stroke-[2.5]" />
+                                ) : isCurrent ? (
+                                  <div className="w-4.5 h-4.5 rounded-full border-2 border-indigo-600 dark:border-indigo-400 flex items-center justify-center shrink-0">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
                                   </div>
-                                </div>
-                              </button>
+                                ) : (
+                                  <div className="w-4.5 h-4.5 rounded-full border-2 border-slate-300 dark:border-slate-600 shrink-0" />
+                                )}
+                              </div>
+                              {!isLast && (
+                                <div className="w-0.5 grow min-h-[24px] bg-slate-200 dark:bg-slate-700/80 my-1" />
+                              )}
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+
+                            {/* Content */}
+                            <div className={`space-y-0.5 ${!isLast ? 'pb-3.5' : ''}`}>
+                              <div
+                                className={`text-[13.5px] sm:text-sm ${
+                                  isDone
+                                    ? 'text-slate-500 dark:text-slate-400 font-medium'
+                                    : isCurrent
+                                    ? 'text-slate-900 dark:text-white font-bold'
+                                    : 'text-slate-400 dark:text-slate-500 font-medium'
+                                }`}
+                              >
+                                {evt.title}
+                              </div>
+                              <p
+                                className={`text-xs sm:text-[13px] leading-relaxed ${
+                                  isDone
+                                    ? 'text-slate-400 dark:text-slate-500'
+                                    : isCurrent
+                                    ? 'text-slate-800 dark:text-white'
+                                    : 'text-slate-400 dark:text-slate-600'
+                                }`}
+                              >
+                                {evt.description}
+                              </p>
+                              {(evt.timestamp || (evt.actor && evt.actor !== '-')) && (
+                                <div className="text-[11px] sm:text-xs text-slate-400 dark:text-slate-500 pt-0.5 flex items-center gap-1.5 flex-wrap">
+                                  {evt.timestamp && (
+                                    <span>{formatDateTime(evt.timestamp)}</span>
+                                  )}
+                                  {evt.actor && evt.actor !== '-' && (
+                                    <>
+                                      {evt.timestamp && <span>·</span>}
+                                      <span>Oleh: {evt.actor}</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Bukti Foto Penerimaan (Jika Ada) */}
+                              {evt.photo && (
+                                <div className="pt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedProofPhoto(evt.photo!)}
+                                    className="group relative block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-500 hover:ring-2 hover:ring-indigo-500/20 transition-all cursor-pointer shadow-2xs text-left"
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={evt.photo}
+                                      alt="Bukti Serah Terima"
+                                      className="w-32 h-20 sm:w-36 sm:h-24 object-cover rounded-lg group-hover:scale-105 transition-transform duration-200"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 backdrop-blur-xs">
+                                        <Eye className="w-3 h-3" />
+                                        <span>Lihat Foto</span>
+                                      </div>
+                                    </div>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
 
-          {/* CONTAINER: KONTAK WHATSAPP (PELANGGAN & SALES) */}
-          <div className="flex gap-2">
-            {/* WhatsApp Sales (Memuat Nomor SO & URL Detail SO) */}
-            {salesPhone && (
-              <a
-                href={getWhatsAppUrl(salesPhone, salesWaMsg)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-md border border-emerald-600 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-semibold text-xs transition-colors"
-              >
-                <MessageSquare className='w-4 h-4' />
-                <span>Hubungi Sales</span>
-              </a>
-            )}
-
+          {/* CONTAINER: KONTAK WHATSAPP (PELANGGAN & SALES) — Warna Netral (Secondary) */}
+          <div className="flex flex-col sm:flex-row gap-2">
             {/* WhatsApp Pelanggan */}
             {order.customer.phone && (
-              <a
-                href={getWhatsAppUrl(order.customer.phone)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors shadow-xs"
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => window.open(getWhatsAppUrl(order.customer.phone), '_blank')}
               >
-                <MessageSquare className='w-4 h-4' />
+                <MessageSquare className="w-4 h-4 mr-1.5" />
                 <span>Hubungi Pelanggan</span>
-              </a>
+              </Button>
+            )}
+
+            {/* WhatsApp Sales (Memuat Nomor SO & URL Detail SO) */}
+            {salesPhone && (
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => window.open(getWhatsAppUrl(salesPhone, salesWaMsg), '_blank')}
+              >
+                <MessageSquare className="w-4 h-4 mr-1.5" />
+                <span>Hubungi Sales</span>
+              </Button>
             )}
           </div>
+
+          {/* DESKTOP ACTION BUTTON: Proses Pesanan berada di bawah tombol hubungi sales & pelanggan */}
           {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
-            <Button onClick={handleProcess} size='lg' className='bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 w-full'>
-              <CheckCircle className="h-4 w-4 mr-1.5" />
-              Proses Pesanan
-            </Button>
+            <div className="hidden md:block">
+              <Button
+                variant="success"
+                size="lg"
+                className="w-full text-white font-semibold"
+                onClick={handleProcess}
+              >
+                <CheckCircle className="h-4 w-4 mr-1.5" />
+                Proses Pesanan
+              </Button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* MOBILE BOTTOM FIXED ACTION BAR: Tombol aksi utama "Proses Pesanan" selalu berada di bawah tanpa ikut scroll (Konsisten dengan Buat Pesanan) */}
+      {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-3 pb-[calc(12px+env(safe-area-inset-bottom,0px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
+          <Button
+            variant="success"
+            className="w-full h-12 text-[15px] font-bold justify-center rounded-xl"
+            onClick={handleProcess}
+          >
+            <CheckCircle className="h-4 w-4 mr-1.5" />
+            Proses Pesanan
+          </Button>
+        </div>
+      )}
 
       {/* CANCEL ORDER MODAL */}
       <Modal
@@ -1103,37 +1097,29 @@ export default function OrderDetailPage() {
         size="md"
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setCancelModalOpen(false)}>
+            <Button variant="outline" onClick={() => setCancelModalOpen(false)}>
               Batal
             </Button>
-            <Button variant="danger" size="sm" onClick={handleConfirmCancel} disabled={!cancelReasonInput.trim()}>
+            <Button variant="danger" onClick={handleConfirmCancel} disabled={!cancelReasonInput.trim()}>
               Konfirmasi Pembatalan
             </Button>
           </>
         }
       >
-        <div className="space-y-4 text-xs">
-          <p className="text-slate-600 dark:text-slate-300">
+        <div className="space-y-4">
+          <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
             Mohon masukkan alasan pembatalan untuk pesanan ini. Catatan pembatalan ini akan tersimpan pada riwayat pesanan.
           </p>
 
-          <div>
-            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Alasan Pembatalan <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              rows={3}
-              placeholder="Contoh: Pelanggan membatalkan pesanan karena perubahan spesifikasi proyek..."
-              value={cancelReasonInput}
-              onChange={e => setCancelReasonInput(e.target.value)}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors shadow-xs"
-            />
-            {cancelReasonError && (
-              <span className="text-[11px] font-semibold text-red-600 dark:text-red-400 block mt-1">
-                {cancelReasonError}
-              </span>
-            )}
-          </div>
+          <Textarea
+            label="Alasan Pembatalan"
+            required
+            rows={3}
+            placeholder="Contoh: Pelanggan membatalkan pesanan karena perubahan spesifikasi proyek..."
+            value={cancelReasonInput}
+            onChange={e => setCancelReasonInput(e.target.value)}
+            error={cancelReasonError}
+          />
         </div>
       </Modal>
 
@@ -1142,19 +1128,27 @@ export default function OrderDetailPage() {
         isOpen={complaintModalOpen}
         onClose={() => setComplaintModalOpen(false)}
         title="Ajukan Komplain"
-        size="lg"
+        size="md"
+        mobileBottomSheet
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setComplaintModalOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setComplaintModalOpen(false)}
+            >
               Batal
             </Button>
-            <Button variant="primary" size="sm" onClick={handleSubmitComplaint} disabled={uploadingFiles}>
-              {uploadingFiles ? 'Memproses File...' : 'Kirim Pengajuan Komplain'}
+            <Button
+              variant="primary"
+              onClick={handleSubmitComplaint}
+              disabled={uploadingFiles}
+            >
+              {uploadingFiles ? 'Memproses File...' : 'Kirim Pengajuan'}
             </Button>
           </>
         }
       >
-        <div className="space-y-5 text-xs">
+        <div className="space-y-6 sm:space-y-4">
           {complaintError && (
             <div className="p-3 rounded-xl border border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 font-semibold flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -1162,27 +1156,26 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-          <div>
-            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Kategori Komplain <span className="text-red-500">*</span>
-            </label>
-            <Select
-              value={complaintCategory}
-              onChange={e => setComplaintCategory(e.target.value as any)}
-              inputSize="sm"
-            >
-              <option value="Barang tidak sesuai">Barang tidak sesuai (Salah Varian/Warna/Spek)</option>
-              <option value="Barang rusak / cacat">Barang rusak / cacat produksi</option>
-              <option value="Barang kurang">Barang kurang (Shortage)</option>
-              <option value="Lainnya">Lainnya</option>
-            </Select>
-          </div>
+          <Select
+            label="Kategori"
+            required
+            value={complaintCategory}
+            onChange={e => {
+              setComplaintCategory(e.target.value);
+              if (complaintError) setComplaintError('');
+            }}
+          >
+            <option value="" disabled></option>
+            <option value="Barang tidak sesuai">Barang tidak sesuai</option>
+            <option value="Barang rusak / cacat">Barang rusak / cacat</option>
+            <option value="Barang kurang">Barang kurang</option>
+          </Select>
 
           <div>
-            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-2">
-              Pilih Item yang Bermasalah <span className="text-red-500">*</span>
+            <label className="mb-2 md:mb-1.5 block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Pilih Item yang Bermasalah <span className="ml-1 text-red-500 font-bold">*</span>
             </label>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            <div className="space-y-2">
               {order.items.map((item, idx) => {
                 const isSelected = complaintItems.some(i => i.idx === idx);
                 const selectedItem = complaintItems.find(i => i.idx === idx);
@@ -1190,43 +1183,59 @@ export default function OrderDetailPage() {
                 const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
                 
                 return (
-                  <div key={idx} className={`p-3 rounded-lg border transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isSelected ? 'border-indigo-300 bg-indigo-50/50 dark:border-indigo-500/50 dark:bg-indigo-900/20' : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50'}`}>
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="mt-1">
+                  <div
+                    key={idx}
+                    onClick={() => handleToggleComplaintItem(idx, !isSelected, item.qty)}
+                    className={`p-3.5 sm:p-4 rounded-xl border transition-all cursor-pointer select-none ${
+                      isSelected
+                        ? 'border-indigo-400 bg-indigo-50/50 dark:border-indigo-500/60 dark:bg-indigo-950/20'
+                        : 'border-slate-200 bg-white hover:bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Kiri: Checkbox */}
+                      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={isSelected}
                           onChange={(checked) => handleToggleComplaintItem(idx, checked, item.qty)}
                         />
                       </div>
 
-                      {product?.image ? (
-                        <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                          <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                          <IconComp className="h-5 w-5" />
-                        </div>
-                      )}
-
+                      {/* Tengah: Nama Produk & Varian */}
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-slate-900 dark:text-white truncate">
+                        <div className="font-normal text-slate-900 dark:text-white truncate text-base sm:text-sm leading-snug">
                           {item.productName}
                         </div>
                         {item.variantLabel && (
-                          <div className="text-slate-500 dark:text-slate-400 truncate">
+                          <div className="text-slate-500 dark:text-slate-400 truncate text-[13px] sm:text-xs font-medium mt-0.5">
                             {formatVariantLabel(item.variantLabel)}
                           </div>
                         )}
-                        <div className="text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                          Terkirim: {item.qty} item
-                        </div>
+                      </div>
+
+                      {/* Kanan: Gambar visual */}
+                      <div className="shrink-0">
+                        {product?.image ? (
+                          <div className="h-12 w-12 sm:h-12 sm:w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 shadow-2xs">
+                            <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="h-12 w-12 sm:h-12 sm:w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60 shadow-2xs">
+                            <IconComp className="h-6 w-6" />
+                          </div>
+                        )}
                       </div>
                     </div>
-                    
+
+                    {/* Saat checkbox true: Muncul dalam 1 baris justify-between tanpa border di atasnya */}
                     {isSelected && (
-                      <div className="flex items-center gap-2 pl-7 sm:pl-0 shrink-0">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">Qty Bermasalah:</span>
+                      <div
+                        className="flex items-center justify-between mt-3 pt-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="font-semibold text-slate-700 dark:text-slate-300 text-[13px] md:text-xs whitespace-nowrap">
+                          Qty Bermasalah:
+                        </span>
                         <Input
                           type="number"
                           min={1}
@@ -1234,7 +1243,8 @@ export default function OrderDetailPage() {
                           value={selectedItem?.qty || 1}
                           onChange={(e) => handleChangeComplaintQty(idx, parseInt(e.target.value) || 1, item.qty)}
                           inputSize="sm"
-                          className="w-20 text-center font-mono font-bold"
+                          containerClassName="w-20 shrink-0"
+                          className="text-center font-mono font-bold"
                         />
                       </div>
                     )}
@@ -1244,31 +1254,26 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          <div>
-            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Detail Komplain / Kendala <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              rows={3}
-              placeholder="Ceritakan secara detail kerusakan atau masalah yang dialami pelanggan..."
-              value={complaintDesc}
-              onChange={e => setComplaintDesc(e.target.value)}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors shadow-xs"
-            />
-          </div>
+          <Textarea
+            label="Detail Keluhan"
+            required
+            rows={3}
+            value={complaintDesc}
+            onChange={e => setComplaintDesc(e.target.value)}
+          />
 
           <div>
-            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Upload Bukti Foto / Video <span className="text-red-500">*</span> <span className="text-slate-400 font-normal text-[11px]">(Wajib, maks. 50MB per file)</span>
+            <label className="mb-2 md:mb-1.5 block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Unggah Bukti <span className="ml-1 text-red-500 font-bold">*</span>
             </label>
             <div className="space-y-3">
               <label className="flex flex-col items-center justify-center p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-800/60 cursor-pointer transition-colors text-center">
                 <Upload className="w-5 h-5 text-slate-400 mb-1" />
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {uploadingFiles ? 'Sedang memproses file...' : 'Klik untuk memilih foto atau video bukti'}
+                  {uploadingFiles ? 'Sedang memproses file...' : 'Klik untuk mengunggah foto/video'}
                 </span>
                 <span className="text-[11px] text-slate-400 mt-0.5">
-                  Mendukung format gambar (JPG, PNG, WEBP) dan video (MP4, WebM)
+                  maks. 10 MB per file
                 </span>
                 <input
                   type="file"

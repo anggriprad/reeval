@@ -40,15 +40,35 @@ const extractText = (node: any): string => {
 };
 
 const heightClasses = {
-  sm: 'h-8 text-xs px-2.5',
-  md: 'h-9 text-xs px-3',
-  lg: 'h-10 text-sm px-3.5',
+  sm: 'h-10 md:h-8 text-[16px] md:text-xs px-3 md:px-2.5',
+  md: 'h-11 md:h-9 text-[16px] md:text-xs px-3.5 md:px-3',
+  lg: 'h-12 md:h-10 text-[16px] md:text-sm px-4 md:px-3.5',
+};
+
+const optionTextClasses: Record<'sm' | 'md' | 'lg', string> = {
+  sm: 'text-[16px] md:text-xs px-3.5 md:px-3 py-2.5 md:py-2',
+  md: 'text-[16px] md:text-xs px-3.5 md:px-3 py-2.5 md:py-2',
+  lg: 'text-[16px] md:text-sm px-4 md:px-3.5 py-3 md:py-2.5',
 };
 
 const iconSizes = {
-  sm: 'h-3.5 w-3.5',
+  sm: 'h-4 w-4 md:h-3.5 md:w-3.5',
   md: 'h-4 w-4',
-  lg: 'h-4 w-4',
+  lg: 'h-4.5 w-4.5 md:h-4 md:w-4',
+};
+
+// Helper to check if an option is a default/placeholder option that should display empty
+const isDefaultPlaceholderOption = (opt?: SelectOption | null): boolean => {
+  if (!opt) return true;
+  const valStr = String(opt.value ?? '');
+  if (valStr === '') {
+    if (opt.disabled) return true;
+    const lbl = (opt.label || '').trim();
+    if (!lbl || lbl.startsWith('--') || lbl.toLowerCase().includes('pilih')) {
+      return true;
+    }
+  }
+  return false;
 };
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
@@ -135,7 +155,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
 
     setOpenUpward(isUpward);
 
-    const width = rect.width;
+    const width = Math.min(rect.width, viewportWidth - 16);
     const left = align === 'right'
       ? Math.max(8, rect.right - width)
       : Math.min(Math.max(8, rect.left), viewportWidth - width - 8);
@@ -208,15 +228,20 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
     return res;
   }, [options, children, placeholder]);
 
+  // Filter out default placeholder options from the dropdown popup
+  const selectableOptions = useMemo(() => {
+    return parsedOptions.filter(opt => !isDefaultPlaceholderOption(opt));
+  }, [parsedOptions]);
+
   // Filtered options based on search term
   const displayedOptions = useMemo(() => {
-    if (!isSearchable || !searchTerm.trim()) return parsedOptions;
+    if (!isSearchable || !searchTerm.trim()) return selectableOptions;
     const term = searchTerm.toLowerCase();
-    return parsedOptions.filter(opt =>
+    return selectableOptions.filter(opt =>
       opt.label.toLowerCase().includes(term) ||
       (opt.value !== '' && String(opt.value).toLowerCase().includes(term))
     );
-  }, [parsedOptions, isSearchable, searchTerm]);
+  }, [selectableOptions, isSearchable, searchTerm]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
@@ -248,7 +273,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
     const nextOpen = !isOpen;
     if (nextOpen) {
       calcPosition();
-      const initialIdx = parsedOptions.findIndex(o => String(o.value) === currentValue);
+      const initialIdx = selectableOptions.findIndex(o => String(o.value) === currentValue);
       setFocusedIndex(initialIdx >= 0 ? initialIdx : 0);
     }
     setIsOpen(nextOpen);
@@ -281,15 +306,15 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
       if (!isOpen) {
         calcPosition();
         setIsOpen(true);
-        const initialIdx = parsedOptions.findIndex(o => String(o.value) === currentValue);
+        const initialIdx = selectableOptions.findIndex(o => String(o.value) === currentValue);
         setFocusedIndex(initialIdx >= 0 ? initialIdx : 0);
       } else {
         setFocusedIndex(prev => {
           let next = prev + 1;
-          while (next < parsedOptions.length && parsedOptions[next].disabled) {
+          while (next < selectableOptions.length && selectableOptions[next].disabled) {
             next++;
           }
-          return next < parsedOptions.length ? next : prev;
+          return next < selectableOptions.length ? next : prev;
         });
       }
     } else if (e.key === 'ArrowUp') {
@@ -297,12 +322,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
       if (!isOpen) {
         calcPosition();
         setIsOpen(true);
-        const initialIdx = parsedOptions.findIndex(o => String(o.value) === currentValue);
+        const initialIdx = selectableOptions.findIndex(o => String(o.value) === currentValue);
         setFocusedIndex(initialIdx >= 0 ? initialIdx : 0);
       } else {
         setFocusedIndex(prev => {
           let next = prev - 1;
-          while (next >= 0 && parsedOptions[next].disabled) {
+          while (next >= 0 && selectableOptions[next].disabled) {
             next--;
           }
           return next >= 0 ? next : prev;
@@ -311,8 +336,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
     } else if (e.key === 'Enter' || e.key === ' ') {
       if (isOpen) {
         e.preventDefault();
-        if (focusedIndex >= 0 && focusedIndex < parsedOptions.length) {
-          const opt = parsedOptions[focusedIndex];
+        if (focusedIndex >= 0 && focusedIndex < selectableOptions.length) {
+          const opt = selectableOptions[focusedIndex];
           if (!opt.disabled) {
             handleSelect(opt.value);
           }
@@ -331,28 +356,25 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
   };
 
   const selectedOpt = parsedOptions.find(opt => String(opt.value) === currentValue);
-  const displayLabel = selectedOpt
-    ? selectedOpt.label
-    : placeholder || (parsedOptions.length > 0 ? parsedOptions[0].label : '');
+  const displayLabel = useMemo(() => {
+    if (!currentValue || currentValue === '') {
+      return '';
+    }
+    if (selectedOpt) {
+      if (isDefaultPlaceholderOption(selectedOpt)) {
+        return '';
+      }
+      return selectedOpt.label;
+    }
+    return '';
+  }, [selectedOpt, currentValue]);
 
   const isHighlighted = activeHighlight && currentValue !== '' && currentValue !== 'ALL';
-
-  const realOptions = useMemo(() => {
-    if (parsedOptions.length === 0) return [];
-    if (
-      parsedOptions.length === 1 &&
-      String(parsedOptions[0].value) === '' &&
-      (Boolean(placeholder) || parsedOptions[0].label.toLowerCase().includes('pilih') || parsedOptions[0].label.startsWith('--'))
-    ) {
-      return [];
-    }
-    return parsedOptions;
-  }, [parsedOptions, placeholder]);
 
   return (
     <div className={`w-full ${containerClassName}`} ref={containerRef} onKeyDown={handleKeyDown}>
       {label && (
-        <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+        <label className="mb-2 md:mb-1.5 block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
           {label}
           {required && <span className="ml-1 text-red-500 font-bold">*</span>}
         </label>
@@ -384,7 +406,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
           type="button"
           disabled={disabled}
           onClick={toggleOpen}
-          className={`w-full inline-flex items-center justify-between gap-2 rounded-md border font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 ${
+          className={`w-full inline-flex items-center justify-between gap-2 rounded-lg md:rounded-md border font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 ${
             heightClasses[inputSize]
           } ${
             isHighlighted
@@ -396,7 +418,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
         >
           <span className="inline-flex items-center gap-2 truncate">
             {Icon && <Icon className={`text-slate-400 shrink-0 ${iconSizes[inputSize]}`} />}
-            <span className="truncate">{displayLabel}</span>
+            <span className="truncate">{displayLabel || '\u00A0'}</span>
           </span>
           <ChevronDown className={`shrink-0 text-slate-400 transition-transform duration-200 ${iconSizes[inputSize]} ${isOpen ? 'rotate-180' : ''}`} />
         </button>
@@ -461,7 +483,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
                       }
                     }}
                     placeholder={searchPlaceholder}
-                    className="w-full bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white rounded-md pl-7 pr-6 py-1 border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-400"
+                    className="w-full bg-white dark:bg-slate-800 text-[16px] md:text-xs text-slate-900 dark:text-white rounded-md pl-7 pr-6 py-1.5 md:py-1 border border-slate-200 dark:border-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-400"
                   />
                   {searchTerm && (
                     <button
@@ -474,7 +496,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
                       className="absolute right-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5 rounded cursor-pointer"
                       tabIndex={-1}
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
@@ -483,7 +505,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
 
             <div className="p-1 overflow-y-auto flex-1 max-h-56">
               {displayedOptions.length === 0 ? (
-                <div className="px-3.5 py-2.5 text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic">
+                <div className="px-3.5 py-2.5 text-[16px] md:text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic">
                   tidak ada opsi ditemukan
                 </div>
               ) : (
@@ -499,7 +521,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
                         disabled={opt.disabled}
                         onClick={() => handleSelect(opt.value)}
                         onMouseEnter={() => setFocusedIndex(index)}
-                        className={`w-full text-left text-xs rounded-md px-3 py-2 font-medium flex items-center justify-between gap-3 ${
+                        className={`w-full text-left ${optionTextClasses[inputSize] || optionTextClasses.md} rounded-md font-medium flex items-center justify-between gap-3 ${
                           isSelected
                             ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold'
                             : isFocused
@@ -508,12 +530,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
                         } ${opt.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                       >
                         <span className="truncate">{opt.label}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />}
+                        {isSelected && <Check className="w-4 h-4 md:w-3.5 md:h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />}
                       </button>
                     );
                   })}
-                  {!isSearchable && realOptions.length === 0 && (
-                    <div className="px-3.5 py-2 text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
+                  {!isSearchable && selectableOptions.length === 0 && (
+                    <div className="px-3.5 py-2 text-[16px] md:text-xs font-medium text-slate-400 dark:text-slate-500 text-center italic border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
                       tidak ada opsi ditemukan
                     </div>
                   )}
@@ -525,7 +547,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
         )}
       </div>
 
-      {error && <p className="mt-1 text-[11px] font-medium text-red-500">{error}</p>}
+      {error && <p className="mt-1.5 md:mt-1 text-xs md:text-[11px] font-medium text-red-500">{error}</p>}
     </div>
   );
 });

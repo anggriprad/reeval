@@ -363,22 +363,22 @@ export function DateRangePicker({
         type="button"
         onClick={handleOpen}
         className={cn(
-          'inline-flex items-center gap-2 rounded-md border px-3 h-9 text-xs font-medium transition-colors',
+          'inline-flex items-center gap-2 rounded-lg md:rounded-md border px-3.5 md:px-3 h-11 md:h-9 text-[16px] md:text-xs font-medium transition-colors',
           'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-750',
           'focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500',
           open && 'border-indigo-500 ring-2 ring-indigo-500/20',
           isCustomRange && 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-600',
         )}
       >
-        <Calendar className="w-3.5 h-3.5 shrink-0" />
+        <Calendar className="w-4 h-4 md:w-3.5 md:h-3.5 shrink-0" />
         <span className="max-w-[200px] truncate">{triggerLabel}</span>
         {isCustomRange ? (
           <X
-            className="w-3.5 h-3.5 shrink-0 text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200 ml-0.5"
+            className="w-4 h-4 md:w-3.5 md:h-3.5 shrink-0 text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200 ml-0.5"
             onClick={handleClear}
           />
         ) : (
-          <ChevronDown className={cn('w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform', open && 'rotate-180')} />
+          <ChevronDown className={cn('w-4 h-4 md:w-3.5 md:h-3.5 shrink-0 text-slate-400 transition-transform', open && 'rotate-180')} />
         )}
       </button>
 
@@ -386,14 +386,14 @@ export function DateRangePicker({
       {open && (
         <div
           className={cn(
-            'absolute z-50 mt-1.5 flex rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900',
+            'absolute z-50 mt-1.5 flex flex-col sm:flex-row rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 max-w-[calc(100vw-24px)] overflow-x-hidden',
             'ring-1 ring-black/5 dark:ring-white/5',
             align === 'right' ? 'right-0' : 'left-0',
           )}
         >
           {/* Left: Shortcuts */}
-          <div className="w-40 border-r border-slate-100 dark:border-slate-800 p-2 flex flex-col gap-0.5">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 pb-1.5 pt-1">
+          <div className="w-full sm:w-40 border-b sm:border-b-0 sm:border-r border-slate-100 dark:border-slate-800 p-2 flex flex-row sm:flex-col gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0">
+            <p className="hidden sm:block text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 pb-1.5 pt-1">
               Periode
             </p>
             {SHORTCUTS.map(sc => (
@@ -402,7 +402,7 @@ export function DateRangePicker({
                 type="button"
                 onClick={() => applyShortcut(sc)}
                 className={cn(
-                  'w-full text-left text-xs rounded-md px-2 py-1.5 font-medium transition-colors',
+                  'shrink-0 whitespace-nowrap text-left text-xs rounded-md px-2.5 py-1.5 font-medium transition-colors',
                   activeShortcut === sc.key
                     ? 'bg-indigo-600 text-white'
                     : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
@@ -413,7 +413,7 @@ export function DateRangePicker({
             ))}
 
             {/* Divider above custom hint */}
-            <div className="border-t border-slate-100 dark:border-slate-800 mt-1.5 pt-1.5 px-2">
+            <div className="hidden sm:block border-t border-slate-100 dark:border-slate-800 mt-1.5 pt-1.5 px-2">
               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">
                 Atau pilih tanggal kustom di kalender →
               </p>

@@ -75,7 +75,7 @@ export function Alert({
     <div
       role="alert"
       className={cn(
-        'rounded-xl border p-3.5 sm:p-4 text-xs flex items-start gap-3 transition-colors',
+        'rounded-xl border p-3.5 sm:p-4 text-[13.5px] md:text-xs flex items-start gap-3 transition-colors',
         styles.container,
         className
       )}

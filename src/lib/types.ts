@@ -254,6 +254,8 @@ export interface Customer {
   name: string;
   phone: string;
   address: string;
+  city?: string;
+  district?: string;
 }
 
 // --- Sales Order Item ---
@@ -323,7 +325,7 @@ export interface ComplaintAttachment {
 
 export interface OrderComplaint {
   id: string;
-  category: 'Barang tidak sesuai' | 'Barang rusak / cacat' | 'Barang kurang' | 'Lainnya';
+  category: 'Item tidak sesuai' | 'Item rusak / cacat' | 'Item kurang' | 'Barang tidak sesuai' | 'Barang rusak / cacat' | 'Barang kurang' | 'Lainnya';
   description: string;
   status: OrderComplaintStatus;
   items: OrderComplaintItem[];

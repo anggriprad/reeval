@@ -19,15 +19,15 @@ export interface CheckboxProps {
 }
 
 const sizeClasses = {
-  sm: 'h-3.5 w-3.5 rounded',
-  md: 'h-4 w-4 rounded',
-  lg: 'h-5 w-5 rounded-md',
+  sm: 'h-4 w-4 md:h-3.5 md:w-3.5 rounded',
+  md: 'h-5 w-5 md:h-4 md:w-4 rounded',
+  lg: 'h-6 w-6 md:h-5 md:w-5 rounded-md',
 };
 
 const iconSizes = {
-  sm: 'h-2.5 w-2.5 stroke-[2.5]',
-  md: 'h-3 w-3 stroke-[2.5]',
-  lg: 'h-3.5 w-3.5 stroke-[2.5]',
+  sm: 'h-3 w-3 md:h-2.5 md:w-2.5 stroke-[2.5]',
+  md: 'h-3.5 w-3.5 md:h-3 md:w-3 stroke-[2.5]',
+  lg: 'h-4 w-4 md:h-3.5 md:w-3.5 stroke-[2.5]',
 };
 
 export function Checkbox({
@@ -99,12 +99,12 @@ export function Checkbox({
       {(label || description) && (
         <div className="text-left cursor-pointer" onClick={handleClick}>
           {label && (
-            <span className="font-medium text-slate-800 dark:text-slate-200 block text-xs leading-tight">
+            <span className="font-medium text-slate-800 dark:text-slate-200 block text-[13px] md:text-xs leading-tight">
               {label}
             </span>
           )}
           {description && (
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+            <span className="text-xs md:text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
               {description}
             </span>
           )}

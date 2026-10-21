@@ -3,7 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from './Sidebar';
+import { MobileHeader } from './MobileHeader';
+import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import { useApp } from '@/context/AppContext';
+import { cn } from '@/lib/utils';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -35,12 +38,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+      <PullToRefresh />
       <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
+      <MobileHeader />
       <main
-        className="transition-all duration-300 min-h-screen pb-16"
-        style={{ marginLeft: sidebarCollapsed ? '68px' : '220px' }}
+        className={cn(
+          'transition-all duration-300 min-h-screen pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-16 ml-0',
+          sidebarCollapsed ? 'md:ml-[68px]' : 'md:ml-[220px]'
+        )}
       >
-        <div className="p-6 lg:p-8">
+        <div className="p-4 sm:p-6 lg:p-8">
           {children}
         </div>
       </main>

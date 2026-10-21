@@ -12,6 +12,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { cn, formatCurrency, formatDateTime, formatVariantLabel, getComplaintStatusLabel } from '@/lib/utils';
 import { ComplaintAttachment } from '@/lib/types';
 import {
@@ -357,7 +359,7 @@ export default function ComplaintDetailPage() {
                   <div className="font-semibold text-sm text-indigo-700 dark:text-indigo-400">
                     Penuhi Barang Pengganti
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <div className="text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                     Selesaikan komplain dengan unit pengganti (SPK baru atau ambil stok gudang)
                   </div>
                 </button>
@@ -370,7 +372,7 @@ export default function ComplaintDetailPage() {
                   <div className="font-semibold text-sm text-slate-900 dark:text-white">
                     Batalkan Pesanan (Refund)
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <div className="text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                     Batalkan item yang bermasalah dan proses pengembalian dana
                   </div>
                 </button>
@@ -387,7 +389,7 @@ export default function ComplaintDetailPage() {
                   <div className="font-semibold text-sm text-red-600 dark:text-red-400">
                     Tolak Komplain
                   </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <div className="text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                     Tolak pengajuan komplain pelanggan dan berikan alasan penolakan
                   </div>
                 </button>
@@ -399,12 +401,12 @@ export default function ComplaintDetailPage() {
                   <span>Komplain Ditolak</span>
                 </div>
                 {complaint.rejectionReason && (
-                  <div className="text-xs text-red-700 dark:text-red-400 leading-relaxed">
+                  <div className="text-[13.5px] sm:text-xs text-red-700 dark:text-red-400 leading-relaxed">
                     <span className="font-semibold">Alasan Penolakan: </span>
                     {complaint.rejectionReason}
                   </div>
                 )}
-                <div className="text-[11px] text-red-600/80 dark:text-red-500 pt-1">
+                <div className="text-xs sm:text-[11px] text-red-600/80 dark:text-red-500 pt-1">
                   {complaint.rejectedAt
                     ? `Ditolak ${complaint.rejectedBy ? `oleh ${complaint.rejectedBy} ` : ''}pada ${formatDateTime(complaint.rejectedAt)}`
                     : 'Status: Ditolak'}
@@ -432,7 +434,7 @@ export default function ComplaintDetailPage() {
                 </div>
                 {complaint.resolutionNotes && (
                   <p className={cn(
-                    "text-xs leading-relaxed",
+                    "text-[13.5px] sm:text-xs leading-relaxed",
                     complaint.status === 'SELESAI'
                       ? "text-emerald-700 dark:text-emerald-400"
                       : "text-blue-700 dark:text-blue-400"
@@ -442,13 +444,12 @@ export default function ComplaintDetailPage() {
                 )}
                 {complaint.replacementStatus && (
                   <div className="flex items-center gap-2 pt-0.5">
-                    <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Penggantian:</span>
+                    <span className="text-[13px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium">Penggantian:</span>
                     <Badge
                       variant={
                         complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'success' :
                         complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'warning' : 'purple'
                       }
-                      className="text-[10px]"
                     >
                       {complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'Siap di Antrean Kirim' :
                        complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'Menunggu Produksi (SPK)' :
@@ -457,7 +458,7 @@ export default function ComplaintDetailPage() {
                   </div>
                 )}
                 <div className={cn(
-                  "text-[11px] pt-1",
+                  "text-xs sm:text-[11px] pt-1",
                   complaint.status === 'SELESAI'
                     ? "text-emerald-600/80 dark:text-emerald-500"
                     : "text-blue-600/80 dark:text-blue-500"
@@ -494,7 +495,7 @@ export default function ComplaintDetailPage() {
         title="Konfirmasi Resolusi Refund"
         size="lg"
         actions={
-          <div className="flex items-center justify-end gap-2.5">
+          <>
             <Button
               variant="outline"
               onClick={() => setIsRefundModalOpen(false)}
@@ -508,10 +509,10 @@ export default function ComplaintDetailPage() {
             >
               Proses Refund
             </Button>
-          </div>
+          </>
         }
       >
-        <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
+        <div className="space-y-4 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
           {/* Ringkasan Item Direfund */}
           <div>
             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
@@ -524,7 +525,7 @@ export default function ComplaintDetailPage() {
                   : (order.items.find(oi => oi.productId === item.productId)?.unitPrice ?? 0);
                 const subtotal = itemPrice * item.qty;
                 return (
-                  <div key={idx} className="p-3 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 text-xs">
+                  <div key={idx} className="p-3 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 text-[13.5px] md:text-xs">
                     <div>
                       <div className="font-semibold text-slate-900 dark:text-white">
                         {item.productName}
@@ -543,7 +544,7 @@ export default function ComplaintDetailPage() {
           </div>
 
           {/* Rincian Finansial & Tagihan */}
-          <div className="bg-slate-50 dark:bg-slate-800/40 rounded-lg p-3.5 border border-slate-200/80 dark:border-slate-800 space-y-2 text-xs">
+          <div className="bg-slate-50 dark:bg-slate-800/40 rounded-lg p-3.5 border border-slate-200/80 dark:border-slate-800 space-y-2 text-[13.5px] md:text-xs">
             <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
               <span>Total Tagihan Pesanan Awal</span>
               <span className="font-medium text-slate-900 dark:text-white">{formatCurrency(currentTotal)}</span>
@@ -559,7 +560,7 @@ export default function ComplaintDetailPage() {
           </div>
 
           {/* Status Pembayaran & Dampak Finansial */}
-          <div className="p-3.5 rounded-lg border border-slate-200/80 dark:border-slate-800 space-y-2 text-xs">
+          <div className="p-3.5 rounded-lg border border-slate-200/80 dark:border-slate-800 space-y-2 text-[13.5px] md:text-xs">
             <div className="flex justify-between items-center">
               <span className="text-slate-500 dark:text-slate-400">Sudah Dibayar Pelanggan</span>
               <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(currentPaid)}</span>
@@ -613,7 +614,7 @@ export default function ComplaintDetailPage() {
         title="Penuhi Barang Pengganti"
         size="lg"
         actions={
-          <div className="flex items-center justify-end gap-2.5">
+          <>
             <Button
               variant="outline"
               onClick={() => setIsFulfillmentModalOpen(false)}
@@ -626,17 +627,17 @@ export default function ComplaintDetailPage() {
             >
               Setujui Pemenuhan
             </Button>
-          </div>
+          </>
         }
       >
-        <div className="space-y-4 text-xs text-slate-700 dark:text-slate-300">
+        <div className="space-y-4 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
           <div>
             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Item yang Diganti
             </div>
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {complaint.items.map((item, idx) => (
-                <div key={idx} className="p-3 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 text-xs">
+                <div key={idx} className="p-3 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 text-[13.5px] md:text-xs">
                   <div>
                     <div className="font-semibold text-slate-900 dark:text-white">
                       {item.productName}
@@ -657,7 +658,7 @@ export default function ComplaintDetailPage() {
 
           {/* Pilihan Sumber Pemenuhan */}
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
               Pilih Sumber Pemenuhan Unit <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -674,13 +675,13 @@ export default function ComplaintDetailPage() {
                   name="replacementSource"
                   checked={replacementSource === 'NEW_SPK'}
                   onChange={() => setReplacementSource('NEW_SPK')}
-                  className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                  className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500"
                 />
                 <div className="min-w-0">
-                  <span className="block font-semibold text-xs text-slate-900 dark:text-white">
+                  <span className="block font-semibold text-[13.5px] md:text-xs text-slate-900 dark:text-white">
                     Terbitkan SPK Produksi Baru
                   </span>
-                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                     Membuat tiket SPK baru di modul Produksi agar tukang mengerjakan unit pengganti.
                   </span>
                 </div>
@@ -702,18 +703,18 @@ export default function ComplaintDetailPage() {
                   checked={replacementSource === 'FINISHED_STOCK'}
                   onChange={() => setReplacementSource('FINISHED_STOCK')}
                   disabled={totalAvailableStockForComplaint < totalNeededStock}
-                  className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                  className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500"
                 />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-semibold text-xs text-slate-900 dark:text-white">
+                    <span className="font-semibold text-[13.5px] md:text-xs text-slate-900 dark:text-white">
                       Ambil dari Stok Bebas Gudang
                     </span>
-                    <Badge variant={totalAvailableStockForComplaint >= totalNeededStock ? "success" : "default"} className="text-[10px]">
+                    <Badge variant={totalAvailableStockForComplaint >= totalNeededStock ? "success" : "default"}>
                       Stok Bebas: {totalAvailableStockForComplaint}
                     </Badge>
                   </div>
-                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                     {totalAvailableStockForComplaint >= totalNeededStock
                       ? "Langsung tahan unit barang jadi di gudang dan masuk ke Antrean Kirim."
                       : "Stok bebas di gudang tidak mencukupi, harap gunakan SPK baru."}
@@ -724,23 +725,26 @@ export default function ComplaintDetailPage() {
           </div>
 
           {/* Opsi Penarikan Barang Lama (Tukar Guling) */}
-          <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isReturnRequested}
-                onChange={e => setIsReturnRequested(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
+          <div
+            onClick={() => setIsReturnRequested(!isReturnRequested)}
+            className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 cursor-pointer"
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                <Checkbox
+                  checked={isReturnRequested}
+                  onChange={checked => setIsReturnRequested(checked)}
+                />
+              </div>
               <div className="min-w-0">
-                <span className="block font-semibold text-xs text-slate-900 dark:text-white">
+                <span className="block font-semibold text-[13.5px] md:text-xs text-slate-900 dark:text-white">
                   Tarik barang lama dari pelanggan (Tukar Guling)
                 </span>
-                <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                   Item lama akan tercatat di tab Barang Retur (menunggu fisik) dan otomatis menjadi instruksi penarikan bagi supir saat pengantaran barang pengganti.
                 </span>
               </div>
-            </label>
+            </div>
           </div>
 
           {/* Catatan Resolusi */}
@@ -762,7 +766,7 @@ export default function ComplaintDetailPage() {
         title="Tandai Selesai Manual"
         size="md"
         actions={
-          <div className="flex items-center justify-end gap-2.5">
+          <>
             <Button
               variant="outline"
               onClick={() => setIsManualCompleteModalOpen(false)}
@@ -775,10 +779,10 @@ export default function ComplaintDetailPage() {
             >
               Tandai Selesai
             </Button>
-          </div>
+          </>
         }
       >
-        <div className="space-y-3 text-xs text-slate-700 dark:text-slate-300">
+        <div className="space-y-3 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
           <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
             Gunakan opsi ini jika komplain telah diselesaikan melalui kesepakatan damai atau di luar sistem pengiriman otomatis. Tiket komplain akan langsung ditandai selesai.
           </p>
@@ -800,7 +804,7 @@ export default function ComplaintDetailPage() {
         title="Tolak Pengajuan Komplain"
         size="md"
         actions={
-          <div className="flex items-center justify-end gap-2.5">
+          <>
             <Button
               variant="outline"
               onClick={() => setIsRejectModalOpen(false)}
@@ -813,33 +817,25 @@ export default function ComplaintDetailPage() {
             >
               Tolak Komplain
             </Button>
-          </div>
+          </>
         }
       >
-        <div className="space-y-4 text-xs text-slate-700 dark:text-slate-300">
+        <div className="space-y-4 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
           <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
             Pengajuan komplain dari pelanggan akan ditolak. Pesanan tidak akan mengalami perubahan tagihan dan tidak ada barang retur yang masuk ke inventaris.
           </p>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Alasan Penolakan <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              rows={4}
-              value={rejectionReason}
-              onChange={e => {
-                setRejectionReason(e.target.value);
-                if (rejectionError) setRejectionError('');
-              }}
-              placeholder="Tuliskan alasan penolakan secara jelas..."
-              className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-            {rejectionError && (
-              <p className="mt-1 text-xs text-red-600 dark:text-red-400 font-medium">
-                {rejectionError}
-              </p>
-            )}
-          </div>
+          <Textarea
+            label="Alasan Penolakan"
+            required
+            rows={4}
+            value={rejectionReason}
+            onChange={e => {
+              setRejectionReason(e.target.value);
+              if (rejectionError) setRejectionError('');
+            }}
+            placeholder="Tuliskan alasan penolakan secara jelas..."
+            error={rejectionError}
+          />
         </div>
       </Modal>
 

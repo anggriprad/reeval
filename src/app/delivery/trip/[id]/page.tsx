@@ -13,6 +13,7 @@ import { formatDate, formatDateTime, getWhatsAppUrl, formatPhoneDisplay, cn } fr
 import {
   Truck,
   Clock,
+  Check,
   CheckCircle,
   CheckCircle2,
   ChevronRight,
@@ -281,7 +282,7 @@ export default function TripDetailPage() {
         {/* Kolom Kanan: Section Riwayat Pengiriman */}
         <div className="lg:col-span-5">
           <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">
+            <h2 className="text-[15px] sm:text-base font-semibold text-slate-900 dark:text-white mb-4">
               Riwayat Pengiriman
             </h2>
 
@@ -292,7 +293,6 @@ export default function TripDetailPage() {
                 description: string;
                 timestamp?: string;
                 actor?: string;
-                status: 'completed' | 'current';
                 photo?: string;
                 salesOrderNumber?: string;
               };
@@ -302,102 +302,113 @@ export default function TripDetailPage() {
               const deliveredDOs = targetTripDOs.filter(d => d.status === 'DELIVERED');
 
               const tripTimelineEvents: TripTimelineEvent[] = [
+                // 1. Trip Diterbitkan
                 {
                   id: 'trip-created',
                   title: 'Trip Diterbitkan',
-                  description: `Armada ${tripInfo.vehiclePlate} (${tripInfo.driverName}) ditugaskan membawa ${tripInfo.totalDestinationsCount} titik tujuan (${tripInfo.totalUnitsCount} Unit).`,
+                  description: `Armada ${tripInfo.vehiclePlate} (${tripInfo.driverName}) ditugaskan membawa ${tripInfo.totalDestinationsCount} titik tujuan`,
                   timestamp: tripInfo.createdAt,
-                  actor: tripInfo.driverName,
-                  status: 'completed',
+                  actor: tripInfo.driverName || 'Admin Logistik',
                 },
-                isLoaded ? {
+                // 2. Barang Dimuat
+                ...(isLoaded ? [{
                   id: 'trip-loaded',
-                  title: 'Muat Barang Selesai',
-                  description: 'Seluruh muatan barang telah diverifikasi dan dimuat ke dalam armada.',
+                  title: 'Barang Dimuat ke Armada',
+                  description: 'Seluruh muatan barang telah diverifikasi dan dimuat ke dalam armada',
                   timestamp: tripInfo.loadedAt,
-                  actor: tripInfo.loadedBy || tripInfo.driverName,
-                  status: 'completed',
-                } : {
-                  id: 'trip-loading',
-                  title: 'Proses Muat Barang',
-                  description: 'Menunggu proses checklist dan verifikasi muat barang ke armada.',
-                  status: 'current',
-                },
+                  actor: tripInfo.loadedBy || tripInfo.driverName || 'Driver Logistik',
+                }] : []),
+                // 3. Dalam Perjalanan
                 ...(isDeparted ? [{
                   id: 'trip-departed',
-                  title: 'Keberangkatan Armada',
-                  description: `Armada berangkat melakukan rute pengiriman ke ${tripInfo.totalDestinationsCount} titik tujuan.`,
+                  title: 'Dalam Perjalanan',
+                  description: `Armada berangkat melakukan rute pengiriman ke ${tripInfo.totalDestinationsCount} titik tujuan`,
                   timestamp: tripInfo.loadedAt,
-                  status: 'completed' as const,
+                  actor: tripInfo.driverName || 'Driver Logistik',
                 }] : []),
+                // 4. Titik-Titik Serah Terima Selesai
                 ...deliveredDOs.map((dOrder) => ({
                   id: `trip-point-delivered-${dOrder.id}`,
                   title: `Titik Selesai: ${dOrder.customerName}`,
-                  description: `Pesanan #${dOrder.salesOrderNumber} diserahterimakan kepada ${dOrder.receiverName || dOrder.customerName}.${dOrder.deliveryProofNote ? ` Catatan: "${dOrder.deliveryProofNote}"` : ''}`,
+                  description: `Pesanan #${dOrder.salesOrderNumber} telah diterima oleh ${dOrder.receiverName || dOrder.customerName}${dOrder.deliveryProofNote ? ` (${dOrder.deliveryProofNote})` : ''}`,
                   timestamp: dOrder.deliveredAt,
-                  actor: dOrder.receiverName,
-                  status: 'completed' as const,
+                  actor: dOrder.receiverName || tripInfo.driverName,
                   photo: dOrder.deliveryProofPhoto,
                   salesOrderNumber: dOrder.salesOrderNumber,
                 })),
-                ...(tripInfo.isInTransit && !tripInfo.isAllDelivered ? [{
-                  id: 'trip-transit',
-                  title: 'Dalam Perjalanan',
-                  description: `Menuju titik pengiriman berikutnya (${deliveredDOs.length} dari ${tripInfo.totalDestinationsCount} titik selesai diserahterimakan).`,
-                  timestamp: deliveredDOs.length > 0 ? deliveredDOs[deliveredDOs.length - 1]?.deliveredAt : tripInfo.loadedAt,
-                  status: 'current' as const,
-                }] : []),
+                // 5. Pengiriman Selesai
                 ...(tripInfo.isAllDelivered ? [{
                   id: 'trip-completed',
                   title: 'Pengiriman Selesai',
-                  description: `Seluruh titik pengiriman (${tripInfo.totalDestinationsCount} titik) telah berhasil diserahterimakan.`,
+                  description: `Seluruh titik pengiriman (${tripInfo.totalDestinationsCount} titik) telah berhasil diserahterimakan`,
                   timestamp: deliveredDOs.length > 0 ? deliveredDOs[deliveredDOs.length - 1]?.deliveredAt : tripInfo.loadedAt,
-                  status: 'completed' as const,
+                  actor: tripInfo.driverName || 'Driver Logistik',
                 }] : []),
               ];
+
+              const isTripFinished = tripInfo.isAllDelivered;
 
               return (
                 <div className="space-y-0">
                   {tripTimelineEvents.map((evt, idx) => {
                     const isLast = idx === tripTimelineEvents.length - 1;
-                    const isDone = evt.status === 'completed';
+                    const isDone = isTripFinished ? true : !isLast;
+                    const isCurrent = isTripFinished ? false : isLast;
 
                     return (
-                      <div key={evt.id || idx} className="flex gap-3 text-xs">
+                      <div key={evt.id || idx} className="flex gap-3 text-xs sm:text-sm">
                         {/* Node & Connector Line */}
                         <div className="flex flex-col items-center shrink-0">
-                          <div className={`flex items-center justify-center rounded-full bg-white dark:bg-slate-900 mt-0.5 ${
-                            isDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'
-                          }`}>
+                          <div className="flex items-center justify-center mt-0.5">
                             {isDone ? (
-                              <CheckCircle className="w-4 h-4 fill-emerald-50 dark:fill-emerald-950/40" />
-                            ) : (
-                              <div className="w-4 h-4 rounded-full border-2 border-indigo-600 dark:border-indigo-400 flex items-center justify-center">
+                              <Check className="w-4.5 h-4.5 text-slate-400 dark:text-slate-500 shrink-0 stroke-[2.5]" />
+                            ) : isCurrent ? (
+                              <div className="w-4.5 h-4.5 rounded-full border-2 border-indigo-600 dark:border-indigo-400 flex items-center justify-center shrink-0">
                                 <div className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
                               </div>
+                            ) : (
+                              <div className="w-4.5 h-4.5 rounded-full border-2 border-slate-300 dark:border-slate-600 shrink-0" />
                             )}
                           </div>
                           {!isLast && (
-                            <div className="w-0.5 grow min-h-[22px] bg-slate-200 dark:bg-slate-700 my-1" />
+                            <div className="w-0.5 grow min-h-[24px] bg-slate-200 dark:bg-slate-700/80 my-1" />
                           )}
                         </div>
 
                         {/* Content */}
                         <div className={`space-y-0.5 min-w-0 flex-1 ${!isLast ? 'pb-3.5' : ''}`}>
-                          <div className={`font-semibold ${
-                            isDone ? 'text-slate-900 dark:text-white' : 'text-indigo-600 dark:text-indigo-400 font-bold'
-                          }`}>
+                          <div
+                            className={`text-[13.5px] sm:text-sm ${
+                              isDone
+                                ? 'text-slate-500 dark:text-slate-400 font-medium'
+                                : isCurrent
+                                ? 'text-slate-900 dark:text-white font-bold'
+                                : 'text-slate-400 dark:text-slate-500 font-medium'
+                            }`}
+                          >
                             {evt.title}
                           </div>
-                          <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                          <p
+                            className={`text-xs sm:text-[13px] leading-relaxed ${
+                              isDone
+                                ? 'text-slate-400 dark:text-slate-500'
+                                : isCurrent
+                                ? 'text-slate-800 dark:text-white'
+                                : 'text-slate-400 dark:text-slate-600'
+                            }`}
+                          >
                             {evt.description}
                           </p>
-                          {(evt.timestamp || (isDone && evt.actor && evt.actor !== '-')) && (
-                            <div className="text-[10px] text-slate-400 dark:text-slate-500 pt-0.5 flex items-center gap-1.5 flex-wrap font-mono">
+                          {(evt.timestamp || (evt.actor && evt.actor !== '-')) && (
+                            <div
+                              className={`text-[11px] sm:text-xs pt-0.5 flex items-center gap-1.5 flex-wrap ${
+                                isCurrent ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'
+                              }`}
+                            >
                               {evt.timestamp && (
                                 <span>{formatDateTime(evt.timestamp)}</span>
                               )}
-                              {isDone && evt.actor && evt.actor !== '-' && (
+                              {evt.actor && evt.actor !== '-' && (
                                 <>
                                   {evt.timestamp && <span>·</span>}
                                   <span>Oleh: {evt.actor}</span>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useUrlTab } from '@/lib/useUrlTab';
@@ -10,10 +10,13 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { ActionMenu } from '@/components/ui/ActionMenu';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Textarea } from '@/components/ui/Textarea';
 import { SegmentedControl, SegmentOption } from '@/components/ui/SegmentedControl';
-import { formatCurrency, formatDateTime, formatPhoneDisplay, formatVariantLabel, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel, getComplaintStatusLabel } from '@/lib/utils';
+import { formatCurrency, formatDateTime, formatPhoneDisplay, formatVariantLabel, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel, getComplaintStatusLabel, getCustomerLocationDisplay, cn } from '@/lib/utils';
 import { canApproveOrder, canCreateOrder } from '@/lib/roles';
 import type { OrderStatus, SalesOrder } from '@/lib/types';
 import { CustomProcessModal } from '@/components/order/CustomProcessModal';
@@ -99,7 +102,6 @@ export function OrderListContent() {
   const [cancelModalOrderId, setCancelModalOrderId] = useState<string | null>(null);
   const [cancelReasonInput, setCancelReasonInput] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState('');
-  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [customProcessOrder, setCustomProcessOrder] = useState<SalesOrder | null>(null);
   const [statusFilter, setStatusFilter] = useUrlTab(['all', 'pending', 'processing', 'ready', 'sent', 'canceled', 'komplain'] as const, 'pending');
   const [searchTerm, setSearchTerm] = useState('');
@@ -118,7 +120,7 @@ export function OrderListContent() {
 
   const salesOptions = Array.from(new Set(salesOrders.map(o => o.createdBy))).map(name => ({
     value: name,
-    label: `Sales: ${name}`
+    label: name
   }));
 
   const filteredOrders = baseOrders
@@ -180,7 +182,6 @@ export function OrderListContent() {
     setCancelModalOrderId(orderId);
     setCancelReasonInput('');
     setCancelReasonError('');
-    setOpenActionMenuId(null);
   };
 
   const handleConfirmCancelOrder = () => {
@@ -244,25 +245,21 @@ export function OrderListContent() {
 
   return (
     <div className="space-y-3">
-      <PageHeader
-        title="Sales Order"
-      >
-        <div className="flex items-center gap-2">
-          <Link href="/order/config">
-            <Button variant="outline">
-              <Settings className="h-4 w-4" />
-              Konfigurasi
+      <PageHeader title="Sales Order">
+        <Link href="/order/config">
+          <Button variant="outline">
+            <Settings className="h-4 w-4" />
+            Konfigurasi
+          </Button>
+        </Link>
+        {canCreateOrder(currentUser.role) && (
+          <Link href={createHref}>
+            <Button>
+              <Plus className="h-4 w-4" />
+              Buat Pesanan
             </Button>
           </Link>
-          {canCreateOrder(currentUser.role) && (
-            <Link href={createHref}>
-              <Button>
-                <Plus className="h-4 w-4" />
-                Buat Pesanan
-              </Button>
-            </Link>
-          )}
-        </div>
+        )}
       </PageHeader>
 
       {errorMsg && (
@@ -300,10 +297,11 @@ export function OrderListContent() {
             />
           </Card>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-2.5 sm:gap-4 max-md:-mx-4 md:mx-0">
             {filteredComplaints.map(complaint => (
               <Card
                 key={complaint.id}
+                noRounded="mobile"
                 onClick={() => router.push(`/order/complaint/${complaint.id}`)}
                 className="transition-all cursor-pointer hover:shadow-xs hover:border-slate-300 dark:hover:border-slate-700"
               >
@@ -313,7 +311,7 @@ export function OrderListContent() {
                       <div className="font-semibold text-sm text-slate-900 dark:text-white">
                         {complaint.category}
                       </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
+                      <div className="text-[13px] sm:text-xs text-slate-500 mt-0.5">
                         {complaint.orderNumber} · {complaint.customerName}
                       </div>
                     </div>
@@ -326,14 +324,14 @@ export function OrderListContent() {
                       }>
                         {getComplaintStatusLabel(complaint.status)}
                       </Badge>
-                      <span className="text-[11px] text-slate-500">
+                      <span className="text-xs sm:text-[11px] text-slate-500">
                         {formatDateTime(complaint.createdAt)}
                       </span>
                     </div>
                   </div>
                   
                   {/* Barang yang dikomplain */}
-                  <div className="text-xs text-slate-700 dark:text-slate-300 space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="text-[13.5px] sm:text-xs text-slate-700 dark:text-slate-300 space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                     {complaint.items.map((item, idx) => {
                       const product = products.find(p => p.id === item.productId || p.name === item.productName);
                       const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
@@ -363,7 +361,7 @@ export function OrderListContent() {
 
                   {/* Deskripsi komplain di bawahnya */}
                   {complaint.description && (
-                    <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                    <p className="text-[13.5px] sm:text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
                       {complaint.description}
                     </p>
                   )}
@@ -381,59 +379,64 @@ export function OrderListContent() {
           />
         </Card>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-2.5 sm:gap-4 max-md:-mx-4 md:mx-0">
           {filteredOrders.map(order => {
-            const isMenuOpen = openActionMenuId === order.id;
-
             return (
               <Card
                 key={order.id}
+                noPadding
+                noRounded="mobile"
                 onClick={() => router.push(`/order/${order.id}`)}
-                className="dark:hover:bg-slate-800/70 transition-all relative p-0 overflow-hidden cursor-pointer hover:shadow-lg border-slate-200/80 dark:border-slate-800 hover:border-slate-300"
+                className="dark:hover:bg-slate-800/70 transition-all relative p-4 flex flex-col gap-3 sm:gap-3.5 cursor-pointer hover:shadow-lg hover:border-slate-300"
               >
-                <div className="p-4 sm:p-5 flex flex-col gap-4">
-                  {/* TOP SECTION: Header (Order Number & Status) + Sales | Date (Top Right) */}
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs font-normal text-slate-500 dark:text-slate-400">
-                          {order.orderNumber}
-                        </span>
-                        <Badge variant={getOrderStatusVariant(order.status)}>
-                          {getOrderStatusLabel(order.status, order.cancelledByRole)}
+                {/* TOP ROW: Header (Timestamp & Status) + Sales | ID SO (Desktop only) */}
+                <div className="flex items-center justify-between gap-3 w-full">
+                  {/* Timestamp & Status Badges */}
+                  <div className="flex items-center justify-between sm:justify-start gap-2 flex-wrap w-full sm:w-auto">
+                    <span className="text-[13px] sm:text-xs font-normal text-slate-500 dark:text-slate-400">
+                      {formatDateTime(order.createdAt)}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Badge variant={getOrderStatusVariant(order.status)}>
+                        {getOrderStatusLabel(order.status, order.cancelledByRole)}
+                      </Badge>
+                      {order.items.some(i => i.isBomCustomized) && (
+                        <Badge variant="purple">
+                          Kustom Proses
                         </Badge>
-                        {order.items.some(i => i.isBomCustomized) && (
-                          <Badge variant="purple" className="text-[10px] py-0 px-1.5 font-semibold">
-                            Kustom Proses
-                          </Badge>
-                        )}
-                        {order.complaints && order.complaints.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK') && (
-                          <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
-                            Dikomplain
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex flex-col text-xs text-slate-600 dark:text-slate-400 space-y-1">
-                        <span className="flex items-center gap-1.5 font-normal text-slate-700 dark:text-slate-300">
-                          <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          {order.customer.name} {order.customer.phone ? `(${formatPhoneDisplay(order.customer.phone)})` : ''}
-                        </span>
-                        {order.customer.address && (
-                          <span className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                            <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
-                            <span className="leading-tight">{order.customer.address}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="text-left sm:text-right text-xs text-slate-600 dark:text-slate-300 font-medium bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 self-start sm:self-auto">
-                      {order.createdBy} <span className="text-slate-300 dark:text-slate-600 mx-1">|</span> {formatDateTime(order.createdAt)}
+                      )}
+                      {order.complaints && order.complaints.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK') && (
+                        <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">
+                          Dikomplain
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
+                  {/* Salesperson & ID SO: Desktop only (hidden on mobile) */}
+                  <div className="hidden sm:block text-right text-xs text-slate-600 dark:text-slate-300 font-medium bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shrink-0">
+                    {order.createdBy} <span className="text-slate-300 dark:text-slate-600 mx-1">|</span> <span>{order.orderNumber}</span>
+                  </div>
+                </div>
+
+                {/* CUSTOMER INFO: Nama pelanggan & Alamat (Kecamatan & Kota saja jika ada) */}
+                <div className="flex flex-col space-y-1 text-[13.5px] sm:text-xs font-normal text-slate-600 dark:text-slate-300">
+                  <span className="flex items-center gap-1.5">
+                    <User className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-slate-400 shrink-0" />
+                    <span className="font-medium sm:font-normal">{order.customer.name}</span>
+                  </span>
+                  {(order.customer.address || order.customer.district) && (
+                    <span className="flex items-start gap-1.5 text-slate-500 dark:text-slate-400">
+                      <MapPin className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                      <span className="leading-snug">
+                        {getCustomerLocationDisplay(order.customer)}
+                      </span>
+                    </span>
+                  )}
+                </div>
+
                   {order.status === 'CANCELED' && order.cancelReason && (
-                    <div className="text-xs text-red-700 bg-red-50 dark:bg-red-950/40 dark:text-red-300 p-2.5 rounded-lg border border-red-100 dark:border-red-900/50">
+                    <div className="text-[13.5px] sm:text-xs text-red-700 bg-red-50 dark:bg-red-950/40 dark:text-red-300 p-2.5 rounded-lg border border-red-100 dark:border-red-900/50">
                       <span className="font-bold">Alasan Pembatalan:</span> {order.cancelReason}
                     </div>
                   )}
@@ -445,74 +448,72 @@ export function OrderListContent() {
                       const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
 
                       return (
-                        <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/80 px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800/80">
-                          {/* KONTAINER KIRI (50%): VISUAL PRODUK + NAMA ITEM, VARIANT, MODIFIERS & CATATAN */}
-                          <div className="flex items-start gap-3 min-w-0">
-                            {product?.image ? (
-                              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                                <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
-                              </div>
-                            ) : (
-                              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                                <IconComp className="h-5 w-5 sm:h-6 sm:w-6" />
-                              </div>
-                            )}
+                        <div key={idx} className="space-y-2 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/80 px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800/80">
+                          {/* Row: Visual & Info Produk (Kiri) + QTY & Nominal (Kanan) */}
+                          <div className="flex items-center justify-between gap-3 min-w-0">
+                            {/* KIRI: Visual Produk + Nama & Varian (Maksimal 1 baris dengan elipsis) */}
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              {product?.image ? (
+                                <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                                  <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                                </div>
+                              ) : (
+                                <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                                  <IconComp className="h-6 w-6" />
+                                </div>
+                              )}
 
-                            <div className="space-y-0.5 min-w-0 flex-1">
-                              <div className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
-                                <span>{item.productName}</span>
-                                {item.isBomCustomized && (
-                                  <Badge variant="purple" className="text-[10px] py-0 px-1.5 font-semibold">
-                                    {item.qty > 1 && item.unitCustomProcesses
-                                      ? `Kustom (${item.unitCustomProcesses.filter(u => u.isBomCustomized).length}/${item.qty} unit)`
-                                      : 'Kustom'}
-                                  </Badge>
+                              <div className="space-y-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-sm font-semibold text-slate-900 dark:text-white truncate block">
+                                    {item.productName}
+                                  </span>
+                                  {item.isBomCustomized && (
+                                    <Badge variant="purple" className="shrink-0 text-[10px] py-0 px-1.5 font-semibold">
+                                      {item.qty > 1 && item.unitCustomProcesses
+                                        ? `Kustom (${item.unitCustomProcesses.filter(u => u.isBomCustomized).length}/${item.qty})`
+                                        : 'Kustom'}
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                {item.variantLabel && (
+                                  <div className="text-[13px] text-slate-500 dark:text-slate-400 font-medium truncate block">
+                                    {formatVariantLabel(item.variantLabel)}
+                                  </div>
+                                )}
+
+                                {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 pt-0.5">
+                                    {item.selectedModifiers.map(mGroup => (
+                                      mGroup.selectedOptions.map(opt => (
+                                        <span key={opt.optionId} className="text-xs bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded-md font-medium truncate max-w-[130px]">
+                                          +{opt.name}
+                                        </span>
+                                      ))
+                                    ))}
+                                  </div>
                                 )}
                               </div>
+                            </div>
 
-                              {item.variantLabel && (
-                                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                                  {formatVariantLabel(item.variantLabel)}
-                                </div>
-                              )}
-
-                              {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {item.selectedModifiers.map(mGroup => (
-                                    mGroup.selectedOptions.map(opt => (
-                                      <span key={opt.optionId} className="text-xs bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-1.5 py-1 rounded-md font-medium">
-                                        +{opt.name}
-                                      </span>
-                                    ))
-                                  ))}
-                                </div>
-                              )}
-
-                              {item.customNotes && (
-                                <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
-                                  {item.customNotes}
-                                </div>
-                              )}
+                            {/* KANAN: QTY */}
+                            <div className="flex items-center text-right shrink-0">
+                              <span className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white">
+                                x {item.qty}
+                              </span>
                             </div>
                           </div>
 
-                        {/* KONTAINER KANAN (50%): FLEX JUSTIFY-BETWEEN (KUANTITAS DI TENGAH CARD, HARGA ITEM DI KANAN CARD) */}
-                        <div className="flex items-center justify-between gap-3">
-                          {/* Kuantitas (terlihat agak ke tengah card SO) */}
-                          <div className="flex items-center justify-center text-sm font-bold shrink-0">
-                            x {item.qty}
-                          </div>
-
-                          {/* Harga Item & Hasil Akhir (qty x harga item) */}
-                          <div className="text-right">
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-200">
-                              {formatCurrency(item.unitPrice * item.qty)}
-                            </span>
-                          </div>
+                          {/* Catatan Khusus Produk (Truncated) */}
+                          {item.customNotes && (
+                            <div className="text-[13px] sm:text-xs text-amber-800 dark:text-amber-300 font-normal truncate pt-0.5" title={item.customNotes}>
+                              {item.customNotes}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
 
                     {order.items.length > 1 && (
                       <button
@@ -521,27 +522,27 @@ export function OrderListContent() {
                           e.stopPropagation();
                           toggleExpandOrder(order.id);
                         }}
-                        className="w-full text-center py-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50/50 hover:bg-indigo-50 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/40 rounded-lg transition-colors flex items-center justify-center gap-1"
+                        className="w-full text-center py-2 sm:py-1.5 text-[13px] sm:text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50/50 hover:bg-indigo-50 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/40 rounded-lg transition-colors flex items-center justify-center gap-1"
                       >
                         {expandedOrders[order.id] ? (
-                          <><ChevronUp className="h-3.5 w-3.5" /> Sembunyikan item</>
+                          <><ChevronUp className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Sembunyikan item</>
                         ) : (
-                          <><ChevronDown className="h-3.5 w-3.5" /> Tampilkan {order.items.length - 1} item lainnya...</>
+                          <><ChevronDown className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Tampilkan {order.items.length - 1} item lainnya...</>
                         )}
                       </button>
                     )}
                   </div>
 
-                  {/* BOTTOM SECTION: Order Notes (Left side of total price) + Total & Action Buttons */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-8 mt-1">
+                  {/* BOTTOM SECTION: Order Notes (Desktop & Mobile) + Total & Action Buttons (Desktop only) */}
+                  <div className={`flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-6 ${order.orderNotes ? 'mt-1 pt-1' : 'hidden sm:flex mt-1 pt-1'}`}>
                     {order.orderNotes ? (
-                      <div className="flex-1 min-w-0 flex items-center gap-2.5">
-                        <FileText className="h-8 w-8 text-amber-500 dark:text-amber-400 shrink-0" />
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-slate-400 dark:text-slate-500 shrink-0" />
                         <div className="min-w-0">
-                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block leading-tight">
+                          <span className="text-xs sm:text-[10px] font-semibold text-slate-400 dark:text-slate-500 block leading-tight">
                             Catatan Pesanan:
                           </span>
-                          <p className="text-xs text-slate-700 dark:text-slate-300 font-normal leading-relaxed truncate">
+                          <p className="text-[13.5px] sm:text-xs text-slate-600 dark:text-slate-300 font-normal leading-relaxed truncate">
                             {order.orderNotes}
                           </p>
                         </div>
@@ -550,105 +551,64 @@ export function OrderListContent() {
                       <div className="flex-1 min-w-0" />
                     )}
 
-                    <div className="flex flex-wrap items-center justify-end gap-4 shrink-0">
+                    {/* Container Total Pesanan & Action Buttons: Desktop only (hidden on mobile) */}
+                    <div className="hidden sm:flex items-center justify-end gap-3 sm:gap-4 shrink-0">
                       <div className="text-right">
                         <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Total Pesanan</span>
-                        <div className="flex items-center justify-end gap-1 mb-0.5">
+                        <div className="flex items-center gap-1.5">
                           {order.shippingCost ? (
                             <span className="flex items-center gap-0.5 text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400">
                               <Truck className="h-2.5 w-2.5" />
                               Ongkir
                             </span>
                           ) : null}
-                          <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400 leading-none">
+                          <span className="text-base sm:text-lg font-bold text-indigo-600 dark:text-indigo-400 leading-none">
                             {formatCurrency(order.totalAmount)}
                           </span>
                         </div>
                       </div>
 
-                      {(canApproveOrder(currentUser.role) && order.status === 'PENDING') || order.status === 'PENDING' || order.status === 'PROCESSING' ? (
-                        <div className="flex items-center gap-1.5 relative border-l border-slate-200 dark:border-slate-700 pl-4" onClick={(e) => e.stopPropagation()}>
-                          {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
+                      {order.status === 'PENDING' && (
+                        <div className="flex items-center gap-2 border-l border-slate-200 dark:border-slate-700 pl-4" onClick={(e) => e.stopPropagation()}>
+                          {canApproveOrder(currentUser.role) && (
                             <Button
+                              variant="success"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleProcessOrder(order.id);
                               }}
-                              className="bg-emerald-600 dark:bg-emerald-700 dark:hover:bg-emerald-800 hover:bg-emerald-700 text-white font-semibold"
                             >
-                              <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                              <CheckCircle className="h-4 w-4 mr-1.5" />
                               Proses Pesanan
                             </Button>
                           )}
 
-                          {/* MORE OPTIONS BUTTON FOR PENDING / PROCESSING ORDERS */}
-                          {(order.status === 'PENDING' || order.status === 'PROCESSING') && (
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenActionMenuId(isMenuOpen ? null : order.id);
-                                }}
-                                className="p-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-200 text-slate-600 dark:border-slate-700 dark:hover:bg-slate-800 dark:text-slate-300 transition-colors"
-                                title="Opsi Lanjutan"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </button>
-
-                              {isMenuOpen && (
-                                <div className="absolute right-0 bottom-full mb-1 w-44 rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 z-30 py-1.5 text-xs">
-                                  {order.status === 'PENDING' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setOpenActionMenuId(null);
-                                          setCustomProcessOrder(order);
-                                        }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700 text-left font-medium"
-                                      >
-                                        <Sliders className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                                        Kustom Proses
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setOpenActionMenuId(null);
-                                          router.push(`/order/create?edit=${order.id}`);
-                                        }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700 text-left font-medium"
-                                      >
-                                        <Edit className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                                        Edit Pesanan
-                                      </button>
-                                    </>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenCancelModal(order.id);
-                                    }}
-                                    className={`w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 text-left font-medium ${
-                                      order.status === 'PENDING' ? 'border-t border-slate-100 dark:border-slate-700/60' : ''
-                                    }`}
-                                  >
-                                    <XCircle className="h-3.5 w-3.5" />
-                                    Batalkan Order
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
+                          <ActionMenu
+                            align="right"
+                            triggerTitle="Opsi Pesanan"
+                            items={[
+                              {
+                                label: 'Kustom Proses',
+                                icon: <Sliders className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,
+                                onClick: () => setCustomProcessOrder(order),
+                              },
+                              {
+                                label: 'Edit Pesanan',
+                                icon: <Edit className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,
+                                onClick: () => router.push(`/order/create?edit=${order.id}`),
+                              },
+                              {
+                                label: 'Batalkan Order',
+                                icon: <XCircle className="h-3.5 w-3.5" />,
+                                variant: 'danger' as const,
+                                onClick: () => handleOpenCancelModal(order.id),
+                              },
+                            ]}
+                          />
                         </div>
-                      ) : null}
+                      )}
                     </div>
                   </div>
-                </div>
               </Card>
             );
           })}
@@ -666,34 +626,26 @@ export function OrderListContent() {
         actions={
           <>
             <Button variant="ghost" onClick={() => setCancelModalOrderId(null)}>Batal</Button>
-            <Button onClick={handleConfirmCancelOrder} className="bg-red-600 hover:bg-red-700 text-white font-semibold">
+            <Button variant="danger" onClick={handleConfirmCancelOrder}>
               Konfirmasi Pembatalan
             </Button>
           </>
         }
       >
-        <div className="space-y-4 text-xs">
-          <p className="text-slate-600 dark:text-slate-300">
+        <div className="space-y-4">
+          <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
             Mohon masukkan alasan pembatalan untuk pesanan ini. Catatan pembatalan ini akan tersimpan pada riwayat pesanan.
           </p>
 
-          <div>
-            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Alasan Pembatalan <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              rows={3}
-              placeholder="Contoh: Pelanggan membatalkan pesanan karena perubahan spesifikasi proyek..."
-              value={cancelReasonInput}
-              onChange={e => setCancelReasonInput(e.target.value)}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors shadow-xs"
-            />
-            {cancelReasonError && (
-              <span className="text-[11px] font-semibold text-red-600 dark:text-red-400 block mt-1">
-                {cancelReasonError}
-              </span>
-            )}
-          </div>
+          <Textarea
+            label="Alasan Pembatalan"
+            required
+            rows={3}
+            placeholder="Contoh: Pelanggan membatalkan pesanan karena perubahan spesifikasi proyek..."
+            value={cancelReasonInput}
+            onChange={e => setCancelReasonInput(e.target.value)}
+            error={cancelReasonError}
+          />
         </div>
       </Modal>
 

@@ -7,7 +7,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { formatCurrency, formatDate, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel } from '@/lib/utils';
+import { formatCurrency, formatDate, getOrderStatusColor, getOrderStatusVariant, getOrderStatusLabel, cn } from '@/lib/utils';
+import { isRouteAllowed } from '@/lib/roles';
 import {
   ShoppingCart,
   Factory,
@@ -42,8 +43,51 @@ export default function DashboardPage() {
     .filter(i => i.status === 'UNPAID' || i.status === 'PARTIAL')
     .reduce((sum, i) => sum + ((i.totalAmount || 0) - (i.paidAmount || 0)), 0);
 
+  // Super App Modules list for mobile launcher
+  const menuModules = [
+    {
+      href: '/order',
+      label: 'Sales Order',
+      icon: ShoppingCart,
+      colorClass: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-900/60',
+      badgeCount: activeOrders.length,
+    },
+    {
+      href: '/production',
+      label: 'Produksi',
+      icon: Factory,
+      colorClass: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-900/60',
+      badgeCount: activeWorkOrders.length,
+    },
+    {
+      href: '/inventory',
+      label: 'Inventory',
+      icon: Warehouse,
+      colorClass: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-900/60',
+      badgeCount: lowStockItems.length > 0 ? lowStockItems.length : undefined,
+    },
+    {
+      href: '/products',
+      label: 'Katalog',
+      icon: PackageOpen,
+      colorClass: 'bg-sky-50 text-sky-600 border-sky-100 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-900/60',
+    },
+    {
+      href: '/delivery',
+      label: 'Pengiriman',
+      icon: Truck,
+      colorClass: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-900/60',
+    },
+    {
+      href: '/finance',
+      label: 'Keuangan',
+      icon: DollarSign,
+      colorClass: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-900/60',
+    },
+  ];
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <PageHeader
         title="Executive Dashboard"
       >
@@ -53,6 +97,52 @@ export default function DashboardPage() {
           </Button>
         </Link>
       </PageHeader>
+
+      {/* Super App Module Navigation Grid (Mobile Primary Launcher) */}
+      <div className="block md:hidden">
+        <Card className="p-4">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Menu Aplikasi
+            </span>
+            <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+              Akses Cepat Modul
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 sm:gap-3">
+            {menuModules
+              .filter(item => !currentUser || isRouteAllowed(currentUser.role, item.href))
+              .map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-150 active:scale-95 group touch-manipulation hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  >
+                    <div className="relative">
+                      <div className={cn(
+                        'flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl transition-transform group-hover:scale-105 shadow-xs border',
+                        item.colorClass
+                      )}>
+                        <Icon className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" />
+                      </div>
+                      {typeof item.badgeCount === 'number' && item.badgeCount > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4.5 min-w-[18px] px-1 items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold shadow-xs">
+                          {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                        </span>
+                      )}
+                    </div>
+                    <span className="mt-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200 text-center line-clamp-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+          </div>
+        </Card>
+      </div>
 
       {/* KPI Metrics Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

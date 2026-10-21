@@ -7,34 +7,31 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(amount: number | undefined | null): string {
-  const validAmount = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(validAmount);
+  const validAmount = typeof amount === 'number' && !isNaN(amount) ? Math.round(amount) : 0;
+  const isNegative = validAmount < 0;
+  const formatted = Math.abs(validAmount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return isNegative ? `-Rp ${formatted}` : `Rp ${formatted}`;
 }
 
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
 export function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '-';
+  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 export function formatDateTime(dateStr: string): string {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).replace(/\./g, ':');
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = MONTHS_SHORT[d.getMonth()];
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day} ${month} ${year}, ${hours}:${minutes}`;
 }
 
 export function formatPhoneDisplay(phone?: string | null): string {
@@ -81,6 +78,39 @@ export function formatDurationBetween(startStr: string, endStr: string): string 
   if (mins > 0 || parts.length === 0) parts.push(`${mins} menit`);
 
   return parts.join(' ');
+}
+
+export function getCustomerLocationDisplay(customer?: { address?: string; city?: string; district?: string } | null): string {
+  if (!customer) return '';
+
+  // 1. Prioritaskan jika field district & city tersimpan eksplisit
+  if (customer.district && customer.city) {
+    const dist = customer.district.toLowerCase().startsWith('kec')
+      ? customer.district
+      : `Kec. ${customer.district}`;
+    return `${dist}, ${customer.city}`;
+  }
+
+  const addr = customer.address?.trim() || '';
+  if (!addr) return '';
+
+  // 2. Ekstrak dari teks alamat jika mengandung Kecamatan & Kota/Kabupaten
+  // Contoh: "Jl. Merdeka No. 10, Kec. Kebon Jeruk, Kota Adm. Jakarta Barat"
+  const matchWithComma = addr.match(/(?:Kec\.|Kecamatan)\s*([^,]+),\s*([^,\n]+)/i);
+  if (matchWithComma) {
+    const district = matchWithComma[1].trim();
+    const city = matchWithComma[2].trim();
+    return `Kec. ${district}, ${city}`;
+  }
+
+  // Contoh tanpa koma: "Kecamatan Menteng Kota Jakarta Pusat"
+  const matchNoComma = addr.match(/(?:Kec\.|Kecamatan)\s+([^\s]+(?:\s+[^\s]+)?)\s+(Kota\s+[^,\n]+|Kabupaten\s+[^,\n]+|Kab\.\s+[^,\n]+)/i);
+  if (matchNoComma) {
+    return `Kec. ${matchNoComma[1].trim()}, ${matchNoComma[2].trim()}`;
+  }
+
+  // 3. Fallback: jika tidak ada info kecamatan dan kota, tampilkan alamat lengkap
+  return addr;
 }
 
 export function generateId(): string {

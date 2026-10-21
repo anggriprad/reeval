@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreVertical } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { cn } from '@/lib/utils';
 
 export interface ActionMenuItem {
@@ -32,13 +33,21 @@ export function ActionMenu({
   triggerSize = 'sm',
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left?: number; right?: number; placement: 'top' | 'bottom' } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    const updateIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    updateIsMobile();
+    window.addEventListener('resize', updateIsMobile);
+    return () => window.removeEventListener('resize', updateIsMobile);
   }, []);
 
   const calculatePosition = useCallback(() => {
@@ -65,17 +74,21 @@ export function ActionMenu({
   // Handle open/close toggle
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
+    const mobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    setIsMobile(mobile);
     if (!isOpen) {
-      calculatePosition();
+      if (!mobile) {
+        calculatePosition();
+      }
       setIsOpen(true);
     } else {
       setIsOpen(false);
     }
   };
 
-  // Close on outside click, scroll, resize, or escape
+  // Close desktop menu on outside click, scroll, resize, or escape
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isMobile) return;
 
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node;
@@ -110,7 +123,7 @@ export function ActionMenu({
       window.removeEventListener('resize', handleScroll);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isOpen, isMobile]);
 
   return (
     <div className={cn('relative inline-block text-left', className)}>
@@ -125,13 +138,15 @@ export function ActionMenu({
           'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
         )}
         title={triggerTitle}
+        aria-label={triggerTitle}
         aria-haspopup="true"
         aria-expanded={isOpen}
       >
         <MoreVertical className="h-4 w-4" />
       </Button>
 
-      {isOpen && mounted && coords && createPortal(
+      {/* Desktop Popover View (>= 768px) */}
+      {isOpen && mounted && !isMobile && coords && createPortal(
         <div
           ref={menuRef}
           style={{
@@ -159,7 +174,7 @@ export function ActionMenu({
                   item.onClick();
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer text-left disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap',
+                  'flex w-full items-center gap-2 rounded px-3 py-2 sm:px-2.5 sm:py-1.5 text-sm sm:text-xs font-medium transition-colors cursor-pointer text-left disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap',
                   isDanger
                     ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
                     : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700/70'
@@ -177,6 +192,53 @@ export function ActionMenu({
           })}
         </div>,
         document.body
+      )}
+
+      {/* Mobile Bottom Sheet View (< 768px) via Reusable BottomSheet */}
+      {isOpen && mounted && isMobile && (
+        <BottomSheet
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          showCancel
+          cancelLabel="Batal"
+        >
+          <div className="flex flex-col gap-1.5">
+            {items.map((item, idx) => {
+              const isDanger = item.variant === 'danger';
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={item.disabled}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsOpen(false);
+                    item.onClick();
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-[15px] font-medium transition-colors cursor-pointer text-left disabled:pointer-events-none disabled:opacity-50 select-none active:scale-[0.99]',
+                    isDanger
+                      ? 'text-red-600 hover:bg-red-50 active:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 dark:active:bg-red-950/40'
+                      : 'text-slate-700 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800'
+                  )}
+                  role="menuitem"
+                >
+                  {item.icon && (
+                    <span
+                      className={cn(
+                        'shrink-0 text-base',
+                        isDanger ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'
+                      )}
+                    >
+                      {item.icon}
+                    </span>
+                  )}
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </BottomSheet>
       )}
     </div>
   );

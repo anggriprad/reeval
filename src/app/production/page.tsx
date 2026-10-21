@@ -516,9 +516,9 @@ function ProductionContent() {
         value={activeTab}
         onChange={(tab) => setActiveTab(tab as typeof activeTab)}
         options={[
-          { key: 'active', label: 'SPK Berjalan', count: activeWOs.length, icon: Factory },
-          { key: 'completed', label: 'SPK Selesai', icon: CheckCircle },
-          { key: 'canceled', label: 'SPK Dibatalkan', icon: XCircle },
+          { key: 'active', label: 'Berjalan', count: activeWOs.length, icon: Factory },
+          { key: 'completed', label: 'Selesai', icon: CheckCircle },
+          { key: 'canceled', label: 'Dibatalkan', icon: XCircle },
           { key: 'analytics', label: 'Analitik Kinerja', icon: BarChart3 },
         ]}
         filterValue={spkTypeFilter}
@@ -1218,7 +1218,7 @@ function ProductionContent() {
         isOpen={showSpkModal}
         onClose={() => setShowSpkModal(false)}
         title="Buat SPK Baru"
-        size="sm"
+        size="md"
         actions={
           <>
             <Button variant="outline" onClick={() => setShowSpkModal(false)}>
@@ -1238,7 +1238,7 @@ function ProductionContent() {
           </>
         }
       >
-        <form onSubmit={handleCreateWorkOrder} className="space-y-3.5 text-xs">
+        <form onSubmit={handleCreateWorkOrder} className="space-y-4">
           {spkError && (
             <div className="p-2.5 rounded-lg border border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300 font-semibold flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -1247,78 +1247,59 @@ function ProductionContent() {
           )}
 
           {/* 1. Dropdown Tipe SPK: Produk (Barang Jadi) / Bahan Setengah Jadi (WIP) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-              Tipe SPK <span className="text-red-500">*</span>
-            </label>
-            <Select
-              value={spkCategory}
-              onChange={e => {
-                const cat = e.target.value as 'NORMAL' | 'WIP';
-                setSpkCategory(cat);
-                setSpkProductId('');
-                setSpkVariantId('');
-                setSpkSaMaterialId('');
-                setSpkError('');
-              }}
-              inputSize="sm"
-              containerClassName="w-full"
-              dropdownClassName="w-full max-w-full"
-            >
-              <option value="NORMAL">Produk (Barang Jadi)</option>
-              <option value="WIP">Bahan Setengah Jadi (WIP)</option>
-            </Select>
-          </div>
+          <Select
+            label="Tipe SPK"
+            required
+            value={spkCategory}
+            onChange={e => {
+              const cat = e.target.value as 'NORMAL' | 'WIP';
+              setSpkCategory(cat);
+              setSpkProductId('');
+              setSpkVariantId('');
+              setSpkSaMaterialId('');
+              setSpkError('');
+            }}
+            options={[
+              { value: 'NORMAL', label: 'Produk (Barang Jadi)' },
+              { value: 'WIP', label: 'Bahan Setengah Jadi (WIP)' },
+            ]}
+          />
 
           {/* 2. Dropdown Pilih Produk / Bahan WIP */}
           {spkCategory === 'NORMAL' ? (
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                Pilih Produk <span className="text-red-500">*</span>
-              </label>
-              <Select
-                value={spkProductId}
-                onChange={e => {
-                  const pid = e.target.value;
-                  setSpkProductId(pid);
-                  setSpkVariantId('');
-                  setSpkError('');
-                }}
-                inputSize="sm"
-                containerClassName="w-full"
-                dropdownClassName="w-full max-w-full"
-              >
-                <option value="">-- Pilih Produk --</option>
-                {products.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <Select
+              label="Pilih Produk"
+              required
+              searchable
+              searchPlaceholder="Cari produk..."
+              value={spkProductId}
+              onChange={e => {
+                const pid = e.target.value;
+                setSpkProductId(pid);
+                setSpkVariantId('');
+                setSpkError('');
+              }}
+              options={[
+                { value: '', label: '-- Pilih Produk --' },
+                ...products.map(p => ({ value: p.id, label: p.name })),
+              ]}
+            />
           ) : (
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                Pilih Bahan Setengah Jadi <span className="text-red-500">*</span>
-              </label>
-              <Select
-                value={spkSaMaterialId}
-                onChange={e => {
-                  setSpkSaMaterialId(e.target.value);
-                  setSpkError('');
-                }}
-                inputSize="sm"
-                containerClassName="w-full"
-                dropdownClassName="w-full max-w-full"
-              >
-                <option value="">-- Pilih Bahan Setengah Jadi --</option>
-                {materials.filter(m => m.isSubAssembly).map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <Select
+              label="Pilih Bahan Setengah Jadi"
+              required
+              searchable
+              searchPlaceholder="Cari bahan setengah jadi..."
+              value={spkSaMaterialId}
+              onChange={e => {
+                setSpkSaMaterialId(e.target.value);
+                setSpkError('');
+              }}
+              options={[
+                { value: '', label: '-- Pilih Bahan Setengah Jadi --' },
+                ...materials.filter(m => m.isSubAssembly).map(m => ({ value: m.id, label: m.name })),
+              ]}
+            />
           )}
 
           {/* 3. Dropdown Varian jika ada (untuk Produk Jadi) */}
@@ -1326,63 +1307,45 @@ function ProductionContent() {
             const selectedProduct = products.find(p => p.id === spkProductId);
             if (!selectedProduct || !selectedProduct.variants || selectedProduct.variants.length === 0) return null;
             return (
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                  Varian Produk {selectedProduct.variants.length > 1 && <span className="text-red-500">*</span>}
-                </label>
-                <Select
-                  value={spkVariantId}
-                  onChange={e => {
-                    setSpkVariantId(e.target.value);
-                    setSpkError('');
-                  }}
-                  inputSize="sm"
-                  containerClassName="w-full"
-                  dropdownClassName="w-full max-w-full"
-                >
-                  <option value="">-- Pilih Varian --</option>
-                  {selectedProduct.variants.map(v => {
-                    const label = Object.values(v.combination || {}).join(', ') || v.sku;
-                    return (
-                      <option key={v.id} value={v.id}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </Select>
-              </div>
+              <Select
+                label="Varian Produk"
+                required={selectedProduct.variants.length > 1}
+                value={spkVariantId}
+                onChange={e => {
+                  setSpkVariantId(e.target.value);
+                  setSpkError('');
+                }}
+                options={[
+                  { value: '', label: '-- Pilih Varian --' },
+                  ...selectedProduct.variants.map(v => ({
+                    value: v.id,
+                    label: Object.values(v.combination || {}).join(', ') || v.sku,
+                  })),
+                ]}
+              />
             );
           })()}
 
           {/* 4. Input Kuantitas */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-              Kuantitas Target <span className="text-red-500">*</span>
-            </label>
-            <Input
-              type="text"
-              value={spkTargetQty}
-              onChange={e => setSpkTargetQty(e.target.value)}
-              placeholder="1"
-              inputSize="sm"
-              className="w-full font-semibold"
-            />
-          </div>
+          <Input
+            label="Kuantitas Target"
+            required
+            type="text"
+            inputMode="numeric"
+            value={spkTargetQty}
+            onChange={e => setSpkTargetQty(e.target.value)}
+            placeholder="1"
+            className="font-semibold"
+          />
 
           {/* 5. Input Catatan (sama dengan catatan produk saat buat sales order) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-              Catatan Produk (Opsional)
-            </label>
-            <Input
-              type="text"
-              value={spkNotes}
-              onChange={e => setSpkNotes(e.target.value)}
-              placeholder="Catatan khusus pengerjaan produk..."
-              inputSize="sm"
-              className="w-full"
-            />
-          </div>
+          <Input
+            label="Catatan Produk (Opsional)"
+            type="text"
+            value={spkNotes}
+            onChange={e => setSpkNotes(e.target.value)}
+            placeholder="Catatan khusus pengerjaan produk..."
+          />
 
           {/* 6. Info BOM Kurang (Hanya jika ada kekurangan stok bahan, dalam bentuk card list sederhana tanpa tabel header) */}
           {(() => {
@@ -1535,16 +1498,12 @@ function ProductionContent() {
               )}
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Alasan Pembatalan (Opsional)
-              </label>
-              <Input
-                value={cancelReason}
-                onChange={e => setCancelReason(e.target.value)}
-                placeholder="Contoh: Perubahan rencana produksi / dibatalkan"
-              />
-            </div>
+            <Input
+              label="Alasan Pembatalan (Opsional)"
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              placeholder="Contoh: Perubahan rencana produksi / dibatalkan"
+            />
           </div>
         )}
       </Modal>

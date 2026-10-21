@@ -542,18 +542,19 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
       title={`Kustom Proses — ${order.orderNumber}`}
       description="Penyesuaian kebutuhan material dan alur produksi SPK"
       size="lg"
+      sheetHeight="full"
       actions={
-        <div className="flex items-center justify-end gap-2 w-full">
-          <Button variant="outline" size="sm" onClick={onClose}>
+        <>
+          <Button variant="outline" onClick={onClose}>
             Batal
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSave} disabled={!isFormValid}>
+          <Button variant="primary" onClick={handleSave} disabled={!isFormValid}>
             Simpan Perubahan
           </Button>
-        </div>
+        </>
       }
     >
-      <div className="space-y-4 text-xs">
+      <div className="space-y-4 text-[13.5px] md:text-xs">
         {/* 1. SEGMEN ITEM PRODUK DI ATAS (CARD & FONT LEBIH LEGA) */}
         <div className="space-y-2.5">
           {itemsState.length > 1 && (
@@ -601,8 +602,8 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
           {/* UNIT CONTROLS (JIKA UNIT > 1) */}
           {activeItem.qty > 1 && (
             <div className="flex items-center justify-between gap-2 pt-0.5">
-              <div className="flex items-center gap-1 overflow-x-auto">
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 shrink-0 mr-1">
+              <div className="flex items-center gap-1.5 overflow-x-auto">
+                <span className="text-xs md:text-[11px] font-medium text-slate-500 dark:text-slate-400 shrink-0 mr-1">
                   Unit:
                 </span>
                 {activeItem.unitCustomProcesses?.map(u => {
@@ -618,7 +619,7 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                         setSelectedOpToAdd('');
                       }}
                       className={cn(
-                        "px-2.5 py-1 rounded text-xs transition-colors cursor-pointer border",
+                        "px-3 py-1.5 md:px-2.5 md:py-1 rounded-lg md:rounded text-[13px] md:text-xs transition-colors cursor-pointer border shrink-0",
                         isCurrent
                           ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 font-medium"
                           : "bg-transparent text-slate-600 border-transparent hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
@@ -634,9 +635,9 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                 variant="outline"
                 size="sm"
                 onClick={handleCopyActiveUnitToAll}
-                className="text-xs h-7 px-2.5 gap-1 shrink-0"
+                className="shrink-0"
               >
-                <Copy className="h-3 w-3" />
+                <Copy className="h-3.5 w-3.5" />
                 Salin ke Semua
               </Button>
             </div>
@@ -696,7 +697,7 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                       className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-xs text-slate-900 dark:text-white truncate">
+                        <div className="font-medium text-[13.5px] md:text-xs text-slate-900 dark:text-white truncate">
                           {mat?.name || (fg ? fg.productName : bomItem.materialId)}
                         </div>
                       </div>
@@ -804,7 +805,7 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                   size="sm"
                   onClick={handleAddMaterial}
                   disabled={!selectedNewMaterialId || newMaterialQty === '' || newMaterialQty <= 0}
-                  className="w-[106px] shrink-0 justify-center h-8 gap-1.5"
+                  className="shrink-0 justify-center"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Tambah
@@ -867,15 +868,15 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                       className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40"
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono text-[10px] font-semibold flex items-center justify-center shrink-0">
+                        <span className="w-6 h-6 md:w-5 md:h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono text-xs md:text-[10px] font-semibold flex items-center justify-center shrink-0">
                           {idx + 1}
                         </span>
                         <div className="min-w-0">
-                          <div className="font-medium text-xs text-slate-900 dark:text-white truncate">
+                          <div className="font-medium text-[13.5px] md:text-xs text-slate-900 dark:text-white truncate">
                             {op?.name || 'Operasi'}
                           </div>
                           {op?.durationMinutes ? (
-                            <div className="text-[10px] text-slate-400 font-mono">
+                            <div className="text-xs md:text-[10px] text-slate-400 font-mono">
                               {op.durationMinutes} menit
                             </div>
                           ) : null}
@@ -898,8 +899,8 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                           value={currentRate}
                           onChange={val => handleUpdateOperationCosting(idx, 'rate', val === '' ? 0 : val)}
                           inputSize="sm"
-                          containerClassName="w-24 shrink-0"
-                          className="h-7 text-xs font-mono text-right"
+                          containerClassName="w-28 md:w-24 shrink-0"
+                          className="font-mono text-right"
                         />
 
                         <div className="w-7 shrink-0 flex items-center justify-center">
@@ -947,7 +948,7 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                   size="sm"
                   onClick={handleAddOperationFromMaster}
                   disabled={!selectedOpToAdd}
-                  className="gap-1 shrink-0 h-8"
+                  className="shrink-0"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Tambah
