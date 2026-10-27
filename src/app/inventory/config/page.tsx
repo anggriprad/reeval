@@ -6,6 +6,7 @@ import { useToast } from '@/context/ToastContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import {
   Warehouse,
@@ -402,9 +403,11 @@ export default function InventoryConfigPage() {
               )}
 
               {categories.length === 0 && !showAddMaterialCat && (
-                <div className="py-4 text-center text-xs text-slate-500">
-                  Belum ada kategori bahan baku terdaftar.
-                </div>
+                <EmptyState
+                  title="Belum Ada Kategori"
+                  description="Belum ada kategori bahan baku terdaftar."
+                  variant="plain"
+                />
               )}
             </div>
           </div>
@@ -574,9 +577,11 @@ export default function InventoryConfigPage() {
               )}
 
               {assetCategories.length === 0 && !showAddAssetCat && (
-                <div className="py-4 text-center text-xs text-slate-500">
-                  Belum ada kategori aset terdaftar.
-                </div>
+                <EmptyState
+                  title="Belum Ada Kategori"
+                  description="Belum ada kategori aset terdaftar."
+                  variant="plain"
+                />
               )}
             </div>
           </div>

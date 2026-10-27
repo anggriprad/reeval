@@ -77,14 +77,14 @@ export function Table<T>({
     return (
       <div
         className={cn(
-          'w-full shadow-xs',
+          'w-full',
           isInsideCardOnly
             ? 'bg-transparent border-0 shadow-none rounded-none'
-            : 'max-md:bg-transparent max-md:border-0 max-md:shadow-none rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900',
+            : 'max-md:border-0 max-md:shadow-none rounded-xl border border-slate-200 dark:border-slate-800 bg-transparent md:bg-white dark:bg-transparent dark:md:bg-slate-900 shadow-none md:shadow-xs',
           containerClassName
         )}
       >
-        <EmptyState title={emptyTitle} description={emptyDescription} icon={emptyIcon} />
+        <EmptyState title={emptyTitle} description={emptyDescription} icon={emptyIcon} variant="plain" />
       </div>
     );
   }

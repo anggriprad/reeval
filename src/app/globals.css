@@ -7,6 +7,31 @@
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
+:root {
+  color-scheme: light dark;
+}
+
+html {
+  background-color: #f0f2f5;
+}
+
+html.dark {
+  background-color: #020617;
+  color-scheme: dark;
+}
+
+html:not(.dark) {
+  background-color: #f0f2f5;
+  color-scheme: light;
+}
+
+body {
+  background-color: inherit;
+  color: inherit;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

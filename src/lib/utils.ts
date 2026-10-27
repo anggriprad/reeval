@@ -320,7 +320,8 @@ export function getEffectiveVariantBOM(
 
 export function formatVariantLabel(label?: string | null): string {
   if (!label) return '';
-  return label
+  const cleaned = label.replace(/\s*\((?:Bahan Setengah Jadi|WIP)[^)]*\)/gi, '').trim();
+  return cleaned
     .split(/[•/]/)
     .map(part => {
       const trimmed = part.trim();

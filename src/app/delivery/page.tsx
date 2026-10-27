@@ -885,21 +885,18 @@ function DeliveryContent() {
       {/* TAHAP 1: ANTREAN KIRIM (List Berbasis Sales Order & Unit Produk)          */}
       {/* ========================================================================= */}
       {activeTab === 'queue' && (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
-          {displayOrderGroups.length === 0 ? (
-            <div className="p-8">
-              <EmptyState
-                title={searchTerm ? 'Tidak ada pesanan di antrean kirim yang sesuai pencarian' : 'Belum ada pesanan di antrean kirim'}
-                description={
-                  searchTerm
-                    ? 'Coba gunakan kata kunci pencarian yang berbeda.'
-                    : 'Pesanan akan otomatis masuk ke antrean ini setelah unit produk selesai dikerjakan di produksi.'
-                }
-              />
-            </div>
-          ) : (
-            <>
-              {/* Dynamic Header Toolbar: Fixed height h-[52px] */}
+        displayOrderGroups.length === 0 ? (
+          <EmptyState
+            title={searchTerm ? 'Tidak ada pesanan di antrean kirim yang sesuai pencarian' : 'Belum ada pesanan di antrean kirim'}
+            description={
+              searchTerm
+                ? 'Coba gunakan kata kunci pencarian yang berbeda.'
+                : 'Pesanan akan otomatis masuk ke antrean ini setelah unit produk selesai dikerjakan di produksi.'
+            }
+          />
+        ) : (
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+            {/* Dynamic Header Toolbar: Fixed height h-[52px] */}
               {selectedUnitsList.length > 0 ? (
                 <div className="flex items-center justify-between gap-3 px-4 h-[52px] bg-indigo-50/80 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/60 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
@@ -1147,9 +1144,8 @@ function DeliveryContent() {
                   );
                 })}
               </div>
-            </>
-          )}
-        </div>
+            </div>
+          )
       )}
 
       {/* ========================================================================= */}
@@ -1158,16 +1154,14 @@ function DeliveryContent() {
       {activeTab === 'ready-to-ship' && (
         <div className="space-y-4">
           {displayReadyToShipTrips.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8">
-              <EmptyState
-                title={searchTerm ? 'Tidak ada trip siap kirim yang sesuai pencarian' : 'Belum ada trip pengiriman siap kirim'}
-                description={
-                  searchTerm
-                    ? 'Coba gunakan kata kunci pencarian yang berbeda.'
-                    : 'Pilih produk dari tab "Antrean Kirim" dengan checkbox dan klik "Terbitkan Surat Jalan".'
-                }
-              />
-            </div>
+            <EmptyState
+              title={searchTerm ? 'Tidak ada trip siap kirim yang sesuai pencarian' : 'Belum ada trip pengiriman siap kirim'}
+              description={
+                searchTerm
+                  ? 'Coba gunakan kata kunci pencarian yang berbeda.'
+                  : 'Pilih produk dari tab "Antrean Kirim" dengan checkbox dan klik "Terbitkan Surat Jalan".'
+              }
+            />
           ) : (
             <div className="space-y-4">
               {displayReadyToShipTrips.map(trip => {
@@ -1287,16 +1281,14 @@ function DeliveryContent() {
       {activeTab === 'in-transit' && (
         <div className="space-y-4">
           {displayInTransitTrips.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8">
-              <EmptyState
-                title={searchTerm ? 'Tidak ada trip dalam perjalanan yang sesuai pencarian' : 'Tidak ada trip pengiriman yang sedang berjalan'}
-                description={
-                  searchTerm
-                    ? 'Coba gunakan kata kunci pencarian yang berbeda.'
-                    : 'Konfirmasi muat barang pada trip di tab "Siap Kirim" untuk memulai perjalanan armada.'
-                }
-              />
-            </div>
+            <EmptyState
+              title={searchTerm ? 'Tidak ada trip dalam perjalanan yang sesuai pencarian' : 'Tidak ada trip pengiriman yang sedang berjalan'}
+              description={
+                searchTerm
+                  ? 'Coba gunakan kata kunci pencarian yang berbeda.'
+                  : 'Konfirmasi muat barang pada trip di tab "Siap Kirim" untuk memulai perjalanan armada.'
+              }
+            />
           ) : (
             <div className="space-y-4">
               {displayInTransitTrips.map(trip => {
@@ -1421,16 +1413,14 @@ function DeliveryContent() {
       {activeTab === 'delivered' && (
         <div className="space-y-4">
           {displayDeliveredTrips.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8">
-              <EmptyState
-                title={searchTerm ? 'Tidak ada trip terkirim yang sesuai pencarian' : 'Belum ada trip pengiriman yang selesai'}
-                description={
-                  searchTerm
-                    ? 'Coba gunakan kata kunci pencarian yang berbeda.'
-                    : 'Trip pengiriman akan otomatis berpindah ke sini setelah semua surat jalan di dalamnya selesai diserahterimakan.'
-                }
-              />
-            </div>
+            <EmptyState
+              title={searchTerm ? 'Tidak ada trip terkirim yang sesuai pencarian' : 'Belum ada trip pengiriman yang selesai'}
+              description={
+                searchTerm
+                  ? 'Coba gunakan kata kunci pencarian yang berbeda.'
+                  : 'Trip pengiriman akan otomatis berpindah ke sini setelah semua surat jalan di dalamnya selesai diserahterimakan.'
+              }
+            />
           ) : (
             <div className="space-y-4">
               {displayDeliveredTrips.map(trip => {

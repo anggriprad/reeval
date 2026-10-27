@@ -73,7 +73,7 @@ export function SegmentedControl<T extends string = string>({
     const list: FilterConfig[] = [];
     if (filters && filters.length > 0) {
       list.push(...filters);
-    } else if (onFilterChange !== undefined && filterValue !== undefined && filterOptions && filterOptions.length > 0) {
+    } else if (onFilterChange !== undefined && filterValue !== undefined && filterOptions !== undefined) {
       list.push({
         value: filterValue,
         onChange: onFilterChange,
@@ -111,22 +111,26 @@ export function SegmentedControl<T extends string = string>({
     const detail: MobileControlsSyncDetail = {
       search: hasSearch
         ? {
-            value: searchValue || '',
-            onChange: (val: string) => onSearchChangeRef.current?.(val),
-            placeholder: searchPlaceholder,
-          }
+          value: searchValue || '',
+          onChange: (val: string) => onSearchChangeRef.current?.(val),
+          placeholder: searchPlaceholder,
+        }
         : undefined,
       filter: hasFilters
         ? {
-            isActive: isFilterActive,
-            onOpen: () => setMobileFilterOpen(true),
-          }
+          isActive: isFilterActive,
+          onOpen: () => setMobileFilterOpen(true),
+        }
         : undefined,
     };
 
     window.dispatchEvent(new CustomEvent('mobile-controls-sync', { detail }));
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('mobile-controls-sync', { detail }));
+    }, 50);
 
     return () => {
+      clearTimeout(timer);
       window.dispatchEvent(new CustomEvent('mobile-controls-sync', { detail: null }));
     };
   }, [isPrimary, hasSearch, hasFilters, searchValue, searchPlaceholder, isFilterActive]);
@@ -150,8 +154,8 @@ export function SegmentedControl<T extends string = string>({
       <div
         className={
           isPrimary
-            ? 'max-md:!-mt-4 max-md:-mx-4 md:mt-0 md:mx-0 sticky top-16 left-0 right-0 z-20 md:static h-12 md:h-auto md:w-fit max-w-none md:max-w-full flex items-stretch md:items-center gap-0 md:gap-1.5 rounded-none md:rounded-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-md md:bg-slate-100 md:dark:bg-slate-800 p-0 md:p-1 border-b border-slate-200/90 dark:border-slate-800/90 md:border-b-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
-            : 'w-full md:w-fit max-w-full flex items-center gap-1.5 rounded-xl md:rounded-lg bg-slate-100 dark:bg-slate-800 p-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+            ? 'max-md:!-mt-4 max-md:-mx-4 md:mt-0 md:mx-0 sticky top-16 left-0 right-0 z-20 md:static h-12 md:h-auto md:w-fit max-w-none md:max-w-full flex items-stretch md:items-center gap-0 md:gap-1.5 rounded-none md:rounded-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-md md:bg-slate-50 md:dark:bg-slate-800 p-0 md:p-1 border-b border-slate-200/90 dark:border-slate-800/90 md:border-b-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+            : 'w-full md:w-fit max-w-full flex items-center gap-1.5 rounded-xl md:rounded-lg bg-slate-50 dark:bg-slate-800 p-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
         }
       >
         {options.map((option) => {
@@ -172,29 +176,26 @@ export function SegmentedControl<T extends string = string>({
               onClick={() => onChange(option.key)}
               className={
                 isPrimary
-                  ? `flex items-center justify-center gap-2 rounded-none md:rounded-md px-3.5 py-0 md:py-1.5 h-full md:h-auto text-[13.5px] md:text-sm font-semibold transition-all cursor-pointer shrink-0 min-w-[86px] md:min-w-[95px] border-b-[3px] md:border-b-0 active:scale-[0.99] touch-manipulation ${
-                      isActive
-                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-600 dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-300 md:border-transparent md:bg-white md:text-indigo-600 md:shadow-xs md:dark:bg-slate-700 md:dark:text-white'
-                        : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200 md:hover:bg-slate-200/60 md:dark:hover:bg-slate-700/50'
-                    }`
-                  : `flex items-center justify-center gap-2 rounded-lg md:rounded-md px-3.5 py-2 md:py-1.5 text-[13.5px] md:text-sm font-semibold transition-all cursor-pointer shrink-0 min-w-[86px] active:scale-[0.99] touch-manipulation ${
-                      isActive
-                        ? 'bg-white text-indigo-600 shadow-xs dark:bg-slate-700 dark:text-white'
-                        : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700/50 dark:hover:text-slate-200'
-                    }`
+                  ? `flex items-center justify-center gap-2 rounded-none md:rounded-md px-3.5 py-0 md:py-1.5 h-full md:h-auto text-[13.5px] md:text-sm font-semibold transition-all cursor-pointer shrink-0 min-w-[86px] md:min-w-[95px] border-b-[3px] md:border-b-0 active:scale-[0.99] touch-manipulation ${isActive
+                    ? 'border-indigo-600 bg-indigo-50/50 text-indigo-600 dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-300 md:border-transparent md:bg-white md:text-indigo-600 md:shadow md:dark:bg-slate-700 md:dark:text-white'
+                    : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200 md:hover:bg-slate-200/60 md:dark:hover:bg-slate-700/50'
+                  }`
+                  : `flex items-center justify-center gap-2 rounded-lg md:rounded-md px-3.5 py-2 md:py-1.5 text-[13.5px] md:text-sm font-semibold transition-all cursor-pointer shrink-0 min-w-[86px] active:scale-[0.99] touch-manipulation ${isActive
+                    ? 'bg-white text-indigo-600 shadow dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700/50 dark:hover:text-slate-200'
+                  }`
               }
             >
               {Icon && <Icon className="h-4 w-4 shrink-0" />}
               <span className="whitespace-nowrap">{option.label}</span>
               {typeof option.count === 'number' && option.count > 0 && (
                 <span
-                  className={`inline-flex items-center justify-center rounded-full transition-colors shrink-0 font-bold h-4.5 min-w-[18px] px-1 text-[12px] leading-none shadow-xs md:h-auto md:min-w-0 md:px-2 md:py-0.5 md:text-xs md:leading-normal md:shadow-none ${
-                    option.countColor
-                      ? `${option.countColor} text-white`
-                      : isActive
-                        ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white'
-                        : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                  }`}
+                  className={`inline-flex items-center justify-center rounded-full transition-colors shrink-0 font-bold h-4.5 min-w-[18px] px-1 text-[11px] leading-none shadow-xs ${option.countColor
+                    ? `${option.countColor} text-white`
+                    : isActive
+                      ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white'
+                      : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                    }`}
                 >
                   {option.count > 99 ? '99+' : option.count}
                 </span>

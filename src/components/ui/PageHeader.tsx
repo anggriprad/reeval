@@ -63,11 +63,13 @@ function extractConfigInfo(node: React.ReactNode): { isConfig: boolean; href?: s
 }
 
 // Recursively separate Config elements from Primary Action elements
-function separateMobileActions(node: React.ReactNode): {
+function separateHeaderActions(node: React.ReactNode): {
   configLinks: Array<{ href?: string; onClick?: () => void }>;
+  configNodes: React.ReactNode[];
   primaryNodes: React.ReactNode[];
 } {
   const configLinks: Array<{ href?: string; onClick?: () => void }> = [];
+  const configNodes: React.ReactNode[] = [];
   const primaryNodes: React.ReactNode[] = [];
 
   const traverse = (child: React.ReactNode) => {
@@ -87,6 +89,7 @@ function separateMobileActions(node: React.ReactNode): {
       const info = extractConfigInfo(child);
       if (info.isConfig) {
         configLinks.push({ href: info.href, onClick: info.onClick });
+        configNodes.push(child);
         return;
       }
 
@@ -95,7 +98,7 @@ function separateMobileActions(node: React.ReactNode): {
   };
 
   traverse(node);
-  return { configLinks, primaryNodes };
+  return { configLinks, configNodes, primaryNodes };
 }
 
 export function PageHeader({
@@ -183,7 +186,7 @@ export function PageHeader({
 
   const actionElements = actions || children;
   const hasActions = actionElements || (actionMenuItems && actionMenuItems.length > 0);
-  const { configLinks, primaryNodes } = separateMobileActions(actionElements);
+  const { configLinks, configNodes, primaryNodes } = separateHeaderActions(actionElements);
   const showMobileBottomAction = pathname !== '/' && primaryNodes.length > 0;
 
   return (
@@ -201,7 +204,7 @@ export function PageHeader({
 
         {hasActions && (
           <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
-            {actionElements}
+            {primaryNodes}
 
             {actionMenuItems && actionMenuItems.length > 0 && (
               <ActionMenu
@@ -215,9 +218,13 @@ export function PageHeader({
                   };
                 })}
                 triggerSize="md"
+                triggerVariant="outline"
+                triggerClassName="border-slate-200/90 dark:border-slate-700/80"
                 triggerTitle="Opsi Lanjutan"
               />
             )}
+
+            {configNodes}
           </div>
         )}
       </div>
@@ -263,6 +270,7 @@ export function PageHeader({
                   };
                 })}
                 triggerSize="md"
+                triggerVariant="ghost"
                 triggerTitle="Opsi Lanjutan"
               />
             )}
@@ -274,7 +282,7 @@ export function PageHeader({
       {mounted &&
         showMobileBottomAction &&
         createPortal(
-          <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-3 pb-[calc(12px+env(safe-area-inset-bottom,0px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-3 pb-[max(12px,calc(env(safe-area-inset-bottom,0px)+4px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
             <div
               className={cn(
                 'flex gap-2.5 w-full [&>*]:flex-1 [&>*]:w-full [&_a]:w-full [&_a]:block [&_button]:w-full [&_button]:h-12 [&_button]:text-[15px] [&_button]:font-bold [&_button]:justify-center [&_button]:rounded-xl',

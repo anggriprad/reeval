@@ -145,14 +145,14 @@ export function BottomSheet({
         className={cn(
           'fixed inset-x-0 bottom-0 z-[9999] bg-white dark:bg-slate-900 shadow-2xl flex flex-col',
           resolvedHeight === 'full'
-            ? 'h-[100dvh] max-h-[100dvh] rounded-none border-0 p-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))]'
+            ? 'h-[100dvh] max-h-[100dvh] rounded-none border-0 p-4 pb-[max(14px,calc(env(safe-area-inset-bottom,0px)+6px))]'
             : resolvedHeight === 'sm'
-            ? 'max-h-[45vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))]'
+            ? 'max-h-[45vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[max(14px,calc(env(safe-area-inset-bottom,0px)+6px))]'
             : resolvedHeight === 'md'
-            ? 'max-h-[65vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))]'
+            ? 'max-h-[65vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[max(14px,calc(env(safe-area-inset-bottom,0px)+6px))]'
             : resolvedHeight === 'lg'
-            ? 'max-h-[88vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))]'
-            : 'max-h-[85vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))]',
+            ? 'max-h-[88vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[max(14px,calc(env(safe-area-inset-bottom,0px)+6px))]'
+            : 'max-h-[85vh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 p-4 pb-[max(14px,calc(env(safe-area-inset-bottom,0px)+6px))]',
           !isClosing && dragY === 0 ? 'animate-sheet-in' : '',
           className
         )}

@@ -75,17 +75,15 @@ export default function ProcurementDetailPage() {
           backHref="/inventory?tab=procurement"
           title="Detail Pengadaan"
         />
-        <Card className="p-8">
-          <EmptyState
-            title="Pengadaan Tidak Ditemukan"
-            description={`Data pengadaan dengan referensi "${id}" tidak ditemukan atau telah dihapus.`}
-            action={
-              <Button onClick={() => router.push('/inventory?tab=procurement')}>
-                Kembali ke Daftar Pengadaan
-              </Button>
-            }
-          />
-        </Card>
+        <EmptyState
+          title="Pengadaan Tidak Ditemukan"
+          description={`Data pengadaan dengan referensi "${id}" tidak ditemukan atau telah dihapus.`}
+          action={
+            <Button onClick={() => router.push('/inventory?tab=procurement')}>
+              Kembali ke Daftar Pengadaan
+            </Button>
+          }
+        />
       </div>
     );
   }

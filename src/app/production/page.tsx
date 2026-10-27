@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Table, type TableColumn } from '@/components/ui/Table';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { formatCurrency, formatDate, formatDateTime, formatDurationBetween, formatVariantLabel, cn } from '@/lib/utils';
 import { canManageProduction } from '@/lib/roles';
-import type { JobCard, WorkOrder } from '@/lib/types';
+import type { JobCard, WorkOrder, Product } from '@/lib/types';
 import { ActionMenu } from '@/components/ui/ActionMenu';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
@@ -25,6 +26,7 @@ import {
   Play,
   Pause,
   Check,
+  Search,
   ArrowRight,
   ChevronDown,
   ChevronUp,
@@ -50,7 +52,47 @@ import {
   AlertCircle,
   Lock,
   XCircle,
+  BedDouble,
+  Box,
+  Armchair,
+  Sofa,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  User,
 } from 'lucide-react';
+
+const productIconMap: Record<string, React.ElementType> = {
+  BedDouble,
+  Layers,
+  Box,
+  Armchair,
+  Sofa,
+  Package,
+  Lamp,
+  Tv,
+  Coffee,
+  Hammer,
+  Wrench,
+  Frame,
+  Palette,
+  Scissors,
+  Shield,
+  Tag,
+  ShoppingBag,
+  Archive,
+  FolderTree,
+  Sparkles,
+};
 
 type AnalyticsPeriod = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'ALL';
 
@@ -141,13 +183,10 @@ function ProductionContent() {
   const [workerInputs, setWorkerInputs] = useState<Record<string, string>>({});
 
   const toggleExpand = (woId: string) => {
-    setExpandedWOIds(prev => {
-      const isCurrentlyExpanded = prev[woId] !== false;
-      return {
-        ...prev,
-        [woId]: !isCurrentlyExpanded,
-      };
-    });
+    setExpandedWOIds(prev => ({
+      ...prev,
+      [woId]: !prev[woId],
+    }));
   };
 
   const handleStart = (woId: string, jcId: string, e?: React.MouseEvent) => {
@@ -160,26 +199,88 @@ function ProductionContent() {
     pauseJobCard(woId, jcId);
   };
 
-  const handleComplete = (woId: string, jc: JobCard, e?: React.MouseEvent) => {
+  // JobCard completion modal state
+  const [completeTarget, setCompleteTarget] = useState<{ woId: string; jc: JobCard } | null>(null);
+  const [selectedOperatorName, setSelectedOperatorName] = useState('');
+  const [operatorSearch, setOperatorSearch] = useState('');
+  const [completeError, setCompleteError] = useState('');
+
+  const handleOpenCompleteModal = (woId: string, jc: JobCard, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const picName = (workerInputs[jc.id] || jc.picName || '').trim();
+    setCompleteTarget({ woId, jc });
+    setSelectedOperatorName(workerInputs[jc.id] || jc.picName || '');
+    setOperatorSearch('');
+    setCompleteError('');
+  };
+
+  const handleConfirmComplete = () => {
+    if (!completeTarget) return;
+    const picName = selectedOperatorName.trim();
     if (!picName) {
-      toast.warning('Operator Belum Dipilih', 'Silakan pilih Operator Pekerja terlebih dahulu.');
+      setCompleteError('Silakan pilih operator terlebih dahulu.');
       return;
     }
     const foundOp = operators.find(o => o.name === picName);
-    const res = completeJobCard(woId, jc.id, jc.targetQty, picName, undefined, foundOp?.id);
+    const res = completeJobCard(
+      completeTarget.woId,
+      completeTarget.jc.id,
+      completeTarget.jc.targetQty,
+      picName,
+      undefined,
+      foundOp?.id
+    );
     if (res && !res.success) {
       toast.error('Gagal Menyelesaikan SPK', res.error);
       return;
     }
-    toast.success('Pekerjaan Selesai', `Tugas "${jc.operationName}" telah diselesaikan.`);
+    toast.success('Pekerjaan Selesai', `Tugas "${completeTarget.jc.operationName}" telah diselesaikan.`);
+    setCompleteTarget(null);
+    setSelectedOperatorName('');
+    setOperatorSearch('');
+    setCompleteError('');
   };
 
-  const activeWOs = workOrders.filter(w => w.status !== 'COMPLETED' && w.status !== 'CANCELED');
-  const completedWOs = workOrders.filter(w => w.status === 'COMPLETED');
-  const canceledWOs = workOrders.filter(w => w.status === 'CANCELED');
+  // SPK Berjalan: Urutan terlama di paling atas (FIFO), yang baru di paling bawah
+  const activeWOs = useMemo(() => {
+    return workOrders
+      .filter(w => w.status !== 'COMPLETED' && w.status !== 'CANCELED')
+      .sort((a, b) => {
+        const timeA = new Date(a.issuedAt).getTime() || 0;
+        const timeB = new Date(b.issuedAt).getTime() || 0;
+        if (timeA !== timeB) return timeA - timeB;
+        return a.spkNumber.localeCompare(b.spkNumber);
+      });
+  }, [workOrders]);
+
+  // SPK Selesai: Urutan terbaru di paling atas, yang terlama di paling bawah
+  const completedWOs = useMemo(() => {
+    return workOrders
+      .filter(w => w.status === 'COMPLETED')
+      .sort((a, b) => {
+        const timeA = new Date(a.completedAt || a.issuedAt).getTime() || 0;
+        const timeB = new Date(b.completedAt || b.issuedAt).getTime() || 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return b.spkNumber.localeCompare(a.spkNumber);
+      });
+  }, [workOrders]);
+
+  // SPK Dibatalkan: Urutan terbaru di paling atas
+  const canceledWOs = useMemo(() => {
+    return workOrders
+      .filter(w => w.status === 'CANCELED')
+      .sort((a, b) => {
+        const timeA = new Date(a.canceledAt || a.issuedAt).getTime() || 0;
+        const timeB = new Date(b.canceledAt || b.issuedAt).getTime() || 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return b.spkNumber.localeCompare(a.spkNumber);
+      });
+  }, [workOrders]);
   const activeOperators = operators.filter(o => o.status === 'ACTIVE');
+  const filteredOperators = useMemo(() => {
+    if (!operatorSearch.trim()) return activeOperators;
+    const q = operatorSearch.toLowerCase();
+    return activeOperators.filter(op => op.name.toLowerCase().includes(q));
+  }, [activeOperators, operatorSearch]);
 
   const filterWO = (woList: typeof workOrders) => {
     let list = woList;
@@ -308,8 +409,8 @@ function ProductionContent() {
         totalEarnedCost,
       };
     })
-    .filter(op => op.completedCount > 0)
-    .sort((a, b) => b.efficiencyScore - a.efficiencyScore || b.completedCount - a.completedCount);
+      .filter(op => op.completedCount > 0)
+      .sort((a, b) => b.efficiencyScore - a.efficiencyScore || b.completedCount - a.completedCount);
   }, [operators, periodCompletedJobCards, operations]);
 
   const operatorColumns = useMemo<TableColumn<typeof operatorAnalytics[0]>[]>(() => [
@@ -322,9 +423,9 @@ function ProductionContent() {
           <span className={cn(
             "flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold font-mono",
             idx === 0 ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" :
-            idx === 1 ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" :
-            idx === 2 ? "bg-amber-50 text-amber-900 border border-amber-300/60 dark:bg-amber-950/50 dark:text-amber-400" :
-            "text-slate-400"
+              idx === 1 ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" :
+                idx === 2 ? "bg-amber-50 text-amber-900 border border-amber-300/60 dark:bg-amber-950/50 dark:text-amber-400" :
+                  "text-slate-400"
           )}>
             {idx + 1}
           </span>
@@ -539,17 +640,48 @@ function ProductionContent() {
       {activeTab === 'active' && (
         <div className="space-y-4">
           {displayActiveWOs.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-slate-400 dark:border-slate-800 dark:bg-slate-900">
-              <p className="font-semibold text-base text-slate-600 dark:text-slate-300">{searchTerm ? 'Tidak ada SPK yang sesuai dengan pencarian.' : 'Tidak ada SPK yang sedang berjalan.'}</p>
-            </div>
+            <EmptyState
+              title="Tidak Ada SPK Berjalan"
+              description={searchTerm ? 'Tidak ada SPK yang sesuai dengan pencarian.' : 'Tidak ada SPK yang sedang berjalan.'}
+              icon={<Factory className="h-7 w-7 text-slate-400" />}
+            />
           ) : (
             displayActiveWOs.map(wo => {
+              const product = products.find(p => p.id === wo.productId || p.name === wo.productName);
+              const ProductIcon = productIconMap[product?.imageIcon || ''] || (wo.isSubAssembly ? Layers : BedDouble);
               const sortedJc = [...wo.jobCards].sort((a, b) => a.sequence - b.sequence);
               const completedJc = wo.jobCards.filter(j => j.status === 'COMPLETED').length;
               const totalJc = wo.jobCards.length;
-              // Default open if unset or true
-              const isExpanded = expandedWOIds[wo.id] !== false;
+              const progressPercent = totalJc > 0 ? Math.round((completedJc / totalJc) * 100) : 0;
+              const hasRunningOp = wo.jobCards.some(j => j.status === 'IN_PROGRESS');
+              const hasStartedOp = wo.jobCards.some(j => j.status === 'IN_PROGRESS' || j.status === 'PAUSED' || j.status === 'COMPLETED');
+              // Default collapse (closed) baik di desktop maupun mobile
+              const isExpanded = Boolean(expandedWOIds[wo.id]);
               const isLockedBySA = !wo.isSubAssembly && workOrders.some(w => w.salesOrderId === wo.salesOrderId && w.isSubAssembly && w.status !== 'COMPLETED');
+
+              const spkActionMenuItems = [
+                {
+                  label: 'Analisis KPI',
+                  icon: <Info className="h-4 w-4" />,
+                  onClick: () => setSelectedWOId(wo.id),
+                },
+                ...(canManage
+                  ? [
+                    {
+                      label: 'Batalkan SPK',
+                      icon: <XCircle className="h-4 w-4" />,
+                      variant: 'danger' as const,
+                      disabled: wo.jobCards.some(
+                        j => j.status !== 'PENDING' || (j.completedQty || 0) > 0 || Boolean(j.startedAt) || (j.actualMinutes || 0) > 0
+                      ),
+                      onClick: () => {
+                        setCancelTargetWO(wo);
+                        setCancelReason('');
+                      },
+                    },
+                  ]
+                  : []),
+              ];
 
               return (
                 <div
@@ -559,120 +691,174 @@ function ProductionContent() {
                   {/* Card Header (Accordion Trigger) */}
                   <div
                     onClick={() => toggleExpand(wo.id)}
-                    className="p-4 cursor-pointer flex flex-col md:flex-row md:items-start justify-between gap-4 bg-slate-50/60 hover:bg-slate-100/80 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 group transition-colors"
+                    className="p-4 cursor-pointer flex flex-col md:flex-row md:items-start justify-between gap-3 md:gap-4 bg-slate-50/60 hover:bg-slate-100/80 dark:bg-slate-800/40 dark:hover:bg-slate-800/70 group transition-colors"
                   >
                     {/* Left Side: SPK Info */}
                     <div className="space-y-1.5 flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="font-mono font-extrabold text-base text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-                          {wo.spkNumber}
-                          {isLockedBySA && (
-                            <span title="Menunggu SPK Bahan Setengah Jadi" className="inline-flex items-center">
-                              <Lock className="h-4 w-4 text-amber-500 shrink-0" />
-                            </span>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="font-mono font-extrabold text-base text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                            {hasStartedOp && (
+                              <span
+                                className="relative flex h-2.5 w-2.5 shrink-0"
+                                title={hasRunningOp ? "Operasi sedang berjalan" : "SPK berjalan (tidak ada operasi aktif)"}
+                              >
+                                <span
+                                  className={cn(
+                                    "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                                    hasRunningOp ? "bg-emerald-400" : "bg-amber-400"
+                                  )}
+                                />
+                                <span
+                                  className={cn(
+                                    "relative inline-flex rounded-full h-2.5 w-2.5",
+                                    hasRunningOp ? "bg-emerald-500" : "bg-amber-500"
+                                  )}
+                                />
+                              </span>
+                            )}
+                            {wo.spkNumber}
+                            {isLockedBySA && (
+                              <span title="Menunggu SPK Bahan Setengah Jadi" className="inline-flex items-center">
+                                <Lock className="h-4 w-4 text-amber-500 shrink-0" />
+                              </span>
+                            )}
+                          </span>
+                          {wo.isSubAssembly && (
+                            <Badge variant="purple">WIP</Badge>
                           )}
-                        </span>
-                        {wo.isSubAssembly && (
-                          <Badge variant="purple">BAHAN SETENGAH JADI</Badge>
-                        )}
-                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                          Order #{wo.salesOrderNumber}
-                        </span>
+                        </div>
+
+                        {/* Icon More di Pojok Kanan Card (Mobile) */}
+                        <div className="md:hidden shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <ActionMenu
+                            align="right"
+                            triggerTitle="Opsi SPK"
+                            items={spkActionMenuItems}
+                          />
+                        </div>
                       </div>
 
-                      <div className='space-y-1'>
-                        <div className='flex items-center gap-2'>
-                          <h3 className="font-bold text-slate-900 dark:text-white text-base leading-snug">
-                            {wo.productName}
-                          </h3>
-                          <button
-                            type="button"
-                            className="p-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-800 dark:text-slate-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-700/70 transition-all"
-                          >
-                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          </button>
+                      <div className="flex items-start gap-3 pt-0.5">
+                        {/* Visual Gambar Produk */}
+                        {product?.image ? (
+                          <div className="h-12 w-12 md:h-11 md:w-11 rounded-xl md:rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 shadow-2xs">
+                            <img
+                              src={product.image}
+                              alt={wo.productName}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className={cn(
+                            "h-12 w-12 md:h-11 md:w-11 rounded-xl md:rounded-lg flex items-center justify-center shrink-0 border shadow-2xs bg-indigo-50 text-indigo-600 border-indigo-200/80 dark:bg-indigo-950/50 dark:text-indigo-400 dark:border-indigo-800/80"
+                          )}>
+                            <ProductIcon className="h-5 w-5" />
+                          </div>
+                        )}
+
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-slate-900 dark:text-white text-base leading-snug">
+                              {wo.productName}
+                            </h3>
+                            <button
+                              type="button"
+                              className="p-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-800 dark:text-slate-200 group-hover:bg-slate-200 dark:group-hover:bg-slate-700/70 transition-all shrink-0"
+                            >
+                              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </button>
+                          </div>
+                          {wo.variantName && (
+                            <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                              {formatVariantLabel(wo.variantName)}
+                            </p>
+                          )}
+                          {wo.selectedModifiers && wo.selectedModifiers.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {wo.selectedModifiers.map(mGroup => (
+                                mGroup.selectedOptions.map(opt => (
+                                  <span key={opt.optionId} className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium">
+                                    +{opt.name}
+                                  </span>
+                                ))
+                              ))}
+                            </div>
+                          )}
+                          {wo.customNotes && (
+                            <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
+                              {wo.customNotes}
+                            </div>
+                          )}
                         </div>
-                        {wo.variantName && (
-                          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                            {formatVariantLabel(wo.variantName)}
-                          </p>
-                        )}
-                        {wo.selectedModifiers && wo.selectedModifiers.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {wo.selectedModifiers.map(mGroup => (
-                              mGroup.selectedOptions.map(opt => (
-                                <span key={opt.optionId} className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium">
-                                  +{opt.name}
-                                </span>
-                              ))
-                            ))}
-                          </div>
-                        )}
-                        {wo.customNotes && (
-                          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
-                            {wo.customNotes}
-                          </div>
-                        )}
+                      </div>
+
+                      {/* Mobile Step Progress Bar */}
+                      <div className="md:hidden pt-2 flex items-center gap-3">
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
+                          {completedJc}/{totalJc} Tahap
+                        </span>
+                        <div className="flex-1 h-2 bg-slate-200/80 dark:bg-slate-700/60 rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all duration-300",
+                              progressPercent === 100
+                                ? "bg-emerald-500"
+                                : "bg-indigo-600 dark:bg-indigo-500"
+                            )}
+                            style={{ width: `${progressPercent}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 tabular-nums whitespace-nowrap">
+                          {progressPercent}%
+                        </span>
                       </div>
                     </div>
 
-                    {/* Right Side: Timestamp, Progress Counter, KPI Button & Accordion Toggle */}
-                    <div className="flex flex-col items-end gap-3 shrink-0 self-start">
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium bg-white dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-800 shadow-sm">
-                        <strong className="text-slate-800 dark:text-slate-200 font-semibold">{formatDateTime(wo.issuedAt)}</strong>
+                    {/* Right Side: Timestamp & Icon More di atas, Progress Counter di bawah (Desktop Only) */}
+                    <div className="hidden md:flex flex-col items-end gap-1.5 shrink-0 self-start">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          {formatDateTime(wo.issuedAt)}
+                        </span>
+
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <ActionMenu
+                            align="right"
+                            triggerTitle="Opsi SPK"
+                            items={spkActionMenuItems}
+                          />
+                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-100 dark:border-indigo-900/50 text-xs font-bold">
-                          <span>{completedJc} / {totalJc} Tahap</span>
-                        </div>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedWOId(wo.id);
-                          }}
-                          className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg flex items-center gap-1 shadow-xs transition-colors"
-                          title="Buka Analisis KPI & Rekap Upah Pekerja"
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                          {completedJc} / {totalJc} Tahap
+                        </span>
+                        <span
+                          className={cn(
+                            "text-[11px] font-bold px-2 py-0.5 rounded-md border tabular-nums transition-colors",
+                            progressPercent === 100
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
+                              : progressPercent > 0
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800"
+                                : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                          )}
                         >
-                          <Info className="h-3.5 w-3.5 text-indigo-500" />
-                          Analisis KPI
-                        </button>
-
-                        {canManage && (
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <ActionMenu
-                              align="right"
-                              triggerTitle="Opsi SPK"
-                              items={[
-                                {
-                                  label: 'Batalkan SPK',
-                                  icon: <XCircle className="h-4 w-4" />,
-                                  variant: 'danger',
-                                  disabled: wo.jobCards.some(
-                                    j => j.status !== 'PENDING' || (j.completedQty || 0) > 0 || Boolean(j.startedAt) || (j.actualMinutes || 0) > 0
-                                  ),
-                                  onClick: () => {
-                                    setCancelTargetWO(wo);
-                                    setCancelReason('');
-                                  },
-                                },
-                              ]}
-                            />
-                          </div>
-                        )}
+                          {progressPercent}%
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Accordion Body: Container Tahapan Operasi Horizontal */}
+                  {/* Accordion Body: Container Tahapan Operasi */}
                   <div
                     className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
                       }`}
                   >
                     <div className="overflow-hidden">
                       <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
-                        <div className="flex flex-wrap items-center gap-2 py-1">
+                        <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center gap-3 md:gap-2 py-1">
                           {sortedJc.map((jc, idx) => {
                             const isPending = jc.status === 'PENDING';
                             const isInProgress = jc.status === 'IN_PROGRESS';
@@ -682,91 +868,80 @@ function ProductionContent() {
                             return (
                               <React.Fragment key={jc.id}>
                                 <div
-                                  className={`shrink-0 rounded-lg p-3 border flex flex-col justify-between min-w-[210px] max-w-[250px] ${isCompleted
-                                    ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900'
-                                    : isInProgress
-                                      ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-400 dark:bg-blue-950/40 dark:border-blue-700'
-                                      : isPaused
-                                        ? 'bg-amber-50 border-amber-300 dark:bg-amber-950/30 dark:border-amber-800'
-                                        : 'bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700'
-                                    }`}
+                                  className={cn(
+                                    "relative overflow-hidden w-full md:w-[250px] shrink-0 rounded-xl md:rounded-lg p-3.5 md:p-3 border flex flex-col gap-3 transition-all",
+                                    isCompleted
+                                      ? "border-transparent bg-slate-100/60 dark:bg-slate-800/40 opacity-70"
+                                      : "bg-slate-50/70 border-slate-200 dark:bg-slate-800/60 dark:border-slate-700"
+                                  )}
                                 >
-                                  <div className="mb-2">
-                                    <div className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
+                                  {isCompleted && (
+                                    <div className="absolute top-2 right-2 bg-emerald-600 text-white w-6 h-6 md:w-5 md:h-5 rounded-full flex items-center justify-center shadow-xs">
+                                      <Check className="h-3.5 w-3.5 md:h-3 md:w-3 stroke-[2.5]" />
+                                    </div>
+                                  )}
+
+                                  <div>
+                                    <div className={cn("text-slate-900 dark:text-white leading-tight", isCompleted && "pr-6")}>
                                       {jc.operationName}
                                     </div>
                                   </div>
 
-                                  {/* Aksi Sederhana */}
-                                  <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
+                                  {/* Aksi Operasi */}
+                                  <div>
                                     {isPending && canManage && (
-                                      <button
+                                      <Button
+                                        size="lg"
+                                        variant="primary"
+                                        className="w-full h-11 md:h-10 text-sm font-semibold bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white"
                                         onClick={(e) => handleStart(wo.id, jc.id, e)}
-                                        className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded flex items-center justify-center gap-1"
                                       >
-                                        <Play className="h-3.5 w-3.5 fill-white" />
+                                        <Play className="h-4 w-4 md:h-3.5 md:w-3.5 fill-white" />
                                         Mulai
-                                      </button>
+                                      </Button>
                                     )}
 
                                     {isPaused && canManage && (
-                                      <button
+                                      <Button
+                                        size="lg"
+                                        variant="primary"
+                                        className="w-full h-11 md:h-10 text-sm font-semibold bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white border-0"
                                         onClick={(e) => handleStart(wo.id, jc.id, e)}
-                                        className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded flex items-center justify-center gap-1"
                                       >
-                                        <Play className="h-3.5 w-3.5 fill-white" />
+                                        <Play className="h-4 w-4 md:h-3.5 md:w-3.5 fill-white" />
                                         Lanjutkan
-                                      </button>
+                                      </Button>
                                     )}
 
                                     {isInProgress && canManage && (
-                                      <div className="space-y-1.5">
-                                        {/* Dropdown Operator Produksi */}
-                                        <select
-                                          value={workerInputs[jc.id] ?? jc.picName ?? ''}
-                                          onChange={(e) => setWorkerInputs({ ...workerInputs, [jc.id]: e.target.value })}
-                                          className="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
-                                          onClick={(e) => e.stopPropagation()}
+                                      <div className="flex gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="secondary"
+                                          size="lg"
+                                          className="h-11 md:h-10 text-sm font-semibold text-white border-0"
+                                          onClick={(e) => handlePause(wo.id, jc.id, e)}
                                         >
-                                          <option value="">-- Pilih Operator --</option>
-                                          {activeOperators.map(op => (
-                                            <option key={op.id} value={op.name}>
-                                              {op.name} ({op.roleSpecialization || 'Umum'})
-                                            </option>
-                                          ))}
-                                        </select>
-
-                                        <div className="flex gap-1">
-                                          <button
-                                            onClick={(e) => handlePause(wo.id, jc.id, e)}
-                                            className="flex-1 py-1 px-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded flex items-center justify-center gap-1"
-                                          >
-                                            <Pause className="h-3 w-3 fill-white" />
-                                            Jeda
-                                          </button>
-                                          <button
-                                            onClick={(e) => handleComplete(wo.id, jc, e)}
-                                            className="flex-1 py-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded flex items-center justify-center gap-1"
-                                          >
-                                            <Check className="h-3 w-3" />
-                                            Selesai
-                                          </button>
-                                        </div>
+                                          <Pause className="h-4 w-4 md:h-3.5 md:w-3.5 fill-white" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="success"
+                                          size="lg"
+                                          className="flex-1 h-11 md:h-10 text-sm font-semibold"
+                                          onClick={(e) => handleOpenCompleteModal(wo.id, jc, e)}
+                                        >
+                                          <Check className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                                          Selesai
+                                        </Button>
                                       </div>
                                     )}
 
                                     {isCompleted && (
-                                      <div className="text-xs text-emerald-700 dark:text-emerald-300 font-bold flex items-center justify-between">
-                                        <span className="flex items-center gap-1">
-                                          <Check className="h-3.5 w-3.5" /> Selesai
-                                        </span>
-                                        {jc.picName && (
-                                          <span className="text-[10px] text-slate-500 font-normal truncate max-w-[100px] flex items-center gap-0.5">
-                                            <UserCheck className="h-3 w-3 text-emerald-600" />
-                                            {jc.picName}
-                                          </span>
-                                        )}
-                                      </div>
+                                      <span className="text-sm text-emerald-800 dark:text-emerald-200 font-medium truncate max-w-[150px] md:max-w-[120px] flex items-center gap-1">
+                                        <User className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                        {jc.picName}
+                                      </span>
                                     )}
                                   </div>
                                 </div>
@@ -790,11 +965,15 @@ function ProductionContent() {
       {activeTab === 'completed' && (
         <div className="space-y-3">
           {displayCompletedWOs.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-slate-400 dark:border-slate-800 dark:bg-slate-900">
-              <p className="font-semibold text-base text-slate-600 dark:text-slate-300">{searchTerm ? 'Tidak ada riwayat SPK yang sesuai dengan pencarian.' : 'Belum ada riwayat SPK selesai.'}</p>
-            </div>
+            <EmptyState
+              title="Belum Ada SPK Selesai"
+              description={searchTerm ? 'Tidak ada riwayat SPK yang sesuai dengan pencarian.' : 'Belum ada riwayat SPK selesai.'}
+              icon={<CheckCircle className="h-7 w-7 text-slate-400" />}
+            />
           ) : (
-            displayCompletedWOs.slice().reverse().map(wo => {
+            displayCompletedWOs.map(wo => {
+              const product = products.find(p => p.id === wo.productId || p.name === wo.productName);
+              const ProductIcon = productIconMap[product?.imageIcon || ''] || (wo.isSubAssembly ? Layers : BedDouble);
               const durationStr = formatDurationBetween(wo.issuedAt, wo.completedAt || wo.issuedAt);
 
               return (
@@ -810,52 +989,67 @@ function ProductionContent() {
                         {wo.spkNumber}
                       </span>
                       {wo.isSubAssembly && (
-                        <Badge variant="purple">BAHAN SETENGAH JADI</Badge>
+                        <Badge variant="purple">WIP</Badge>
                       )}
-                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        Order #{wo.salesOrderNumber}
-                      </span>
                       {wo.isCustom && (
                         <span className="inline-block text-[10px] text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-200 dark:border-indigo-800/60">
-                          KUSTOM
+                          Custom
                         </span>
                       )}
                     </div>
 
-                    <div className='space-y-1'>
-                      <h3 className="font-bold text-slate-900 dark:text-white text-base leading-snug">
-                        {wo.productName}
-                      </h3>
-                      {wo.variantName && (
-                        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                          {formatVariantLabel(wo.variantName)}
-                        </p>
-                      )}
-                      {wo.selectedModifiers && wo.selectedModifiers.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {wo.selectedModifiers.map(mGroup => (
-                            mGroup.selectedOptions.map(opt => (
-                              <span key={opt.optionId} className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium">
-                                +{opt.name}
-                              </span>
-                            ))
-                          ))}
+                    <div className="flex items-start gap-3 pt-0.5">
+                      {product?.image ? (
+                        <div className="h-12 w-12 md:h-11 md:w-11 rounded-xl md:rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 shadow-2xs">
+                          <img
+                            src={product.image}
+                            alt={wo.productName}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className={cn(
+                          "h-12 w-12 md:h-11 md:w-11 rounded-xl md:rounded-lg flex items-center justify-center shrink-0 border shadow-2xs bg-indigo-50 text-indigo-600 border-indigo-200/80 dark:bg-indigo-950/50 dark:text-indigo-400 dark:border-indigo-800/80"
+                        )}>
+                          <ProductIcon className="h-5 w-5" />
                         </div>
                       )}
-                      {wo.customNotes && (
-                        <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
-                          {wo.customNotes}
-                        </div>
-                      )}
+
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <h3 className="font-semibold text-slate-900 dark:text-white text-base leading-snug">
+                          {wo.productName}
+                        </h3>
+                        {wo.variantName && (
+                          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                            {formatVariantLabel(wo.variantName)}
+                          </p>
+                        )}
+                        {wo.selectedModifiers && wo.selectedModifiers.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {wo.selectedModifiers.map(mGroup => (
+                              mGroup.selectedOptions.map(opt => (
+                                <span key={opt.optionId} className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium">
+                                  +{opt.name}
+                                </span>
+                              ))
+                            ))}
+                          </div>
+                        )}
+                        {wo.customNotes && (
+                          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
+                            {wo.customNotes}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* Right Block: Duration */}
-                  <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2 rounded-lg border border-slate-100 dark:border-slate-800 w-fit">
+                  <div className="flex items-center justify-between w-full md:w-fit md:flex-col md:items-start md:space-y-1 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2 rounded-lg border border-slate-100 dark:border-slate-800">
                     <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
                       Waktu Pengerjaan
                     </div>
-                    <div className="flex items-center gap-2 font-bold text-green-600 dark:text-green-400 text-sm mt-0.5">
+                    <div className="flex items-center gap-2 font-bold text-green-600 dark:text-green-400 text-sm md:mt-0.5">
                       <Timer className="h-3 w-3 text-green-500" /> {durationStr}
                     </div>
                   </div>
@@ -872,71 +1066,91 @@ function ProductionContent() {
       {activeTab === 'canceled' && (
         <div className="space-y-3">
           {displayCanceledWOs.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-slate-400 dark:border-slate-800 dark:bg-slate-900">
-              <p className="font-semibold text-base text-slate-600 dark:text-slate-300">
-                {searchTerm ? 'Tidak ada SPK dibatalkan yang sesuai dengan pencarian.' : 'Tidak ada SPK yang dibatalkan.'}
-              </p>
-            </div>
+            <EmptyState
+              title="Tidak Ada SPK Dibatalkan"
+              description={searchTerm ? 'Tidak ada SPK dibatalkan yang sesuai dengan pencarian.' : 'Tidak ada SPK yang dibatalkan.'}
+              icon={<XCircle className="h-7 w-7 text-slate-400" />}
+            />
           ) : (
-            displayCanceledWOs.slice().reverse().map(wo => (
-              <div
-                key={wo.id}
-                onClick={() => setSelectedWOId(wo.id)}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col md:flex-row md:items-start justify-between gap-4 cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 transition-all opacity-80 hover:opacity-100"
-              >
-                {/* Left Block: SPK Number & Product Details */}
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="font-mono font-extrabold text-base text-slate-500 dark:text-slate-400 line-through">
-                      {wo.spkNumber}
-                    </span>
-                    <Badge variant="danger">DIBATALKAN</Badge>
-                    {wo.isSubAssembly && (
-                      <Badge variant="purple">BAHAN SETENGAH JADI</Badge>
-                    )}
-                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      Order #{wo.salesOrderNumber}
-                    </span>
-                    {wo.isCustom && (
-                      <span className="inline-block text-[10px] text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-200 dark:border-indigo-800/60">
-                        KUSTOM
+            displayCanceledWOs.map(wo => {
+              const product = products.find(p => p.id === wo.productId || p.name === wo.productName);
+              const ProductIcon = productIconMap[product?.imageIcon || ''] || (wo.isSubAssembly ? Layers : BedDouble);
+
+              return (
+                <div
+                  key={wo.id}
+                  onClick={() => setSelectedWOId(wo.id)}
+                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col md:flex-row md:items-start justify-between gap-4 cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 transition-all opacity-80 hover:opacity-100"
+                >
+                  {/* Left Block: SPK Number & Product Details */}
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="font-mono font-extrabold text-base text-slate-500 dark:text-slate-400 line-through">
+                        {wo.spkNumber}
                       </span>
-                    )}
+                      <Badge variant="danger">Dibatalkan</Badge>
+                      {wo.isSubAssembly && (
+                        <Badge variant="purple">WIP</Badge>
+                      )}
+                      {wo.isCustom && (
+                        <span className="inline-block text-[10px] text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold uppercase border border-indigo-200 dark:border-indigo-800/60">
+                          Kustom
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-start gap-3 pt-0.5">
+                      {product?.image ? (
+                        <div className="h-12 w-12 md:h-11 md:w-11 rounded-xl md:rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 shadow-2xs">
+                          <img
+                            src={product.image}
+                            alt={wo.productName}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className={cn(
+                          "h-12 w-12 md:h-11 md:w-11 rounded-xl md:rounded-lg flex items-center justify-center shrink-0 border shadow-2xs opacity-80 bg-slate-100 text-slate-600 border-slate-200/80 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700/80"
+                        )}>
+                          <ProductIcon className="h-5 w-5" />
+                        </div>
+                      )}
+
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-base leading-snug">
+                          {wo.productName}
+                        </h3>
+                        {wo.variantName && (
+                          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                            {formatVariantLabel(wo.variantName)}
+                          </p>
+                        )}
+                        {wo.customNotes && (
+                          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
+                            Catatan: {wo.customNotes}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <h3 className="font-bold text-slate-800 dark:text-slate-200 text-base leading-snug">
-                      {wo.productName}
-                    </h3>
-                    {wo.variantName && (
-                      <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                        {formatVariantLabel(wo.variantName)}
-                      </p>
-                    )}
-                    {wo.customNotes && (
-                      <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mt-1">
-                        Catatan: {wo.customNotes}
+                  {/* Right Block: Status Keterangan */}
+                  <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2 rounded-lg border border-slate-100 dark:border-slate-800 w-fit shrink-0">
+                    <div className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">
+                      Status SPK
+                    </div>
+                    <div className="font-medium text-slate-700 dark:text-slate-300 text-xs mt-0.5">
+                      {wo.cancelReason || 'Dibatalkan'}
+                    </div>
+                    {wo.canceledAt && (
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        {formatDateTime(wo.canceledAt)}
                       </div>
                     )}
                   </div>
                 </div>
-
-                {/* Right Block: Status Keterangan */}
-                <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2 rounded-lg border border-slate-100 dark:border-slate-800 w-fit shrink-0">
-                  <div className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">
-                    Status SPK
-                  </div>
-                  <div className="font-medium text-slate-700 dark:text-slate-300 text-xs mt-0.5">
-                    {wo.cancelReason || 'Dibatalkan'}
-                  </div>
-                  {wo.canceledAt && (
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                      {formatDateTime(wo.canceledAt)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -1504,6 +1718,84 @@ function ProductionContent() {
               onChange={e => setCancelReason(e.target.value)}
               placeholder="Contoh: Perubahan rencana produksi / dibatalkan"
             />
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal / Bottom Sheet Pilih Operator saat Selesai Operasi */}
+      <Modal
+        isOpen={!!completeTarget}
+        onClose={() => {
+          setCompleteTarget(null);
+          setOperatorSearch('');
+          setCompleteError('');
+        }}
+        title="Pilih Operator"
+        size="sm"
+        sheetHeight="auto"
+        actions={
+          completeTarget ? (
+            <Button
+              variant="primary"
+              onClick={handleConfirmComplete}
+              disabled={!selectedOperatorName}
+            >
+              Konfirmasi Selesai
+            </Button>
+          ) : undefined
+        }
+      >
+        {completeTarget && (
+          <div className="space-y-3">
+            <Input
+              icon={Search}
+              inputSize="md"
+              placeholder="Cari nama operator..."
+              value={operatorSearch}
+              onChange={e => {
+                setOperatorSearch(e.target.value);
+                if (completeError) setCompleteError('');
+              }}
+            />
+
+            {completeError && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                {completeError}
+              </p>
+            )}
+
+            <div className="space-y-1.5 pt-0.5">
+              {filteredOperators.map(op => {
+                const isSelected = selectedOperatorName === op.name;
+                return (
+                  <button
+                    key={op.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedOperatorName(op.name);
+                      if (completeError) setCompleteError('');
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left text-sm transition-all",
+                      isSelected
+                        ? "bg-blue-50 text-blue-900 border border-blue-400 dark:bg-blue-950/50 dark:text-blue-100 dark:border-blue-600 font-semibold shadow-xs"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200/80 dark:bg-slate-800/50 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700/80 font-medium"
+                    )}
+                  >
+                    <span>{op.name}</span>
+                    {isSelected && (
+                      <Check className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+
+              {filteredOperators.length === 0 && (
+                <div className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
+                  Tidak ada operator yang ditemukan.
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Modal>

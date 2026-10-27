@@ -22,6 +22,8 @@ export interface ActionMenuProps {
   triggerTitle?: string;
   menuWidth?: string;
   triggerSize?: 'sm' | 'md';
+  triggerVariant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  triggerClassName?: string;
 }
 
 export function ActionMenu({
@@ -31,6 +33,8 @@ export function ActionMenu({
   triggerTitle = 'Opsi',
   menuWidth,
   triggerSize = 'sm',
+  triggerVariant = 'ghost',
+  triggerClassName,
 }: ActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -130,12 +134,13 @@ export function ActionMenu({
       <Button
         ref={triggerRef}
         type="button"
-        variant="ghost"
+        variant={triggerVariant}
         size="icon"
         onClick={handleToggle}
         className={cn(
           triggerSize === 'md' ? 'h-9 w-9' : 'h-8 w-8',
-          'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+          triggerVariant === 'ghost' && 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
+          triggerClassName
         )}
         title={triggerTitle}
         aria-label={triggerTitle}

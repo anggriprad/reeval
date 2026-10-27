@@ -60,6 +60,12 @@ export default function DashboardPage() {
       badgeCount: activeWorkOrders.length,
     },
     {
+      href: '/delivery',
+      label: 'Pengiriman',
+      icon: Truck,
+      colorClass: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-900/60',
+    },
+    {
       href: '/inventory',
       label: 'Inventory',
       icon: Warehouse,
@@ -71,12 +77,6 @@ export default function DashboardPage() {
       label: 'Katalog',
       icon: PackageOpen,
       colorClass: 'bg-sky-50 text-sky-600 border-sky-100 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-900/60',
-    },
-    {
-      href: '/delivery',
-      label: 'Pengiriman',
-      icon: Truck,
-      colorClass: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-900/60',
     },
     {
       href: '/finance',

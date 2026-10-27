@@ -80,6 +80,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
         - *Default (Tanpa `onBack`)*: Label title di sebelah kiri (`text-left`), ikon tutup (`X`) di sebelah kanan.
         - *Dengan Tombol Kembali (`onBack`)*: Tombol `ArrowLeft` di kiri, label title tepat di tengah (`text-center`), ikon tutup (`X`) di kanan.
         - *Tanpa Title (`!title` / ActionMenu)*: Container title beserta ikon close dan garis pembatasnya disembunyikan penuh; tombol Batal di bagian bawah tampil bersih tanpa border atas (`border-t-0`).
+16. **Disiplin Presisi Scope & Anti-Overexploration (Strict Literal Execution & No Wandering)**:
+    - **Isolasi Target Spesifik**: Jika user menyebut nama komponen atau file secara spesifik (misal: `PageHeader`, `Table`, dsb.), area kerja HANYA terbatas pada file komponen tersebut. DILARANG KERAS membuka, membaca, atau mengedit file lain (seperti `MobileHeader`, layout, atau modul tetangga) hanya karena komponen tersebut memiliki relasi/import dengannya, kecuali jika diperintahkan eksplisit oleh user.
+    - **Eksekusi Harfiah (Zero Speculation & No Second-Guessing)**: Terima instruksi user apa adanya secara harfiah. DILARANG berspekulasi atau menebak motif tersembunyi (seperti mengait-ngaitkan ke tampilan mobile jika user tidak menyebut mobile, atau mengira tombol yang dimaksud ada di file lain).
+    - **Larangan Global Search untuk Masalah Lokal**: Untuk perubahan tampilan, styling, atau logika internal pada satu komponen/halaman, DILARANG melakukan grep atau pencarian global ke seluruh codebase yang tidak ada hubungannya. Langsung buka file target, temukan barisnya, eksekusi dalam sekali jalan, dan verifikasi.
 
 
 

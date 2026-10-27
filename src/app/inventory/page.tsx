@@ -1080,14 +1080,6 @@ export function InventoryContent() {
         title="Inventaris"
       >
         <div className="flex gap-2">
-          {canManageInventory(currentUser.role) && (
-            <Link href="/inventory/config">
-              <Button variant="outline">
-                <Settings className="h-4 w-4 mr-1.5" />
-                Konfigurasi
-              </Button>
-            </Link>
-          )}
           {activeTab === 'raw' && canManageInventory(currentUser.role) && (
             <Button onClick={openAddMaterial}>
               <Plus className="h-4 w-4 mr-1.5" />
@@ -1106,6 +1098,14 @@ export function InventoryContent() {
               Register Aset Baru
             </Button>
           )}
+          {canManageInventory(currentUser.role) && (
+            <Link href="/inventory/config">
+              <Button variant="outline">
+                <Settings className="h-4 w-4 mr-1.5" />
+                Konfigurasi
+              </Button>
+            </Link>
+          )}
         </div>
       </PageHeader>
 
@@ -1123,7 +1123,7 @@ export function InventoryContent() {
         } else if (activeTab === 'returns') {
           filterPlaceholder = "Semua Status Retur";
           filterOptions = [
-            { value: '', label: 'Semua Status' },
+            { value: '', label: 'Semua Status Retur' },
             { value: 'PENDING', label: 'Menunggu Tindakan' },
             { value: 'RESTOCKED', label: 'Masuk Barang Jadi' },
             { value: 'REPAIR', label: 'Diperbaiki' },
@@ -1229,10 +1229,21 @@ export function InventoryContent() {
 
       {/* Raw Materials Stock Table */}
       {activeTab === 'raw' && (
-        <Card>
-          <Table
-            data={filteredRawMaterials}
-            keyExtractor={(mat) => mat.id}
+        filteredRawMaterials.length === 0 ? (
+          <EmptyState
+            title={searchTerm || inventoryFilter ? "Tidak Ada Bahan Baku" : "Belum Ada Bahan Baku"}
+            description={
+              searchTerm || inventoryFilter
+                ? "Tidak ada bahan baku yang cocok dengan pencarian atau filter."
+                : "Register bahan baku baru untuk mulai mengelola stok inventaris gudang."
+            }
+            icon={<Warehouse className="h-7 w-7 text-slate-400" />}
+          />
+        ) : (
+          <Card>
+            <Table
+              data={filteredRawMaterials}
+              keyExtractor={(mat) => mat.id}
             emptyTitle="Belum ada bahan baku"
             emptyDescription={
               searchTerm || inventoryFilter
@@ -1407,14 +1418,28 @@ export function InventoryContent() {
             ]}
           />
         </Card>
-      )}
+      )
+    )}
 
       {/* Finished Goods Table */}
       {activeTab === 'finished' && (
-        <Card className="p-0 overflow-hidden">
-          <Table
-            data={filteredFinishedGoods}
-            keyExtractor={(fg) => fg.id}
+        filteredFinishedGoods.length === 0 ? (
+          <EmptyState
+            title={searchTerm || inventoryFilter || !showEmptyStock ? "Tidak Ada Barang Jadi" : "Belum Ada Barang Jadi"}
+            description={
+              searchTerm || inventoryFilter || !showEmptyStock
+                ? (!showEmptyStock && finishedGoods.some(f => (f.stock || 0) <= 0)
+                    ? 'Tidak ada barang jadi dengan stok tersedia. Aktifkan toggle "Tampilkan barang dengan stok kosong" untuk melihat semua item.'
+                    : 'Tidak ada barang jadi yang cocok dengan pencarian atau filter.')
+                : "Barang jadi hasil produksi yang telah selesai akan otomatis muncul di sini."
+            }
+            icon={<PackageCheck className="h-7 w-7 text-slate-400" />}
+          />
+        ) : (
+          <Card className="p-0 overflow-hidden">
+            <Table
+              data={filteredFinishedGoods}
+              keyExtractor={(fg) => fg.id}
             emptyTitle="Belum ada barang jadi"
             emptyDescription={
               searchTerm || inventoryFilter || !showEmptyStock
@@ -1595,15 +1620,27 @@ export function InventoryContent() {
                   : []),
               ]}
             />
-        </Card>
+          </Card>
+        )
       )}
 
       {/* Barang Retur Table */}
       {activeTab === 'returns' && (
-        <Card className="p-0 overflow-hidden">
-          <Table
-            data={filteredReturnedGoods}
-            keyExtractor={(rg) => rg.id}
+        filteredReturnedGoods.length === 0 ? (
+          <EmptyState
+            title="Tidak Ada Barang Retur"
+            description={
+              searchTerm || inventoryFilter
+                ? "Tidak ada data barang retur yang cocok dengan pencarian atau filter."
+                : "Barang retur dari komplain yang telah disetujui (refund, penggantian, atau perbaikan) akan otomatis tercatat di sini."
+            }
+            icon={<RotateCcw className="h-7 w-7 text-slate-400" />}
+          />
+        ) : (
+          <Card className="p-0 overflow-hidden">
+            <Table
+              data={filteredReturnedGoods}
+              keyExtractor={(rg) => rg.id}
             embedded
             emptyTitle="Tidak Ada Barang Retur"
             emptyDescription={
@@ -1796,13 +1833,25 @@ export function InventoryContent() {
             ]}
           />
         </Card>
-      )}
+      )
+    )}
 
       {/* Stock Movements */}
       {activeTab === 'movements' && (
-        <Card>
-          <Table
-            data={filteredMovements}
+        filteredMovements.length === 0 ? (
+          <EmptyState
+            title={searchTerm ? "Tidak Ada Mutasi Stok" : "Belum Ada Mutasi Stok"}
+            description={
+              searchTerm
+                ? "Tidak ada mutasi stok yang cocok dengan pencarian."
+                : "Mutasi stok otomatis dicatat saat inisiasi stok awal, penerimaan PO, atau pemotongan bahan SPK."
+            }
+            icon={<History className="h-7 w-7 text-slate-400" />}
+          />
+        ) : (
+          <Card>
+            <Table
+              data={filteredMovements}
             emptyTitle="Belum ada mutasi stok"
             emptyDescription={
               searchTerm
@@ -1903,13 +1952,25 @@ export function InventoryContent() {
             ]}
           />
         </Card>
-      )}
+      )
+    )}
 
       {/* Procurement (Pengadaan) Table */}
       {activeTab === 'procurement' && (
-        <Card>
-          <Table
-            data={[...filteredPOs].reverse()}
+        filteredPOs.length === 0 ? (
+          <EmptyState
+            title={searchTerm || inventoryFilter ? "Tidak Ada Pengadaan" : "Belum Ada Pengadaan"}
+            description={
+              searchTerm || inventoryFilter
+                ? "Tidak ada data pengadaan yang sesuai dengan pencarian atau filter."
+                : "Buat pengadaan baru untuk memesan bahan baku ke vendor."
+            }
+            icon={<ShoppingCart className="h-7 w-7 text-slate-400" />}
+          />
+        ) : (
+          <Card>
+            <Table
+              data={[...filteredPOs].reverse()}
             emptyTitle="Belum ada pengadaan"
             emptyDescription={
               searchTerm || inventoryFilter
@@ -2130,15 +2191,24 @@ export function InventoryContent() {
                 },
               ]}
             />
-        </Card>
+          </Card>
+        )
       )}
 
       {/* Assets Table */}
       {activeTab === 'assets' && (
-        <Card>
-          {filteredAssets.length === 0 ? (
-            <EmptyState title="Belum ada aset terdaftar" description="Register aset & alat kerja untuk mencatat biaya penyusutan dan servis" />
-          ) : (
+        filteredAssets.length === 0 ? (
+          <EmptyState
+            title={searchTerm || inventoryFilter ? "Tidak Ada Aset" : "Belum Ada Aset Terdaftar"}
+            description={
+              searchTerm || inventoryFilter
+                ? "Tidak ada aset yang cocok dengan pencarian atau filter."
+                : "Register aset & alat kerja untuk mencatat biaya penyusutan dan servis."
+            }
+            icon={<Wrench className="h-7 w-7 text-slate-400" />}
+          />
+        ) : (
+          <Card>
             <Table
               data={filteredAssets}
               keyExtractor={(ast) => ast.id}
@@ -2277,8 +2347,8 @@ export function InventoryContent() {
                   : []),
               ]}
             />
-          )}
-        </Card>
+          </Card>
+        )
       )}
 
       {/* Modal: Master Material CRUD (Add / Edit) */}
@@ -2474,9 +2544,11 @@ export function InventoryContent() {
 
                 {/* Child BOM Table */}
                 {matChildBom.length === 0 ? (
-                  <p className="text-[11px] text-slate-400 italic text-center py-2">
-                    Belum ada bahan penyusun yang ditambahkan ke Child BOM ini.
-                  </p>
+                  <EmptyState
+                    title="Belum Ada Bahan Penyusun"
+                    description="Belum ada bahan baku yang ditambahkan ke Child BOM ini."
+                    variant="plain"
+                  />
                 ) : (
                   <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
                     <table className="w-full text-left text-xs">
@@ -2761,7 +2833,13 @@ export function InventoryContent() {
               <tbody>
                 {assetServiceLogs.filter(l => l.assetId === selectedServiceAsset?.id).length === 0 ? (
                   <tr>
-                    <td colSpan={canManageInventory(currentUser.role) ? 4 : 3} className="p-4 text-center text-slate-500 dark:text-slate-400">Belum ada riwayat servis tercatat untuk aset ini.</td>
+                    <td colSpan={canManageInventory(currentUser.role) ? 4 : 3} className="p-2">
+                      <EmptyState
+                        title="Belum Ada Riwayat Servis"
+                        description="Belum ada riwayat servis tercatat untuk aset ini."
+                        variant="plain"
+                      />
+                    </td>
                   </tr>
                 ) : (
                   assetServiceLogs
@@ -2911,9 +2989,11 @@ export function InventoryContent() {
             </label>
 
             {poItems.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500 dark:border-slate-800">
-                Belum ada bahan baku yang ditambahkan ke daftar pengadaan.
-              </div>
+              <EmptyState
+                title="Daftar Item Masih Kosong"
+                description="Belum ada bahan baku yang ditambahkan ke daftar pengadaan."
+                variant="plain"
+              />
             ) : (
               <div className="space-y-2 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:border-slate-800 dark:bg-slate-900/40">
                 {poItems.map((item, idx) => (

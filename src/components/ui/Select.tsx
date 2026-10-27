@@ -357,17 +357,20 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
 
   const selectedOpt = parsedOptions.find(opt => String(opt.value) === currentValue);
   const displayLabel = useMemo(() => {
-    if (!currentValue || currentValue === '') {
-      return '';
-    }
     if (selectedOpt) {
       if (isDefaultPlaceholderOption(selectedOpt)) {
         return '';
       }
       return selectedOpt.label;
     }
-    return '';
-  }, [selectedOpt, currentValue]);
+    if (!currentValue || currentValue === '') {
+      if (placeholder && !placeholder.startsWith('--') && !placeholder.toLowerCase().includes('pilih')) {
+        return placeholder;
+      }
+      return '';
+    }
+    return String(currentValue);
+  }, [selectedOpt, currentValue, placeholder]);
 
   const isHighlighted = activeHighlight && currentValue !== '' && currentValue !== 'ALL';
 

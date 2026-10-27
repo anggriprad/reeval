@@ -287,6 +287,12 @@ export function MobileHeader() {
       badgeCount: activeWorkOrdersCount,
     },
     {
+      href: '/delivery',
+      label: 'Pengiriman',
+      icon: Truck,
+      colorClass: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-900/60',
+    },
+    {
       href: '/inventory',
       label: 'Inventory',
       icon: Warehouse,
@@ -300,12 +306,6 @@ export function MobileHeader() {
       colorClass: 'bg-sky-50 text-sky-600 border-sky-100 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-900/60',
     },
     {
-      href: '/delivery',
-      label: 'Pengiriman',
-      icon: Truck,
-      colorClass: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-900/60',
-    },
-    {
       href: '/finance',
       label: 'Keuangan',
       icon: DollarSign,
@@ -315,7 +315,7 @@ export function MobileHeader() {
 
   return (
     <>
-      <header className="md:hidden sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur-md dark:border-slate-800/90 dark:bg-slate-900/95">
+      <header className="md:hidden sticky top-0 z-40 flex h-[calc(4rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] items-center justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur-md dark:border-slate-800/90 dark:bg-slate-900/95">
         {/* SEARCH MODE FULL WIDTH HEADER */}
         {isSearchMode && activeSearch && (
           <div className="flex items-center gap-2.5 w-full h-full animate-in fade-in duration-150">

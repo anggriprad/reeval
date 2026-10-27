@@ -22,6 +22,7 @@ export interface ModalProps {
   bottomSheetHeight?: 'auto' | 'sm' | 'md' | 'lg' | 'full';
   showClose?: boolean;
   showTitle?: boolean;
+  noPadding?: boolean;
 }
 
 const sizeClasses: Record<string, string> = {
@@ -51,6 +52,7 @@ export function Modal({
   bottomSheetHeight,
   showClose = true,
   showTitle = true,
+  noPadding = false,
 }: ModalProps) {
   const resolvedSheetHeight = sheetHeight || bottomSheetHeight || 'lg';
   const [modalEntered, setModalEntered] = useState(false);
@@ -260,23 +262,33 @@ export function Modal({
         )}
 
         {/* Scrollable Content Body (Completely independent touch scrolling without drag interception) */}
-        <div className={cn("flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 sm:py-5 space-y-4 text-[13.5px] md:text-xs", bodyClassName)}>
+        <div
+          className={cn(
+            "flex-1 overflow-y-auto overscroll-contain text-[13.5px] md:text-xs",
+            noPadding ? "p-0 space-y-0" : "px-4 sm:px-6 py-4 sm:py-5 space-y-4",
+            bodyClassName
+          )}
+        >
           {children}
         </div>
 
         {/* Fixed Bottom Actions Container */}
-        {actions && (
+        {actions ? (
           <div className={cn(
-            "flex shrink-0 flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 border-t border-slate-200/80 px-4 sm:px-6 py-3 sm:py-3.5 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80 [&>button]:w-full [&>button]:sm:w-auto max-sm:[&_button]:w-full max-sm:[&_button]:h-11 max-sm:[&_button]:text-sm max-sm:[&_button]:font-semibold max-sm:[&_button]:rounded-xl",
+            "flex shrink-0 flex-col-reverse md:flex-row md:items-center md:justify-end gap-2 border-t border-slate-200/80 px-4 md:px-6 py-3 md:py-3.5 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/80 [&>button]:w-full [&>button]:md:w-auto max-md:[&_button]:w-full max-md:[&_button]:h-11 max-md:[&_button]:text-sm max-md:[&_button]:font-semibold max-md:[&_button]:rounded-xl",
             mobileFullScreen
               ? "max-md:pb-7 max-md:pt-3.5"
               : mobileBottomSheet
-              ? "max-sm:pb-[calc(16px+env(safe-area-inset-bottom,0px))] max-sm:pt-3"
-              : "max-sm:pb-5",
+              ? "max-md:pb-[max(14px,calc(env(safe-area-inset-bottom,0px)+6px))] max-md:pt-3"
+              : "max-md:pb-5",
             actionsClassName
           )}>
             {actions}
           </div>
+        ) : (
+          mobileBottomSheet && (
+            <div className="md:hidden w-full pb-[env(safe-area-inset-bottom,0px)] shrink-0 bg-white dark:bg-slate-900" />
+          )
         )}
       </div>
     </div>

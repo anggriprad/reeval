@@ -20,6 +20,8 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
+  Truck,
+  Wallet,
   Clock,
   Eye,
   Film,
@@ -88,9 +90,11 @@ export default function ComplaintDetailPage() {
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [refundNotes, setRefundNotes] = useState('');
   const [refundBankAccountId, setRefundBankAccountId] = useState('');
+  const [isRefundReturnRequested, setIsRefundReturnRequested] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<ComplaintAttachment | null>(null);
 
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [isActionModalOpen, setIsActionModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectionError, setRejectionError] = useState('');
 
@@ -178,7 +182,7 @@ export default function ComplaintDetailPage() {
       refundNotes.trim() || 'Direfund sesuai item yang diretur.',
       refundBankAccountId,
       {
-        isReturnRequested,
+        isReturnRequested: isRefundReturnRequested,
       }
     );
     toast.success('Komplain Diselesaikan', 'Pengembalian dana telah diproses.');
@@ -202,471 +206,444 @@ export default function ComplaintDetailPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12 text-slate-900 dark:text-slate-100">
+    <div className="space-y-6 max-w-6xl mx-auto pb-24 lg:pb-12 text-slate-900 dark:text-slate-100">
       <PageHeader
         backHref="/order"
-        title={
-          <div className="flex items-center gap-3 flex-wrap">
-            <span>{complaint.id}</span>
-            <Badge className={
-              complaint.status === 'SELESAI' ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800' :
-              complaint.status === 'DITOLAK' ? 'bg-red-100 text-red-800 border-red-300 dark:bg-red-950 dark:text-red-300 dark:border-red-800' :
-              complaint.status === 'DITANGANI' ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800' :
-              'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
-            }>
-              {getComplaintStatusLabel(complaint.status)}
-            </Badge>
-          </div>
-        }
+        title="Detail Komplain"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Kolom Kiri: Info Detail Komplain */}
+        {/* Kolom Kiri: Detail Komplain */}
         <div className="lg:col-span-8 space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 space-y-5">
-            {/* 1. Kategori Kendala */}
-            <div>
-              <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">
-                Kategori Kendala
-              </div>
-              <div className="text-base font-semibold text-slate-900 dark:text-white">
+          {/* Card 1: Kategori Kendala, Badge Status & Deskripsi */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="font-bold text-lg md:text-base text-slate-900 dark:text-white">
                 {complaint.category}
-              </div>
+              </h3>
+              <Badge
+                variant={
+                  complaint.status === 'SELESAI' ? 'success' :
+                  complaint.status === 'DITOLAK' ? 'danger' :
+                  complaint.status === 'DITANGANI' ? 'info' :
+                  'warning'
+                }
+              >
+                {getComplaintStatusLabel(complaint.status)}
+              </Badge>
             </div>
 
-            {/* 2. Referensi Pesanan */}
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-              <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">
-                Referensi Pesanan
-              </div>
-              <div className="text-sm text-slate-700 dark:text-slate-300">
-                {order.customer.name}, {formatDateTime(complaint.createdAt)}. ID Pesanan{' '}
-                <Link
-                  href={`/order/${order.id}`}
-                  className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
-                >
-                  {order.orderNumber}
-                </Link>
-              </div>
-            </div>
-
-            {/* 3. Item Bermasalah */}
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-              <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
-                Item Bermasalah
-              </div>
-              <div className="space-y-2">
-                {complaint.items.map((item, idx) => {
-                  const product = products.find(p => p.id === item.productId || p.name === item.productName);
-                  const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
-
-                  return (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between text-sm py-2 border-b border-slate-100 dark:border-slate-800/80 last:border-0"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        {product?.image ? (
-                          <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                            <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
-                          </div>
-                        ) : (
-                          <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                            <IconComp className="h-5 w-5" />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <span className="font-semibold text-slate-900 dark:text-white block truncate">{item.productName}</span>
-                          {item.variantLabel && (
-                            <span className="text-slate-500 text-xs block truncate">
-                              {formatVariantLabel(item.variantLabel)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="font-bold text-slate-900 dark:text-white shrink-0 ml-3">x{item.qty}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 4. Deskripsi Komplain */}
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-              <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-                Deskripsi Komplain
-              </div>
-              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+            {complaint.description && (
+              <p className="text-[13.5px] md:text-xs text-slate-800 dark:text-slate-200 font-normal leading-relaxed whitespace-pre-line pt-0.5">
+                <span className="text-slate-400 dark:text-slate-500 font-normal">Deskripsi: </span>
                 {complaint.description}
               </p>
-            </div>
+            )}
+          </div>
 
-            {/* 5. Bukti Foto & Video */}
-            {complaint.attachments && complaint.attachments.length > 0 && (
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-                <div className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2.5">
-                  Bukti Foto & Video
-                </div>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {complaint.attachments.map((att) => (
-                    <button
-                      key={att.id}
-                      type="button"
-                      onClick={() => setSelectedMedia(att)}
-                      className="group relative aspect-square rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-500 dark:hover:border-indigo-400 hover:ring-2 hover:ring-indigo-500/20 focus:outline-none transition-all cursor-pointer"
-                    >
-                      {att.type === 'image' ? (
-                        <img
-                          src={att.url}
-                          alt=""
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                        />
+          {/* Card 2: Item Bermasalah */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3">
+            <h3 className="font-bold text-base md:text-sm text-slate-900 dark:text-white">
+              Item Bermasalah
+            </h3>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              {complaint.items.map((item, idx) => {
+                const product = products.find(p => p.id === item.productId || p.name === item.productName);
+                const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
+
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-sm py-2.5 first:pt-0 last:pb-0"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {product?.image ? (
+                        <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                          <img src={product.image} alt={item.productName} className="w-full h-full object-cover" />
+                        </div>
                       ) : (
-                        <div className="w-full h-full relative flex items-center justify-center bg-slate-900">
-                          <video
-                            src={att.url}
-                            className="w-full h-full object-cover pointer-events-none opacity-80"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-colors">
-                            <div className="p-1 rounded-full bg-black/60 text-white shadow-xs group-hover:scale-110 transition-transform">
-                              <Play className="w-3 h-3 fill-current ml-0.5" />
-                            </div>
-                          </div>
+                        <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                          <IconComp className="h-5 w-5" />
                         </div>
                       )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Kolom Kanan: Tindakan Resolusi */}
-        <div className="lg:col-span-4 space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Tindakan Resolusi
-            </div>
-
-            {(!complaint.resolution || complaint.status === 'DIAJUKAN' || complaint.status === 'MENUNGGU') ? (
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setIsFulfillmentModalOpen(true)}
-                  className="w-full text-left p-4 rounded-xl border border-indigo-200 dark:border-indigo-900/60 hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition-all cursor-pointer bg-white dark:bg-slate-900 shadow-xs space-y-1"
-                >
-                  <div className="font-semibold text-sm text-indigo-700 dark:text-indigo-400">
-                    Penuhi Barang Pengganti
-                  </div>
-                  <div className="text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Selesaikan komplain dengan unit pengganti (SPK baru atau ambil stok gudang)
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsRefundModalOpen(true)}
-                  className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all cursor-pointer bg-white dark:bg-slate-900 shadow-xs space-y-1"
-                >
-                  <div className="font-semibold text-sm text-slate-900 dark:text-white">
-                    Batalkan Pesanan (Refund)
-                  </div>
-                  <div className="text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Batalkan item yang bermasalah dan proses pengembalian dana
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRejectionReason('');
-                    setRejectionError('');
-                    setIsRejectModalOpen(true);
-                  }}
-                  className="w-full text-left p-4 rounded-xl border border-red-200 dark:border-red-900/60 hover:border-red-300 dark:hover:border-red-700 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition-all cursor-pointer bg-white dark:bg-slate-900 shadow-xs space-y-1"
-                >
-                  <div className="font-semibold text-sm text-red-600 dark:text-red-400">
-                    Tolak Komplain
-                  </div>
-                  <div className="text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Tolak pengajuan komplain pelanggan dan berikan alasan penolakan
-                  </div>
-                </button>
-              </div>
-            ) : complaint.status === 'DITOLAK' ? (
-              <div className="p-4 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/30 space-y-2">
-                <div className="flex items-center gap-2 font-semibold text-sm text-red-800 dark:text-red-300">
-                  <XCircle className="w-4 h-4 shrink-0" />
-                  <span>Komplain Ditolak</span>
-                </div>
-                {complaint.rejectionReason && (
-                  <div className="text-[13.5px] sm:text-xs text-red-700 dark:text-red-400 leading-relaxed">
-                    <span className="font-semibold">Alasan Penolakan: </span>
-                    {complaint.rejectionReason}
-                  </div>
-                )}
-                <div className="text-xs sm:text-[11px] text-red-600/80 dark:text-red-500 pt-1">
-                  {complaint.rejectedAt
-                    ? `Ditolak ${complaint.rejectedBy ? `oleh ${complaint.rejectedBy} ` : ''}pada ${formatDateTime(complaint.rejectedAt)}`
-                    : 'Status: Ditolak'}
-                </div>
-              </div>
-            ) : (
-              <div className={cn(
-                "p-4 rounded-xl border space-y-3",
-                complaint.status === 'SELESAI'
-                  ? "border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30"
-                  : "border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30"
-              )}>
-                <div className={cn(
-                  "flex items-center gap-2 font-semibold text-sm",
-                  complaint.status === 'SELESAI'
-                    ? "text-emerald-800 dark:text-emerald-300"
-                    : "text-blue-800 dark:text-blue-300"
-                )}>
-                  {complaint.status === 'SELESAI' ? (
-                    <CheckCircle className="w-4 h-4 shrink-0" />
-                  ) : (
-                    <Clock className="w-4 h-4 shrink-0" />
-                  )}
-                  <span>Resolusi: {complaint.resolution}</span>
-                </div>
-                {complaint.resolutionNotes && (
-                  <p className={cn(
-                    "text-[13.5px] sm:text-xs leading-relaxed",
-                    complaint.status === 'SELESAI'
-                      ? "text-emerald-700 dark:text-emerald-400"
-                      : "text-blue-700 dark:text-blue-400"
-                  )}>
-                    {complaint.resolutionNotes}
-                  </p>
-                )}
-                {complaint.replacementStatus && (
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <span className="text-[13px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium">Penggantian:</span>
-                    <Badge
-                      variant={
-                        complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'success' :
-                        complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'warning' : 'purple'
-                      }
-                    >
-                      {complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'Siap di Antrean Kirim' :
-                       complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'Menunggu Produksi (SPK)' :
-                       complaint.replacementStatus === 'SHIPPED' ? 'Dalam Pengiriman' : 'Selesai Dikirim'}
-                    </Badge>
-                  </div>
-                )}
-                <div className={cn(
-                  "text-xs sm:text-[11px] pt-1",
-                  complaint.status === 'SELESAI'
-                    ? "text-emerald-600/80 dark:text-emerald-500"
-                    : "text-blue-600/80 dark:text-blue-500"
-                )}>
-                  {complaint.status === 'SELESAI' && complaint.resolvedAt
-                    ? `Diselesaikan pada ${formatDateTime(complaint.resolvedAt)}`
-                    : 'Status: Sedang Ditangani'}
-                </div>
-
-                {complaint.status === 'DITANGANI' && (
-                  <div className="pt-2 border-t border-blue-200/60 dark:border-blue-900/40 flex justify-end">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setManualCompleteNotes('');
-                        setIsManualCompleteModalOpen(true);
-                      }}
-                    >
-                      Tandai Selesai Manual
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Modal Konfirmasi Resolusi Refund */}
-      <Modal
-        isOpen={isRefundModalOpen}
-        onClose={() => setIsRefundModalOpen(false)}
-        title="Konfirmasi Resolusi Refund"
-        size="lg"
-        actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => setIsRefundModalOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmRefund}
-              disabled={cashToReturn > 0 && !refundBankAccountId}
-            >
-              Proses Refund
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
-          {/* Ringkasan Item Direfund */}
-          <div>
-            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-              Item yang Direfund
-            </div>
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-              {complaint.items.map((item, idx) => {
-                const itemPrice = (item.unitPrice && item.unitPrice > 0)
-                  ? item.unitPrice
-                  : (order.items.find(oi => oi.productId === item.productId)?.unitPrice ?? 0);
-                const subtotal = itemPrice * item.qty;
-                return (
-                  <div key={idx} className="p-3 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 text-[13.5px] md:text-xs">
-                    <div>
-                      <div className="font-semibold text-slate-900 dark:text-white">
-                        {item.productName}
-                      </div>
-                      <div className="text-slate-500">
-                        {item.variantLabel ? `${formatVariantLabel(item.variantLabel)} • ` : ''}{item.qty} unit × {formatCurrency(itemPrice)}
+                      <div className="min-w-0">
+                        <span className="font-semibold text-slate-900 dark:text-white block truncate">{item.productName}</span>
+                        {item.variantLabel && (
+                          <span className="text-slate-500 text-xs block truncate">
+                            {formatVariantLabel(item.variantLabel)}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="font-semibold text-slate-900 dark:text-white">
-                      {formatCurrency(subtotal)}
-                    </div>
+                    <span className="font-bold text-slate-900 dark:text-white shrink-0 ml-3">x{item.qty}</span>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Rincian Finansial & Tagihan */}
-          <div className="bg-slate-50 dark:bg-slate-800/40 rounded-lg p-3.5 border border-slate-200/80 dark:border-slate-800 space-y-2 text-[13.5px] md:text-xs">
-            <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
-              <span>Total Tagihan Pesanan Awal</span>
-              <span className="font-medium text-slate-900 dark:text-white">{formatCurrency(currentTotal)}</span>
-            </div>
-            <div className="flex justify-between items-center text-rose-600 dark:text-rose-400 font-medium">
-              <span>Nilai Item Direfund</span>
-              <span>- {formatCurrency(refundAmount)}</span>
-            </div>
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 flex justify-between items-center font-bold text-slate-900 dark:text-white">
-              <span>Total Tagihan Pesanan Baru</span>
-              <span>{formatCurrency(newTotal)}</span>
+          {/* Card 3: Bukti Lampiran */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3">
+            <h3 className="font-bold text-base md:text-sm text-slate-900 dark:text-white">
+              Bukti Lampiran
+            </h3>
+            {complaint.attachments && complaint.attachments.length > 0 ? (
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
+                {complaint.attachments.map((att) => (
+                  <button
+                    key={att.id}
+                    type="button"
+                    onClick={() => setSelectedMedia(att)}
+                    className="group relative aspect-square rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-500 dark:hover:border-indigo-400 hover:ring-2 hover:ring-indigo-500/20 focus:outline-none transition-all cursor-pointer"
+                  >
+                    {att.type === 'image' ? (
+                      <img
+                        src={att.url}
+                        alt=""
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                    ) : (
+                      <div className="w-full h-full relative flex items-center justify-center bg-slate-900">
+                        <video
+                          src={att.url}
+                          className="w-full h-full object-cover pointer-events-none opacity-80"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-colors">
+                          <div className="p-1 rounded-full bg-black/60 text-white shadow-xs group-hover:scale-110 transition-transform">
+                            <Play className="w-3 h-3 fill-current ml-0.5" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Tidak ada bukti lampiran yang disertakan.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Kolom Kanan: Referensi Pesanan & Aksi */}
+        <div className="lg:col-span-4 space-y-4">
+          {/* Card Referensi */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3">
+            <h3 className="font-bold text-base md:text-sm text-slate-900 dark:text-white">
+              Referensi Pesanan
+            </h3>
+            <div className="space-y-2.5 pt-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Nomor Komplain</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">
+                  {complaint.id}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                <span className="text-slate-500 dark:text-slate-400">Tanggal Komplain</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {formatDateTime(complaint.createdAt)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                <span className="text-slate-500 dark:text-slate-400">ID Pesanan</span>
+                <Link
+                  href={`/order/${order.id}`}
+                  className="font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  {order.orderNumber}
+                </Link>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                <span className="text-slate-500 dark:text-slate-400">Nama Pelanggan</span>
+                <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[180px]">
+                  {order.customer.name}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                <span className="text-slate-500 dark:text-slate-400">Tanggal Pesanan</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {formatDateTime(order.createdAt)}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Status Pembayaran & Dampak Finansial */}
-          <div className="p-3.5 rounded-lg border border-slate-200/80 dark:border-slate-800 space-y-2 text-[13.5px] md:text-xs">
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500 dark:text-slate-400">Sudah Dibayar Pelanggan</span>
-              <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(currentPaid)}</span>
+          {/* Action / Resolusi (Desktop) */}
+          {(!complaint.resolution || complaint.status === 'DIAJUKAN' || complaint.status === 'MENUNGGU') ? (
+            <div className="hidden lg:block">
+              <Button
+                size="lg"
+                variant="primary"
+                className="w-full h-11 font-semibold text-sm shadow-sm"
+                onClick={() => setIsActionModalOpen(true)}
+              >
+                Tanggapi Komplain
+              </Button>
             </div>
+          ) : complaint.status === 'DITOLAK' ? (
+            <div className="p-4 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/30 space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-sm text-red-800 dark:text-red-300">
+                <XCircle className="w-4 h-4 shrink-0" />
+                <span>Komplain Ditolak</span>
+              </div>
+              {complaint.rejectionReason && (
+                <div className="text-[13.5px] sm:text-xs text-red-700 dark:text-red-400 leading-relaxed">
+                  <span className="font-semibold">Alasan Penolakan: </span>
+                  {complaint.rejectionReason}
+                </div>
+              )}
+              <div className="text-xs sm:text-[11px] text-red-600/80 dark:text-red-500 pt-1">
+                {complaint.rejectedAt
+                  ? `Ditolak ${complaint.rejectedBy ? `oleh ${complaint.rejectedBy} ` : ''}pada ${formatDateTime(complaint.rejectedAt)}`
+                  : 'Status: Ditolak'}
+              </div>
+            </div>
+          ) : (
+            <div className={cn(
+              "p-4 rounded-xl border space-y-3",
+              complaint.status === 'SELESAI'
+                ? "border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30"
+                : "border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30"
+            )}>
+              <div className={cn(
+                "flex items-center gap-2 font-semibold text-sm",
+                complaint.status === 'SELESAI'
+                  ? "text-emerald-800 dark:text-emerald-300"
+                  : "text-blue-800 dark:text-blue-300"
+              )}>
+                {complaint.status === 'SELESAI' ? (
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                ) : (
+                  <Clock className="w-4 h-4 shrink-0" />
+                )}
+                <span>Resolusi: {complaint.resolution}</span>
+              </div>
+              {complaint.resolutionNotes && (
+                <p className={cn(
+                  "text-[13.5px] sm:text-xs leading-relaxed",
+                  complaint.status === 'SELESAI'
+                    ? "text-emerald-700 dark:text-emerald-400"
+                    : "text-blue-700 dark:text-blue-400"
+                )}>
+                  {complaint.resolutionNotes}
+                </p>
+              )}
+              {complaint.replacementStatus && (
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[13px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium">Penggantian:</span>
+                  <Badge
+                    variant={
+                      complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'success' :
+                      complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'warning' : 'purple'
+                    }
+                  >
+                    {complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'Siap di Antrean Kirim' :
+                     complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'Menunggu Produksi (SPK)' :
+                     complaint.replacementStatus === 'SHIPPED' ? 'Dalam Pengiriman' : 'Selesai Dikirim'}
+                  </Badge>
+                </div>
+              )}
+              <div className={cn(
+                "text-xs sm:text-[11px] pt-1",
+                complaint.status === 'SELESAI'
+                  ? "text-emerald-600/80 dark:text-emerald-500"
+                  : "text-blue-600/80 dark:text-blue-500"
+              )}>
+                {complaint.status === 'SELESAI' && complaint.resolvedAt
+                  ? `Diselesaikan pada ${formatDateTime(complaint.resolvedAt)}`
+                  : 'Status: Sedang Ditangani'}
+              </div>
 
+              {complaint.status === 'DITANGANI' && (
+                <div className="pt-2 border-t border-blue-200/60 dark:border-blue-900/40 flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setManualCompleteNotes('');
+                      setIsManualCompleteModalOpen(true);
+                    }}
+                  >
+                    Tandai Selesai Manual
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile Fixed Bottom Action Bar: Tanggapi Komplain */}
+      {(!complaint.resolution || complaint.status === 'DIAJUKAN' || complaint.status === 'MENUNGGU') && (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-4 pb-[max(12px,calc(env(safe-area-inset-bottom,0px)+4px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
+          <Button
+            size="lg"
+            variant="primary"
+            className="w-full h-12 font-semibold text-[15px] justify-center rounded-xl shadow-sm"
+            onClick={() => setIsActionModalOpen(true)}
+          >
+            Tanggapi Komplain
+          </Button>
+        </div>
+      )}
+
+      {/* Modal: Pilih Tindakan */}
+      <Modal
+        isOpen={isActionModalOpen}
+        onClose={() => setIsActionModalOpen(false)}
+        title="Pilih Tindakan"
+        size="sm"
+        bodyClassName="p-3.5 sm:p-5 space-y-0"
+      >
+        <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setIsActionModalOpen(false);
+              setIsFulfillmentModalOpen(true);
+            }}
+            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-[15px] font-medium text-slate-700 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800 transition-colors cursor-pointer text-left select-none active:scale-[0.99]"
+          >
+            <Truck className="h-5 w-5 text-slate-500 dark:text-slate-400 shrink-0" />
+            <span>Kirim barang pengganti</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsActionModalOpen(false);
+              setIsRefundModalOpen(true);
+            }}
+            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-[15px] font-medium text-slate-700 hover:bg-slate-100 active:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800 transition-colors cursor-pointer text-left select-none active:scale-[0.99]"
+          >
+            <Wallet className="h-5 w-5 text-slate-500 dark:text-slate-400 shrink-0" />
+            <span>Batalkan pesanan (refund)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsActionModalOpen(false);
+              setRejectionReason('');
+              setRejectionError('');
+              setIsRejectModalOpen(true);
+            }}
+            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-[15px] font-medium text-red-600 hover:bg-red-50 active:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 dark:active:bg-red-950/40 transition-colors cursor-pointer text-left select-none active:scale-[0.99]"
+          >
+            <XCircle className="h-5 w-5 text-red-500 dark:text-red-400 shrink-0" />
+            <span>Tolak komplain</span>
+          </button>
+        </div>
+      </Modal>
+
+      {/* Modal Resolusi: Batalkan Pesanan (Refund) */}
+      <Modal
+        isOpen={isRefundModalOpen}
+        onClose={() => setIsRefundModalOpen(false)}
+        title="Batalkan Pesanan (Refund)"
+        size="md"
+        actions={
+          <Button
+            size="lg"
+            variant="danger"
+            className="w-full"
+            onClick={handleConfirmRefund}
+            disabled={cashToReturn > 0 && !refundBankAccountId}
+          >
+            Batalkan & Refund
+          </Button>
+        }
+      >
+        <div className="space-y-4 text-[13.5px] md:text-xs">
+          {/* Ringkasan Finansial Singkat */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3.5 border border-slate-200/80 dark:border-slate-800 space-y-2">
+            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+              <span>Nilai Komplain</span>
+              <span className="font-medium text-slate-900 dark:text-white">{formatCurrency(refundAmount)}</span>
+            </div>
+            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
+              <span>Sudah Dibayar</span>
+              <span className="font-medium text-slate-900 dark:text-white">{formatCurrency(currentPaid)}</span>
+            </div>
             {cashToReturn > 0 ? (
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-bold">
-                <span>Kelebihan Bayar (Dana Kembali ke Pelanggan)</span>
-                <span className="text-sm">{formatCurrency(cashToReturn)}</span>
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 flex justify-between items-center font-bold">
+                <span className="text-slate-900 dark:text-white">Dana Dikembalikan</span>
+                <span className="text-sm md:text-xs text-emerald-600 dark:text-emerald-400">{formatCurrency(cashToReturn)}</span>
               </div>
             ) : (
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center font-medium">
-                <span className="text-slate-600 dark:text-slate-400">Sisa Tagihan / Piutang Baru</span>
-                <span className="font-bold text-slate-900 dark:text-white">{formatCurrency(newRemainingUnpaid)}</span>
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 flex justify-between items-center font-bold">
+                <span className="text-slate-900 dark:text-white">Sisa Tagihan Baru</span>
+                <span className="text-sm md:text-xs text-slate-900 dark:text-white">{formatCurrency(newRemainingUnpaid)}</span>
               </div>
             )}
           </div>
 
-          {/* Jika ada kas keluar yang harus dikembalikan ke pelanggan */}
+          {/* Rekening Pengeluaran jika ada pengembalian kas */}
           {cashToReturn > 0 && (
-            <div>
-              <Select
-                label="Rekening Pengeluaran Kas / Bank"
-                required
-                value={refundBankAccountId}
-                onChange={e => setRefundBankAccountId(e.target.value)}
-                options={bankAccounts.map(ba => ({
-                  value: ba.id,
-                  label: `${ba.name} (Saldo: ${formatCurrency(ba.balance)})`,
-                }))}
-              />
-            </div>
+            <Select
+              label="Rekening Pengeluaran Kas"
+              required
+              value={refundBankAccountId}
+              onChange={e => setRefundBankAccountId(e.target.value)}
+              options={bankAccounts.map(ba => ({
+                value: ba.id,
+                label: `${ba.name} (Saldo: ${formatCurrency(ba.balance)})`,
+              }))}
+            />
           )}
 
-          {/* Catatan Resolusi */}
-          <div>
-            <Input
-              label="Catatan Resolusi (Opsional)"
-              placeholder="Contoh: Refund ditransfer via bank atas retur barang"
-              value={refundNotes}
-              onChange={e => setRefundNotes(e.target.value)}
+          {/* Opsi Tarik Barang */}
+          <label className="flex items-center gap-2.5 cursor-pointer select-none py-0.5">
+            <Checkbox
+              checked={isRefundReturnRequested}
+              onChange={checked => setIsRefundReturnRequested(checked)}
             />
-          </div>
+            <span className="font-medium text-[13.5px] md:text-xs text-slate-800 dark:text-slate-200">
+              Tarik barang dari pelanggan
+            </span>
+          </label>
+
+          {/* Catatan Resolusi */}
+          <Input
+            label="Catatan (Opsional)"
+            placeholder="Tambahkan catatan jika ada..."
+            value={refundNotes}
+            onChange={e => setRefundNotes(e.target.value)}
+          />
         </div>
       </Modal>
 
-      {/* Modal Konfirmasi Resolusi Pemenuhan Barang Pengganti */}
+      {/* Modal Resolusi: Kirim Barang Pengganti */}
       <Modal
         isOpen={isFulfillmentModalOpen}
         onClose={() => setIsFulfillmentModalOpen(false)}
-        title="Penuhi Barang Pengganti"
-        size="lg"
+        title="Kirim Barang Pengganti"
+        size="md"
         actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => setIsFulfillmentModalOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmFulfillment}
-            >
-              Setujui Pemenuhan
-            </Button>
-          </>
+          <Button
+            size="lg"
+            variant="primary"
+            className="w-full"
+            onClick={handleConfirmFulfillment}
+          >
+            Proses Komplain
+          </Button>
         }
       >
-        <div className="space-y-4 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
-          <div>
-            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-              Item yang Diganti
-            </div>
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-              {complaint.items.map((item, idx) => (
-                <div key={idx} className="p-3 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 text-[13.5px] md:text-xs">
-                  <div>
-                    <div className="font-semibold text-slate-900 dark:text-white">
-                      {item.productName}
-                    </div>
-                    {item.variantLabel && (
-                      <div className="text-slate-500">
-                        {formatVariantLabel(item.variantLabel)}
-                      </div>
-                    )}
-                  </div>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {item.qty} unit
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
+        <div className="space-y-6 text-[13.5px] md:text-xs">
           {/* Pilihan Sumber Pemenuhan */}
           <div className="space-y-2">
             <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Pilih Sumber Pemenuhan Unit <span className="text-red-500">*</span>
+              Sumber Barang
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <label
                 className={cn(
-                  "flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-all",
+                  "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
                   replacementSource === 'NEW_SPK'
-                    ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 dark:border-indigo-500 ring-1 ring-indigo-600/30"
+                    ? "border-slate-400 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50"
                     : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
                 )}
               >
@@ -675,25 +652,25 @@ export default function ComplaintDetailPage() {
                   name="replacementSource"
                   checked={replacementSource === 'NEW_SPK'}
                   onChange={() => setReplacementSource('NEW_SPK')}
-                  className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                  className="mt-0.5 h-4 w-4 text-slate-900 dark:text-slate-100 focus:ring-slate-400"
                 />
                 <div className="min-w-0">
-                  <span className="block font-semibold text-[13.5px] md:text-xs text-slate-900 dark:text-white">
-                    Terbitkan SPK Produksi Baru
+                  <span className="block font-medium text-[13.5px] md:text-xs text-slate-900 dark:text-white">
+                    Produksi Barang Baru
                   </span>
-                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                    Membuat tiket SPK baru di modul Produksi agar tukang mengerjakan unit pengganti.
+                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Produksi ulang unit
                   </span>
                 </div>
               </label>
 
               <label
                 className={cn(
-                  "flex items-start gap-3 p-3.5 rounded-xl border transition-all",
+                  "flex items-start gap-3 p-3 rounded-md border transition-colors",
                   totalAvailableStockForComplaint < totalNeededStock
-                    ? "opacity-60 cursor-not-allowed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
+                    ? "opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
                     : replacementSource === 'FINISHED_STOCK'
-                    ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 dark:border-indigo-500 ring-1 ring-indigo-600/30 cursor-pointer"
+                    ? "border-slate-400 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 cursor-pointer"
                     : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer"
                 )}
               >
@@ -703,63 +680,49 @@ export default function ComplaintDetailPage() {
                   checked={replacementSource === 'FINISHED_STOCK'}
                   onChange={() => setReplacementSource('FINISHED_STOCK')}
                   disabled={totalAvailableStockForComplaint < totalNeededStock}
-                  className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500"
+                  className="mt-0.5 h-4 w-4 text-slate-900 dark:text-slate-100 focus:ring-slate-400"
                 />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-semibold text-[13.5px] md:text-xs text-slate-900 dark:text-white">
-                      Ambil dari Stok Bebas Gudang
+                    <span className="font-medium text-[13.5px] md:text-xs text-slate-900 dark:text-white">
+                      Ambil dari Stok
                     </span>
-                    <Badge variant={totalAvailableStockForComplaint >= totalNeededStock ? "success" : "default"}>
-                      Stok Bebas: {totalAvailableStockForComplaint}
+                    <Badge variant={totalAvailableStockForComplaint >= totalNeededStock ? "default" : "default"}>
+                      {totalAvailableStockForComplaint} unit
                     </Badge>
                   </div>
-                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {totalAvailableStockForComplaint >= totalNeededStock
-                      ? "Langsung tahan unit barang jadi di gudang dan masuk ke Antrean Kirim."
-                      : "Stok bebas di gudang tidak mencukupi, harap gunakan SPK baru."}
+                      ? "Ambil dari barang jadi"
+                      : "Stok tidak cukup"}
                   </span>
                 </div>
               </label>
             </div>
           </div>
 
-          {/* Opsi Penarikan Barang Lama (Tukar Guling) */}
-          <div
-            onClick={() => setIsReturnRequested(!isReturnRequested)}
-            className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 cursor-pointer"
-          >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-                <Checkbox
-                  checked={isReturnRequested}
-                  onChange={checked => setIsReturnRequested(checked)}
-                />
-              </div>
-              <div className="min-w-0">
-                <span className="block font-semibold text-[13.5px] md:text-xs text-slate-900 dark:text-white">
-                  Tarik barang lama dari pelanggan (Tukar Guling)
-                </span>
-                <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                  Item lama akan tercatat di tab Barang Retur (menunggu fisik) dan otomatis menjadi instruksi penarikan bagi supir saat pengantaran barang pengganti.
-                </span>
-              </div>
-            </div>
-          </div>
+          {/* Opsi Tarik Barang */}
+          <label className="flex items-center gap-2.5 cursor-pointer select-none py-0.5">
+            <Checkbox
+              checked={isReturnRequested}
+              onChange={checked => setIsReturnRequested(checked)}
+            />
+            <span className="font-medium text-[13.5px] md:text-xs text-slate-800 dark:text-slate-200">
+              Tarik barang dari pelanggan
+            </span>
+          </label>
 
           {/* Catatan Resolusi */}
-          <div>
-            <Input
-              label="Catatan Resolusi (Opsional)"
-              placeholder="Contoh: Unit pengganti dijadwalkan selesai minggu ini..."
-              value={fulfillmentNotes}
-              onChange={e => setFulfillmentNotes(e.target.value)}
-            />
-          </div>
+          <Input
+            label="Catatan (Opsional)"
+            placeholder="Tambahkan catatan jika ada..."
+            value={fulfillmentNotes}
+            onChange={e => setFulfillmentNotes(e.target.value)}
+          />
         </div>
       </Modal>
 
-      {/* Modal Tandai Selesai Manual */}
+      {/* Modal Resolusi: Tandai Selesai Manual */}
       <Modal
         isOpen={isManualCompleteModalOpen}
         onClose={() => setIsManualCompleteModalOpen(false)}
@@ -782,58 +745,44 @@ export default function ComplaintDetailPage() {
           </>
         }
       >
-        <div className="space-y-3 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
-          <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-            Gunakan opsi ini jika komplain telah diselesaikan melalui kesepakatan damai atau di luar sistem pengiriman otomatis. Tiket komplain akan langsung ditandai selesai.
-          </p>
-          <div>
-            <Input
-              label="Catatan Penyelesaian (Opsional)"
-              placeholder="Contoh: Diselesaikan secara damai / serah terima langsung di workshop..."
-              value={manualCompleteNotes}
-              onChange={e => setManualCompleteNotes(e.target.value)}
-            />
-          </div>
+        <div className="space-y-4 text-[13.5px] md:text-xs">
+          <Input
+            label="Catatan Penyelesaian (Opsional)"
+            placeholder="Keterangan kesepakatan atau penyelesaian..."
+            value={manualCompleteNotes}
+            onChange={e => setManualCompleteNotes(e.target.value)}
+          />
         </div>
       </Modal>
 
-      {/* Modal Konfirmasi Tolak Komplain */}
+      {/* Modal Resolusi: Tolak Komplain */}
       <Modal
         isOpen={isRejectModalOpen}
         onClose={() => setIsRejectModalOpen(false)}
-        title="Tolak Pengajuan Komplain"
+        title="Tolak Komplain"
         size="md"
         actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => setIsRejectModalOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmReject}
-            >
-              Tolak Komplain
-            </Button>
-          </>
+          <Button
+            size="lg"
+            variant="danger"
+            className="w-full"
+            onClick={handleConfirmReject}
+          >
+            Tolak Komplain
+          </Button>
         }
       >
-        <div className="space-y-4 text-[13.5px] md:text-xs text-slate-700 dark:text-slate-300">
-          <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-            Pengajuan komplain dari pelanggan akan ditolak. Pesanan tidak akan mengalami perubahan tagihan dan tidak ada barang retur yang masuk ke inventaris.
-          </p>
+        <div className="space-y-4 text-[13.5px] md:text-xs">
           <Textarea
             label="Alasan Penolakan"
             required
-            rows={4}
+            rows={3}
             value={rejectionReason}
             onChange={e => {
               setRejectionReason(e.target.value);
               if (rejectionError) setRejectionError('');
             }}
-            placeholder="Tuliskan alasan penolakan secara jelas..."
+            placeholder="Tuliskan alasan penolakan..."
             error={rejectionError}
           />
         </div>

@@ -338,13 +338,19 @@ export default function DeliveryOrderDetailPage() {
             </div>
           </div>
 
-          {/* Alert Catatan Pesanan dari SO (Sebelum Daftar Barang) */}
+          {/* Container Catatan Pesanan dari SO */}
           {orderNotes && (
-            <Alert
-              variant="warning"
-              title="Catatan Pesanan"
-              description={orderNotes}
-            />
+            <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 rounded-xl p-4 shadow-xs flex items-start gap-3">
+              <FileText className="h-5 w-5 text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <span className="text-xs sm:text-[10px] font-semibold text-slate-400 dark:text-slate-500 block leading-tight">
+                  Catatan Pesanan:
+                </span>
+                <p className="text-[13.5px] sm:text-xs text-slate-600 dark:text-slate-300 font-normal leading-relaxed mt-1">
+                  {orderNotes}
+                </p>
+              </div>
+            </div>
           )}
 
           {/* Card Daftar Barang */}

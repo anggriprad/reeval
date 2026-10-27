@@ -28,9 +28,9 @@ const allNavItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/order', label: 'Sales Order', icon: ShoppingCart },
   { href: '/production', label: 'Production', icon: Factory },
+  { href: '/delivery', label: 'Delivery', icon: Truck },
   { href: '/inventory', label: 'Inventory', icon: Warehouse },
   { href: '/products', label: 'Product Catalog', icon: PackageOpen },
-  { href: '/delivery', label: 'Delivery', icon: Truck },
   { href: '/finance', label: 'Finance', icon: DollarSign },
 ];
 

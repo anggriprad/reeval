@@ -22,6 +22,33 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [isLoggedIn, isLoginPage, router]);
 
+  // Dynamically sync browser status bar / theme-color with the active dark/light mode
+  useEffect(() => {
+    const updateThemeMeta = () => {
+      const isDark = document.documentElement.classList.contains('dark');
+      let meta = document.querySelector('meta[name="theme-color"]:not([media])');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'theme-color');
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', isDark ? '#020617' : '#f0f2f5');
+    };
+
+    updateThemeMeta();
+
+    const observer = new MutationObserver(() => {
+      updateThemeMeta();
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   // If on login page, render full screen without sidebar
   if (isLoginPage) {
     return (
@@ -37,7 +64,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div className="min-h-screen bg-[#f0f2f5] dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <PullToRefresh />
       <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
       <MobileHeader />

@@ -1438,27 +1438,25 @@ function FinanceContent() {
       {activeTab === 'cash_bank' && (
         <div className="space-y-6">
           {bankAccounts.length === 0 ? (
-            <Card className="p-4">
-              <EmptyState
-                icon={<Building2 className="h-8 w-8 text-slate-400" />}
-                title="Belum Ada Rekening"
-                description="Tambahkan rekening untuk mulai mencatat transaksi dan mutasi keuangan."
-                action={
-                  <Button
-                    onClick={() => {
-                      setEditBankId(null);
-                      setBankName('');
-                      setBankNumber('');
-                      setBankInitialBalance('');
-                      setBankError('');
-                      setShowBankModal(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-1.5" /> Tambah Rekening
-                  </Button>
-                }
-              />
-            </Card>
+            <EmptyState
+              icon={<Building2 className="h-8 w-8 text-slate-400" />}
+              title="Belum Ada Rekening"
+              description="Tambahkan rekening untuk mulai mencatat transaksi dan mutasi keuangan."
+              action={
+                <Button
+                  onClick={() => {
+                    setEditBankId(null);
+                    setBankName('');
+                    setBankNumber('');
+                    setBankInitialBalance('');
+                    setBankError('');
+                    setShowBankModal(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1.5" /> Tambah Rekening
+                </Button>
+              }
+            />
           ) : (
             <>
               {/* Total Likuiditas Berjalan */}

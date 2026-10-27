@@ -31,6 +31,7 @@ import { ComplaintAttachment } from '@/lib/types';
 import { CustomProcessModal } from '@/components/order/CustomProcessModal';
 import {
   ArrowLeft,
+  ArrowRight,
   Phone,
   MapPin,
   MessageSquare,
@@ -47,6 +48,8 @@ import {
   Circle,
   CircleDot,
   Upload,
+  Plus,
+  Loader2,
   Film,
   Trash2,
   Eye,
@@ -303,7 +306,7 @@ export default function OrderDetailPage() {
       setComplaintError('Upload minimal satu bukti foto atau video kerusakan / kendala produk.');
       return;
     }
-    
+
     const items = complaintItems.map(c => {
       const oItem = order.items[c.idx];
       return {
@@ -334,9 +337,9 @@ export default function OrderDetailPage() {
 
   // Log Proses / Riwayat Pesanan
   const relatedWorkOrders = (workOrders || []).filter(wo => wo.salesOrderId === order.id || wo.salesOrderNumber === order.orderNumber);
-  const relatedDeliveries = (deliveryOrders || []).filter(doItem => 
-    doItem.salesOrderId === order.id || 
-    (doItem.salesOrderIds && doItem.salesOrderIds.includes(order.id)) || 
+  const relatedDeliveries = (deliveryOrders || []).filter(doItem =>
+    doItem.salesOrderId === order.id ||
+    (doItem.salesOrderIds && doItem.salesOrderIds.includes(order.id)) ||
     doItem.salesOrderNumber === order.orderNumber
   );
 
@@ -624,25 +627,29 @@ export default function OrderDetailPage() {
           {order.complaints
             .filter(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK')
             .map(complaint => (
-            <div
-              key={complaint.id}
-              className="text-[13.5px] sm:text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-3 flex-wrap shadow-xs"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div className="min-w-0">
-                  <span className="font-bold mr-1.5">Komplain: {complaint.category}</span>
-                  <span className="text-amber-700/80 dark:text-amber-300/80 text-xs sm:text-[11px]">({getComplaintStatusLabel(complaint.status)}) — "{complaint.description}"</span>
-                </div>
-              </div>
-              <Link
-                href={`/order/complaint/${complaint.id}`}
-                className="font-bold text-[13px] sm:text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 shrink-0 ml-auto"
+              <div
+                key={complaint.id}
+                className="text-[13.5px] sm:text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 px-3.5 py-2 rounded-xl border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-3 flex-wrap shadow-xs"
               >
-                Lihat Detail Komplain &rarr;
-              </Link>
-            </div>
-          ))}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="font-bold mr-1.5">Komplain: {complaint.category}</span>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant='secondary'
+                  onClick={() => router.push(`/order/complaint/${complaint.id}`)}
+                  className="shrink-0 ml-auto max-md:w-11 max-md:p-0 max-md:justify-center"
+                  aria-label="Lihat Detail"
+                  title="Lihat Detail"
+                >
+                  <span className="hidden md:inline">Lihat Detail</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
         </div>
       )}
 
@@ -665,7 +672,7 @@ export default function OrderDetailPage() {
         {/* KOLOM KIRI (7 COLS): DAFTAR CARD ITEM PRODUK & TOTAL AMOUNT */}
         <div className="lg:col-span-7 space-y-4">
           {/* CONTAINER: INFORMASI PELANGGAN (DENGAN STATUS BADGE DI KANAN NAMA) */}
-          <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2">
+          <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl space-y-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-900 dark:text-white">
                 {order.customer.name}
@@ -698,7 +705,7 @@ export default function OrderDetailPage() {
             )}
           </div>
           {/* SINGLE CONTAINER UNTUK SELURUH ITEM PESANAN DAN TOTAL AMOUNT */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xs overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xs overflow-hidden">
             {/* DAFTAR ITEM PESANAN */}
             <div className="divide-y divide-slate-200 dark:divide-slate-700">
               {order.items.map((item, idx) => {
@@ -714,13 +721,12 @@ export default function OrderDetailPage() {
                 return (
                   <div
                     key={idx}
-                    className={`p-4 space-y-3 transition-colors ${
-                      isFullyRefunded
-                        ? 'bg-rose-50/40 dark:bg-rose-950/20'
-                        : isPartiallyRefunded
-                          ? 'bg-amber-50/20 dark:bg-amber-950/10'
-                          : ''
-                    }`}
+                    className={`p-4 space-y-3 transition-colors ${isFullyRefunded
+                      ? 'bg-rose-50/40 dark:bg-rose-950/20'
+                      : isPartiallyRefunded
+                        ? 'bg-amber-50/20 dark:bg-amber-950/10'
+                        : ''
+                      }`}
                   >
                     {/* BAGIAN ATAS: Visual Produk + Nama, Varian, Modifiers, Catatan Produk */}
                     <div className="flex items-start gap-3 min-w-0">
@@ -855,7 +861,7 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            <div className="flex justify-between items-center p-4 bg-indigo-50 dark:bg-indigo-950/40 border-t border-slate-200/80 dark:border-slate-800 font-bold text-sm">
+            <div className="flex justify-between items-center p-4 bg-indigo-100 dark:bg-indigo-950/40 font-bold text-sm">
               <span className="text-slate-800 dark:text-slate-200">Total Pembayaran</span>
               <span className="text-indigo-600 dark:text-indigo-400 text-base sm:text-lg font-mono">
                 {formatCurrency(order.totalAmount)}
@@ -865,7 +871,7 @@ export default function OrderDetailPage() {
 
           {/* TERPISAH: Container Catatan Pesanan (Jika Ada) */}
           {order.orderNotes && (
-            <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 rounded-xl p-4 shadow-xs flex items-start gap-3">
+            <div className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-4 shadow-xs flex items-start gap-3">
               <FileText className="h-5 w-5 text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <span className="text-xs sm:text-[10px] font-semibold text-slate-400 dark:text-slate-500 block leading-tight">
@@ -884,7 +890,7 @@ export default function OrderDetailPage() {
         {/* KOLOM KANAN (5 COLS): PELANGGAN, RIWAYAT PESANAN, KONTAK WHATSAPP */}
         <div className="lg:col-span-5 space-y-5">
           {/* CONTAINER: INFORMASI PESANAN & SALES (Tanpa garis pemisah) */}
-          <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2.5 text-[13.5px] sm:text-xs">
+          <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl space-y-2.5 text-[13.5px] sm:text-xs">
             <div className="flex items-center justify-between py-1">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Nomor Pesanan</span>
               <div className="flex items-center gap-1.5">
@@ -916,7 +922,7 @@ export default function OrderDetailPage() {
             if (displayedEvents.length === 0) return null;
 
             return (
-              <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-xs">
+              <div className="bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden shadow-xs">
                 <button
                   type="button"
                   onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
@@ -924,9 +930,8 @@ export default function OrderDetailPage() {
                 >
                   <span>Riwayat Pesanan</span>
                   <ChevronDown
-                    className={`w-4.5 h-4.5 text-slate-400 transition-transform duration-200 ${
-                      isHistoryExpanded ? 'rotate-180' : ''
-                    }`}
+                    className={`w-4.5 h-4.5 text-slate-400 transition-transform duration-200 ${isHistoryExpanded ? 'rotate-180' : ''
+                      }`}
                   />
                 </button>
 
@@ -962,24 +967,22 @@ export default function OrderDetailPage() {
                             {/* Content */}
                             <div className={`space-y-0.5 ${!isLast ? 'pb-3.5' : ''}`}>
                               <div
-                                className={`text-[13.5px] sm:text-sm ${
-                                  isDone
-                                    ? 'text-slate-500 dark:text-slate-400 font-medium'
-                                    : isCurrent
+                                className={`text-[13.5px] sm:text-sm ${isDone
+                                  ? 'text-slate-500 dark:text-slate-400 font-medium'
+                                  : isCurrent
                                     ? 'text-slate-900 dark:text-white font-bold'
                                     : 'text-slate-400 dark:text-slate-500 font-medium'
-                                }`}
+                                  }`}
                               >
                                 {evt.title}
                               </div>
                               <p
-                                className={`text-xs sm:text-[13px] leading-relaxed ${
-                                  isDone
-                                    ? 'text-slate-400 dark:text-slate-500'
-                                    : isCurrent
+                                className={`text-xs sm:text-[13px] leading-relaxed ${isDone
+                                  ? 'text-slate-400 dark:text-slate-500'
+                                  : isCurrent
                                     ? 'text-slate-800 dark:text-white'
                                     : 'text-slate-400 dark:text-slate-600'
-                                }`}
+                                  }`}
                               >
                                 {evt.description}
                               </p>
@@ -1036,7 +1039,7 @@ export default function OrderDetailPage() {
             {/* WhatsApp Pelanggan */}
             {order.customer.phone && (
               <Button
-                variant="secondary"
+                variant="outline"
                 className="w-full"
                 onClick={() => window.open(getWhatsAppUrl(order.customer.phone), '_blank')}
               >
@@ -1048,7 +1051,7 @@ export default function OrderDetailPage() {
             {/* WhatsApp Sales (Memuat Nomor SO & URL Detail SO) */}
             {salesPhone && (
               <Button
-                variant="secondary"
+                variant="outline"
                 className="w-full"
                 onClick={() => window.open(getWhatsAppUrl(salesPhone, salesWaMsg), '_blank')}
               >
@@ -1077,7 +1080,7 @@ export default function OrderDetailPage() {
 
       {/* MOBILE BOTTOM FIXED ACTION BAR: Tombol aksi utama "Proses Pesanan" selalu berada di bawah tanpa ikut scroll (Konsisten dengan Buat Pesanan) */}
       {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-3 pb-[calc(12px+env(safe-area-inset-bottom,0px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-3 pb-[max(12px,calc(env(safe-area-inset-bottom,0px)+4px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
           <Button
             variant="success"
             className="w-full h-12 text-[15px] font-bold justify-center rounded-xl"
@@ -1131,21 +1134,13 @@ export default function OrderDetailPage() {
         size="md"
         mobileBottomSheet
         actions={
-          <>
-            <Button
-              variant="ghost"
-              onClick={() => setComplaintModalOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSubmitComplaint}
-              disabled={uploadingFiles}
-            >
-              {uploadingFiles ? 'Memproses File...' : 'Kirim Pengajuan'}
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            onClick={handleSubmitComplaint}
+            disabled={uploadingFiles}
+          >
+            {uploadingFiles ? 'Memproses File...' : 'Kirim Pengajuan'}
+          </Button>
         }
       >
         <div className="space-y-6 sm:space-y-4">
@@ -1181,16 +1176,15 @@ export default function OrderDetailPage() {
                 const selectedItem = complaintItems.find(i => i.idx === idx);
                 const product = products.find(p => p.id === item.productId || p.name === item.productName);
                 const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
-                
+
                 return (
                   <div
                     key={idx}
                     onClick={() => handleToggleComplaintItem(idx, !isSelected, item.qty)}
-                    className={`p-3.5 sm:p-4 rounded-xl border transition-all cursor-pointer select-none ${
-                      isSelected
-                        ? 'border-indigo-400 bg-indigo-50/50 dark:border-indigo-500/60 dark:bg-indigo-950/20'
-                        : 'border-slate-200 bg-white hover:bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-800/40'
-                    }`}
+                    className={`p-3.5 sm:p-4 rounded-xl border transition-all cursor-pointer select-none ${isSelected
+                      ? 'border-indigo-400 bg-indigo-50/50 dark:border-indigo-500/60 dark:bg-indigo-950/20'
+                      : 'border-slate-200 bg-white hover:bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-800/40'
+                      }`}
                   >
                     <div className="flex items-center gap-3">
                       {/* Kiri: Checkbox */}
@@ -1267,25 +1261,25 @@ export default function OrderDetailPage() {
               Unggah Bukti <span className="ml-1 text-red-500 font-bold">*</span>
             </label>
             <div className="space-y-3">
-              <label className="flex flex-col items-center justify-center p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-800/60 cursor-pointer transition-colors text-center">
-                <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {uploadingFiles ? 'Sedang memproses file...' : 'Klik untuk mengunggah foto/video'}
-                </span>
-                <span className="text-[11px] text-slate-400 mt-0.5">
-                  maks. 10 MB per file
-                </span>
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  disabled={uploadingFiles}
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
-
-              {complaintAttachments.length > 0 && (
+              {complaintAttachments.length === 0 ? (
+                <label className="flex flex-col items-center justify-center p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-800/60 cursor-pointer transition-colors text-center">
+                  <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {uploadingFiles ? 'Sedang memproses file...' : 'Klik untuk mengunggah foto/video'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 mt-0.5">
+                    maks. 10 MB per file
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    disabled={uploadingFiles}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              ) : (
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {complaintAttachments.map((att) => (
                     <div
@@ -1319,6 +1313,26 @@ export default function OrderDetailPage() {
                       </button>
                     </div>
                   ))}
+
+                  {/* Button Tambah File berukuran sama persis dengan thumbnail di sebelah kanan thumbnail terakhir */}
+                  <label
+                    className="relative aspect-square rounded-lg border border-dashed border-slate-300 hover:border-indigo-500 dark:border-slate-700 dark:hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50/50 dark:bg-slate-800/40 dark:hover:bg-slate-800 flex flex-col items-center justify-center cursor-pointer transition-colors text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 group"
+                    title="Tambah foto atau video lain"
+                  >
+                    {uploadingFiles ? (
+                      <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                    ) : (
+                      <Plus className="w-5 h-5 transition-transform group-hover:scale-110" />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      disabled={uploadingFiles}
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
               )}
             </div>

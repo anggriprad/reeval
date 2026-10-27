@@ -38,11 +38,11 @@ import { syncFinishedGoodsWithProducts } from './utils';
 // RAW MATERIALS (Bahan Baku)
 // ========================================
 export const initialMaterials: RawMaterial[] = [
-  { id: 'mat-1', code: 'MAT-PLY-18MM', name: 'Multiplek / Plywood 18mm', category: 'Papan', unit: 'lembar', unitCost: 220000, stock: 80, minStock: 15 },
+  { id: 'mat-1', code: 'MAT-PLY-18MM', name: 'Multiplek 18mm', category: 'Papan', unit: 'lembar', unitCost: 220000, stock: 80, minStock: 15 },
   { id: 'mat-2', code: 'MAT-KAYU-MAHONI', name: 'Kayu Rangka Mahoni Kering', category: 'Kayu', unit: 'm³', unitCost: 3500000, stock: 12.5, minStock: 3 },
   { id: 'mat-3', code: 'MAT-FOAM-D24-3CM', name: 'Busa Royal D24 Tebal 3cm', category: 'Busa', unit: 'lembar', unitCost: 110000, stock: 60, minStock: 10 },
   { id: 'mat-4', code: 'MAT-FOAM-D24-5CM', name: 'Busa Royal D24 Tebal 5cm', category: 'Busa', unit: 'lembar', unitCost: 175000, stock: 0, minStock: 8 },
-  { id: 'mat-5', code: 'MAT-FABRIC-MIDILI', name: 'Kain Jok Midili Grey/Beige', category: 'Kain', unit: 'meter', unitCost: 45000, stock: 0, minStock: 20 },
+  { id: 'mat-5', code: 'MAT-FABRIC-MIDILI', name: 'Kain Jok Midili Beige', category: 'Kain', unit: 'meter', unitCost: 45000, stock: 0, minStock: 20 },
   { id: 'mat-6', code: 'MAT-LEATHER-OSCAR', name: 'Kulit Sintetis Oscar Premium', category: 'Kain', unit: 'meter', unitCost: 55000, stock: 0, minStock: 20 },
   { id: 'mat-7', code: 'MAT-ACC-KAKI10CM', name: 'Kaki Dipan Kayu Bubut 10cm', category: 'Aksesoris', unit: 'pcs', unitCost: 15000, stock: 0, minStock: 40 },
   { id: 'mat-8', code: 'MAT-LEM-FOAM', name: 'Lem Kuning Busa Aica', category: 'Lem', unit: 'kaleng', unitCost: 65000, stock: 0, minStock: 8 },
@@ -53,7 +53,7 @@ export const initialMaterials: RawMaterial[] = [
   {
     id: 'mat-sub-laci',
     code: 'SA-LACI-50CM',
-    name: 'Laci Tarik Storage 50cm (Bahan Setengah Jadi)',
+    name: 'Laci Tarik Storage 50cm',
     category: 'Aksesoris',
     unit: 'unit',
     unitCost: 185000,
@@ -546,7 +546,7 @@ export const initialJournalEntries: JournalEntry[] = [
   },
 ];
 
-export const initialCategories: string[] = ['Papan', 'Kayu', 'Busa', 'Kain', 'Aksesoris', 'Lem', 'Hardware', 'Bahan Setengah Jadi'];
+export const initialCategories: string[] = ['Papan', 'Kayu', 'Busa', 'Kain', 'Aksesoris', 'Lem', 'Hardware'];
 export const initialAssetCategories: string[] = ['Kendaraan', 'Mesin & Peralatan', 'Elektronik & IT'];
 
 

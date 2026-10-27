@@ -76,17 +76,15 @@ export default function AssetDetailPage() {
           backHref="/inventory?tab=assets"
           title="Detail Aset"
         />
-        <Card className="p-8">
-          <EmptyState
-            title="Aset Tidak Ditemukan"
-            description={`Aset dengan ID "${id}" tidak ditemukan atau telah dihapus.`}
-            action={
-              <Button onClick={() => router.push('/inventory?tab=assets')}>
-                Kembali ke Daftar Aset
-              </Button>
-            }
-          />
-        </Card>
+        <EmptyState
+          title="Aset Tidak Ditemukan"
+          description={`Aset dengan ID "${id}" tidak ditemukan atau telah dihapus.`}
+          action={
+            <Button onClick={() => router.push('/inventory?tab=assets')}>
+              Kembali ke Daftar Aset
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -383,12 +381,11 @@ export default function AssetDetailPage() {
         </div>
 
         {serviceLogs.length === 0 ? (
-          <div className="p-6">
-            <EmptyState
-              title="Belum ada riwayat servis"
-              description="Aset ini belum pernah mencatat riwayat perbaikan atau pemeliharaan."
-            />
-          </div>
+          <EmptyState
+            title="Belum ada riwayat servis"
+            description="Aset ini belum pernah mencatat riwayat perbaikan atau pemeliharaan."
+            variant="plain"
+          />
         ) : (
           <Table
             data={serviceLogs}
