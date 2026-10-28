@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useTableFilters } from '@/hooks/useTableFilters';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
@@ -61,9 +62,35 @@ export function ProductionRoutingSection() {
   // Routings state
   const [routings, setRoutings] = useState<ProductionRoutingItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [rtSearch, setRtSearch] = useState('');
   const hasFetchedRef = useRef(false);
   const isFetchingRef = useRef(false);
+
+  // Table filters hook for routing search & pagination
+  const { filters, setFilter } = useTableFilters({
+    rt_search: '',
+    rt_page: 1,
+    rt_per_page: 50,
+  });
+
+  const [searchInput, setSearchInput] = useState(filters.rt_search || '');
+  const isSearchInitial = useRef(true);
+
+  // Debounce search input (500ms)
+  useEffect(() => {
+    if (isSearchInitial.current) {
+      isSearchInitial.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setFilter('rt_search', searchInput.trim());
+      setFilter('rt_page', 1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput, setFilter]);
+
+  useEffect(() => {
+    setSearchInput(filters.rt_search || '');
+  }, [filters.rt_search]);
 
   // Operation Options for step dropdown (/production/operations/options)
   const [operationOptions, setOperationOptions] = useState<ProductionOperationOption[]>([]);
@@ -92,15 +119,16 @@ export function ProductionRoutingSection() {
   }, [setRoutingsList]);
 
   // Fetch Routings from Backend API
-  const fetchRoutings = useCallback(async (searchQuery = '') => {
+  const fetchRoutings = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
       const response = await productionRoutingService.getRoutings({
-        per_page: 100,
-        search: searchQuery.trim() || undefined,
+        page: filters.rt_page,
+        per_page: filters.rt_per_page,
+        search: filters.rt_search?.trim() || undefined,
       });
 
       hasFetchedRef.current = true;
@@ -115,7 +143,14 @@ export function ProductionRoutingSection() {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [syncToAppContext]);
+  }, [filters.rt_page, filters.rt_per_page, filters.rt_search, syncToAppContext]);
+
+  // Lazy Fetch: on mount or when expanded or filters change
+  useEffect(() => {
+    if (isExpanded) {
+      fetchRoutings();
+    }
+  }, [isExpanded, fetchRoutings]);
 
   // Fetch Operation Options for step dropdown from /production/operations/options
   const fetchOperationOptions = useCallback(async () => {
@@ -156,15 +191,6 @@ export function ProductionRoutingSection() {
       }
     }
   }, [isExpanded, fetchRoutings, fetchOperationOptions]);
-
-  // Handle Search Input with debounce
-  useEffect(() => {
-    if (!hasFetchedRef.current) return;
-    const timeout = setTimeout(() => {
-      fetchRoutings(rtSearch);
-    }, 350);
-    return () => clearTimeout(timeout);
-  }, [rtSearch, fetchRoutings]);
 
   // Step Options list (derived from operationOptions or fallback)
   const stepOptions = useMemo(() => {
@@ -340,17 +366,6 @@ export function ProductionRoutingSection() {
     }
   };
 
-  // Local filter for responsive instantaneous filtering
-  const filteredRoutings = useMemo(() => {
-    if (!rtSearch.trim()) return routings;
-    const lower = rtSearch.toLowerCase();
-    return routings.filter(
-      (r) =>
-        r.name.toLowerCase().includes(lower) ||
-        (r.description && r.description.toLowerCase().includes(lower))
-    );
-  }, [routings, rtSearch]);
-
   const countDisplay = routings.length > 0 ? routings.length : appRoutings.length;
 
   return (
@@ -377,8 +392,8 @@ export function ProductionRoutingSection() {
             <Input
               icon={Search}
               placeholder="Cari alur produksi..."
-              value={rtSearch}
-              onChange={(e) => setRtSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               inputSize="sm"
               containerClassName="max-w-xs w-full"
             />
@@ -390,14 +405,14 @@ export function ProductionRoutingSection() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredRoutings.length === 0 ? (
+            {routings.length === 0 ? (
               <div className="col-span-full rounded-xl border border-slate-200 bg-slate-50 p-8 text-center text-xs text-slate-400 dark:border-slate-800 dark:bg-slate-800/40">
                 {isLoading
                   ? 'Memuat data template alur produksi...'
                   : 'Belum ada template alur produksi. Klik "Buat Alur Produksi" untuk membuat.'}
               </div>
             ) : (
-              filteredRoutings.map((rt) => {
+              routings.map((rt) => {
                 const stepList = rt.steps || [];
                 const totalEstMinutes = rt.total_duration_minutes || stepList.reduce((acc, s) => acc + (s.duration_minutes || 0), 0);
                 const totalPlannedCost = rt.total_labor_cost || stepList.reduce((acc, s) => acc + (s.labor_cost || 0), 0);

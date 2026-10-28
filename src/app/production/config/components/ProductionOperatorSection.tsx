@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useTableFilters } from '@/hooks/useTableFilters';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
@@ -46,9 +47,35 @@ export function ProductionOperatorSection() {
   // Operators state
   const [operators, setOperators] = useState<ProductionOperatorItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [operatorSearch, setOperatorSearch] = useState('');
   const hasFetchedRef = useRef(false);
   const isFetchingRef = useRef(false);
+
+  // Table filters hook for operator search & pagination
+  const { filters, setFilter } = useTableFilters({
+    opr_search: '',
+    opr_page: 1,
+    opr_per_page: 50,
+  });
+
+  const [searchInput, setSearchInput] = useState(filters.opr_search || '');
+  const isSearchInitial = useRef(true);
+
+  // Debounce search input (500ms)
+  useEffect(() => {
+    if (isSearchInitial.current) {
+      isSearchInitial.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setFilter('opr_search', searchInput.trim());
+      setFilter('opr_page', 1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput, setFilter]);
+
+  useEffect(() => {
+    setSearchInput(filters.opr_search || '');
+  }, [filters.opr_search]);
 
   // User assignment state (users with is_ready = true)
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
@@ -69,15 +96,16 @@ export function ProductionOperatorSection() {
   }, [setOperatorsList]);
 
   // Fetch Operators from Backend API
-  const fetchOperators = useCallback(async (searchQuery = '') => {
+  const fetchOperators = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
       const response = await productionOperatorService.getOperators({
-        per_page: 100,
-        search: searchQuery.trim() || undefined,
+        page: filters.opr_page,
+        per_page: filters.opr_per_page,
+        search: filters.opr_search?.trim() || undefined,
       });
 
       hasFetchedRef.current = true;
@@ -92,7 +120,7 @@ export function ProductionOperatorSection() {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [syncToAppContext]);
+  }, [filters.opr_page, filters.opr_per_page, filters.opr_search, syncToAppContext]);
 
   // Fetch ready user options from userService.getUserOptions({ is_ready: true })
   const loadReadyUserOptions = useCallback(async () => {
@@ -109,21 +137,12 @@ export function ProductionOperatorSection() {
     }
   }, []);
 
-  // Lazy Fetch when accordion expanded
+  // Lazy Fetch when accordion expanded or filters change
   useEffect(() => {
-    if (isExpanded && !hasFetchedRef.current) {
+    if (isExpanded) {
       fetchOperators();
     }
   }, [isExpanded, fetchOperators]);
-
-  // Handle Search Input with debounce
-  useEffect(() => {
-    if (!hasFetchedRef.current) return;
-    const timeout = setTimeout(() => {
-      fetchOperators(operatorSearch);
-    }, 350);
-    return () => clearTimeout(timeout);
-  }, [operatorSearch, fetchOperators]);
 
   // Filter available users: is_ready = true and not yet assigned as operator
   const availableUsers = useMemo(() => {
@@ -210,18 +229,6 @@ export function ProductionOperatorSection() {
     }
   };
 
-  // Local filter for responsive UI
-  const filteredOperators = useMemo(() => {
-    if (!operatorSearch.trim()) return operators;
-    const lower = operatorSearch.toLowerCase();
-    return operators.filter(
-      (o) =>
-        o.user_name.toLowerCase().includes(lower) ||
-        (o.user_email && o.user_email.toLowerCase().includes(lower)) ||
-        (o.user_phone && o.user_phone.toLowerCase().includes(lower))
-    );
-  }, [operators, operatorSearch]);
-
   const countDisplay = operators.length > 0 ? operators.length : appOperators.length;
 
   return (
@@ -246,8 +253,8 @@ export function ProductionOperatorSection() {
           <Input
             icon={Search}
             placeholder="Cari nama operator..."
-            value={operatorSearch}
-            onChange={(e) => setOperatorSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             inputSize="sm"
             containerClassName="max-w-xs w-full"
           />
@@ -273,7 +280,7 @@ export function ProductionOperatorSection() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredOperators.length === 0 && !showAddOperator ? (
+              {operators.length === 0 && !showAddOperator ? (
                 <tr>
                   <td colSpan={4} className="p-6 text-center text-xs text-slate-400">
                     {isLoading
@@ -282,7 +289,7 @@ export function ProductionOperatorSection() {
                   </td>
                 </tr>
               ) : (
-                filteredOperators.map((op) => {
+                operators.map((op) => {
                   const completedJobs = (workOrders || [])
                     .flatMap((wo) => wo.jobCards || [])
                     .filter(

@@ -53,6 +53,7 @@ export interface ProductionRoutingItem {
 export interface ProductionRoutingOption {
   id: number;
   name: string;
+  step_count?: number;
   total_duration_minutes: number;
   total_labor_cost: number;
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTableFilters } from '@/hooks/useTableFilters';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
@@ -54,8 +55,32 @@ export function ProductAttributeSection() {
   const hasFetchedRef = useRef(false);
   const isFetchingRef = useRef(false);
 
-  // Search filter
-  const [attrSearch, setAttrSearch] = useState('');
+  // Table filters hook for product attribute search & pagination
+  const { filters, setFilter } = useTableFilters({
+    attr_search: '',
+    attr_page: 1,
+    attr_per_page: 50,
+  });
+
+  const [searchInput, setSearchInput] = useState(filters.attr_search || '');
+  const isSearchInitial = useRef(true);
+
+  // Debounce search input (500ms)
+  useEffect(() => {
+    if (isSearchInitial.current) {
+      isSearchInitial.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setFilter('attr_search', searchInput.trim());
+      setFilter('attr_page', 1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput, setFilter]);
+
+  useEffect(() => {
+    setSearchInput(filters.attr_search || '');
+  }, [filters.attr_search]);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
@@ -65,13 +90,17 @@ export function ProductAttributeSection() {
   const [modalError, setModalError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  const loadAttributes = async () => {
+  const loadAttributes = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
-      const response = await productAttributeService.getAttributes({ per_page: 100 });
+      const response = await productAttributeService.getAttributes({
+        page: filters.attr_page,
+        per_page: filters.attr_per_page,
+        search: filters.attr_search?.trim() || undefined,
+      });
       hasFetchedRef.current = true;
 
       if (response && Array.isArray(response.data)) {
@@ -109,7 +138,13 @@ export function ProductAttributeSection() {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  };
+  }, [filters.attr_page, filters.attr_per_page, filters.attr_search, addAppAttribute, appAttributes]);
+
+  useEffect(() => {
+    if (isExpanded) {
+      loadAttributes();
+    }
+  }, [isExpanded, loadAttributes]);
 
   const handleToggle = (expanded: boolean) => {
     setIsExpanded(expanded);
@@ -231,17 +266,6 @@ export function ProductAttributeSection() {
     }
   };
 
-  const filteredAttributes = attributes.filter((a) => {
-    if (!attrSearch) return true;
-    const s = attrSearch.toLowerCase();
-    const nameMatch = a.name.toLowerCase().includes(s);
-    const valueMatch = (a.values || []).some((v) => {
-      const str = typeof v === 'string' ? v : v.value;
-      return str.toLowerCase().includes(s);
-    });
-    return nameMatch || valueMatch;
-  });
-
   return (
     <ConfigSection
       title="Master Atribut Varian"
@@ -260,8 +284,8 @@ export function ProductAttributeSection() {
             <Input
               type="text"
               placeholder="Cari atribut master..."
-              value={attrSearch}
-              onChange={(e) => setAttrSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-9 text-xs"
             />
           </div>
@@ -281,14 +305,14 @@ export function ProductAttributeSection() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredAttributes.length === 0 ? (
+            {attributes.length === 0 ? (
               <div className="md:col-span-2 rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center text-slate-400 dark:text-slate-500 text-xs">
-                {attrSearch
+                {filters.attr_search
                   ? 'Tidak ada atribut yang cocok dengan pencarian.'
                   : 'Belum ada master atribut terdaftar.'}
               </div>
             ) : (
-              filteredAttributes.map((attr) => {
+              attributes.map((attr) => {
                 const valuesList = (attr.values || []).map((v) =>
                   typeof v === 'string' ? v : v.value
                 );

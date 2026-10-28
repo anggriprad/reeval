@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useTableFilters } from '@/hooks/useTableFilters';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
@@ -51,9 +52,35 @@ export function ProductionOperationSection() {
   // Operations state
   const [operations, setOperations] = useState<ProductionOperationItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [opSearch, setOpSearch] = useState('');
   const hasFetchedRef = useRef(false);
   const isFetchingRef = useRef(false);
+
+  // Table filters hook for operation search & pagination
+  const { filters, setFilter } = useTableFilters({
+    op_search: '',
+    op_page: 1,
+    op_per_page: 50,
+  });
+
+  const [searchInput, setSearchInput] = useState(filters.op_search || '');
+  const isSearchInitial = useRef(true);
+
+  // Debounce search input (500ms)
+  useEffect(() => {
+    if (isSearchInitial.current) {
+      isSearchInitial.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setFilter('op_search', searchInput.trim());
+      setFilter('op_page', 1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput, setFilter]);
+
+  useEffect(() => {
+    setSearchInput(filters.op_search || '');
+  }, [filters.op_search]);
 
   // Operation Modal State
   const [showOpModal, setShowOpModal] = useState(false);
@@ -82,15 +109,16 @@ export function ProductionOperationSection() {
   }, [setOperationsList]);
 
   // Fetch Operations from Backend API
-  const fetchOperations = useCallback(async (searchQuery = '') => {
+  const fetchOperations = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
       const response = await productionOperationService.getOperations({
-        per_page: 100,
-        search: searchQuery.trim() || undefined,
+        page: filters.op_page,
+        per_page: filters.op_per_page,
+        search: filters.op_search?.trim() || undefined,
       });
 
       hasFetchedRef.current = true;
@@ -105,23 +133,14 @@ export function ProductionOperationSection() {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [syncToAppContext]);
+  }, [filters.op_page, filters.op_per_page, filters.op_search, syncToAppContext]);
 
-  // Lazy Fetch: on mount or when expanded
+  // Lazy Fetch: on mount or when expanded or filters change
   useEffect(() => {
-    if (isExpanded && !hasFetchedRef.current) {
+    if (isExpanded) {
       fetchOperations();
     }
   }, [isExpanded, fetchOperations]);
-
-  // Handle Search Input with debounce
-  useEffect(() => {
-    if (!hasFetchedRef.current) return;
-    const timeout = setTimeout(() => {
-      fetchOperations(opSearch);
-    }, 350);
-    return () => clearTimeout(timeout);
-  }, [opSearch, fetchOperations]);
 
   // Modal Handlers
   const openAddOp = () => {
@@ -241,17 +260,6 @@ export function ProductionOperationSection() {
     }
   };
 
-  // Local filter for instant responsiveness
-  const filteredOperations = useMemo(() => {
-    if (!opSearch.trim()) return operations;
-    const lower = opSearch.toLowerCase();
-    return operations.filter(
-      (o) =>
-        o.name.toLowerCase().includes(lower) ||
-        (o.description && o.description.toLowerCase().includes(lower))
-    );
-  }, [operations, opSearch]);
-
   const countDisplay = operations.length > 0 ? operations.length : appOperations.length;
 
   return (
@@ -277,8 +285,8 @@ export function ProductionOperationSection() {
             <Input
               icon={Search}
               placeholder="Cari master operasi..."
-              value={opSearch}
-              onChange={(e) => setOpSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               inputSize="sm"
               containerClassName="max-w-xs w-full"
             />
@@ -301,7 +309,7 @@ export function ProductionOperationSection() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredOperations.length === 0 ? (
+                {operations.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="p-6 text-center text-xs text-slate-400">
                       {isLoading
@@ -310,7 +318,7 @@ export function ProductionOperationSection() {
                     </td>
                   </tr>
                 ) : (
-                  filteredOperations.map((op) => (
+                  operations.map((op) => (
                     <tr
                       key={op.id}
                       className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors"

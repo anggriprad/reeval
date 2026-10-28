@@ -82,6 +82,8 @@ export const PERMISSIONS = {
     UPDATE: 'material:update',
     DELETE: 'material:delete',
     ADJUST: 'stock-movement:adjust',
+    STOCK_MOVEMENT_READ: 'stock-movement:read',
+    STOCK_MOVEMENT_ADJUST: 'stock-movement:adjust',
     CATEGORY_READ: 'material-category:read',
     CATEGORY_CREATE: 'material-category:create',
     CATEGORY_UPDATE: 'material-category:update',

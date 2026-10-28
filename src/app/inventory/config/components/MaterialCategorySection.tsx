@@ -168,11 +168,14 @@ export function MaterialCategorySection() {
   };
 
   const handleDeleteMaterialCategory = async (cat: MaterialCategory) => {
-    const count = materials.filter(
-      (m) => m.category.toLowerCase() === cat.name.toLowerCase()
-    ).length;
+    const count =
+      cat.material_count !== undefined
+        ? cat.material_count
+        : materials.filter(
+            (m) => m.category.toLowerCase() === cat.name.toLowerCase()
+          ).length;
 
-    if (cat.can_delete === false) {
+    if (cat.can_delete === false || count > 0) {
       toast.error(
         'Gagal Menghapus Kategori',
         `Kategori "${cat.name}" sedang digunakan oleh ${count} bahan baku.`
@@ -273,9 +276,12 @@ export function MaterialCategorySection() {
                       }`}
                   >
                     {categories.map((cat, idx) => {
-                      const materialCount = materials.filter(
-                        (m) => m.category.toLowerCase() === cat.name.toLowerCase()
-                      ).length; //masih dummy
+                      const materialCount =
+                        cat.material_count !== undefined
+                          ? cat.material_count
+                          : materials.filter(
+                              (m) => m.category.toLowerCase() === cat.name.toLowerCase()
+                            ).length;
                       const isEditing = editingMaterialCat === cat.id;
 
                       return (

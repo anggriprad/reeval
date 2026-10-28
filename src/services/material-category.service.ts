@@ -12,6 +12,7 @@ export interface MaterialCategory {
   company_id: number;
   name: string;
   sort_order: number;
+  material_count?: number;
   can_delete: boolean;
   is_active: boolean;
   created_at: string;

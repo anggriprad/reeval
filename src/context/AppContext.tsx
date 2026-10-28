@@ -145,6 +145,7 @@ interface AppContextType extends AppState {
   setMasterModifierGroups: (groups: ProductModifierGroup[]) => void;
 
   // Raw Materials & Category CRUD
+  setMaterialsList: (materials: RawMaterial[]) => void;
   addMaterial: (material: Omit<RawMaterial, 'id'>) => void;
   updateMaterial: (id: string, material: Partial<RawMaterial>) => void;
   deleteMaterial: (id: string) => DeleteResult;
@@ -1455,6 +1456,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---- Raw Materials CRUD ----
+  const setMaterialsList = useCallback((materials: RawMaterial[]) => {
+    setState(prev => ({
+      ...prev,
+      materials,
+    }));
+  }, []);
+
   const addMaterial = useCallback((material: Omit<RawMaterial, 'id'>) => {
     const id = `mat-${generateId()}`;
     const newMaterial: RawMaterial = {
@@ -5641,6 +5649,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateModifierGroup,
     deleteModifierGroup,
     setMasterModifierGroups,
+    setMaterialsList,
     addMaterial,
     updateMaterial,
     deleteMaterial,

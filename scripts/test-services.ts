@@ -12,6 +12,9 @@ import { productionRoutingService } from '../src/services/production-routing.ser
 import { productionOperatorService } from '../src/services/production-operator.service';
 import { productCategoryService } from '../src/services/product-category.service';
 import { productAttributeService } from '../src/services/product-attribute.service';
+import { materialService } from '../src/services/material.service';
+import { procurementService } from '../src/services/procurement.service';
+import { stockMovementService } from '../src/services/stock-movement.service';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
 import { NextRequest } from 'next/server';
@@ -210,6 +213,47 @@ async function runTests() {
   assert(PERMISSIONS.PRODUCT.ATTRIBUTE_UPDATE === 'product-attribute:update', 'ATTRIBUTE_UPDATE must be product-attribute:update');
   assert(PERMISSIONS.PRODUCT.ATTRIBUTE_DELETE === 'product-attribute:delete', 'ATTRIBUTE_DELETE must be product-attribute:delete');
   console.log('✓ productAttributeService contract verified');
+
+  // 4l. Verify materialService structure & PBAC mapping
+  console.log('4l. Checking materialService contract & PBAC mapping...');
+  assert(typeof materialService.getMaterials === 'function', 'materialService.getMaterials must be a function');
+  assert(typeof materialService.getMaterialOptions === 'function', 'materialService.getMaterialOptions must be a function');
+  assert(typeof materialService.getMaterialById === 'function', 'materialService.getMaterialById must be a function');
+  assert(typeof materialService.createMaterial === 'function', 'materialService.createMaterial must be a function');
+  assert(typeof materialService.updateMaterial === 'function', 'materialService.updateMaterial must be a function');
+  assert(typeof materialService.deleteMaterial === 'function', 'materialService.deleteMaterial must be a function');
+  assert(PERMISSIONS.INVENTORY.READ === 'material:read', 'INVENTORY.READ must be material:read');
+  assert(PERMISSIONS.INVENTORY.CREATE === 'material:create', 'INVENTORY.CREATE must be material:create');
+  assert(PERMISSIONS.INVENTORY.UPDATE === 'material:update', 'INVENTORY.UPDATE must be material:update');
+  assert(PERMISSIONS.INVENTORY.DELETE === 'material:delete', 'INVENTORY.DELETE must be material:delete');
+  console.log('✓ materialService contract verified');
+
+  // 4m. Verify procurementService structure & PBAC mapping
+  console.log('4m. Checking procurementService contract & PBAC mapping...');
+  assert(typeof procurementService.getProcurements === 'function', 'procurementService.getProcurements must be a function');
+  assert(typeof procurementService.getProcurementById === 'function', 'procurementService.getProcurementById must be a function');
+  assert(typeof procurementService.getHistories === 'function', 'procurementService.getHistories must be a function');
+  assert(typeof procurementService.createProcurement === 'function', 'procurementService.createProcurement must be a function');
+  assert(typeof procurementService.orderPO === 'function', 'procurementService.orderPO must be a function');
+  assert(typeof procurementService.receivePO === 'function', 'procurementService.receivePO must be a function');
+  assert(typeof procurementService.rejectPO === 'function', 'procurementService.rejectPO must be a function');
+  assert(typeof procurementService.cancelPO === 'function', 'procurementService.cancelPO must be a function');
+  assert(typeof procurementService.cancelRemainingPO === 'function', 'procurementService.cancelRemainingPO must be a function');
+  assert(typeof procurementService.deletePO === 'function', 'procurementService.deletePO must be a function');
+  assert(PERMISSIONS.PURCHASING.READ === 'procurement:read', 'PURCHASING.READ must be procurement:read');
+  assert(PERMISSIONS.PURCHASING.CREATE === 'procurement:create', 'PURCHASING.CREATE must be procurement:create');
+  assert(PERMISSIONS.PURCHASING.UPDATE === 'procurement:update', 'PURCHASING.UPDATE must be procurement:update');
+  assert(PERMISSIONS.PURCHASING.DELETE === 'procurement:delete', 'PURCHASING.DELETE must be procurement:delete');
+  console.log('✓ procurementService contract verified');
+
+  // 4n. Verify stockMovementService structure & PBAC mapping
+  console.log('4n. Checking stockMovementService contract & PBAC mapping...');
+  assert(typeof stockMovementService.getStockMovements === 'function', 'stockMovementService.getStockMovements must be a function');
+  assert(typeof stockMovementService.recordStockMovement === 'function', 'stockMovementService.recordStockMovement must be a function');
+  assert(PERMISSIONS.INVENTORY.ADJUST === 'stock-movement:adjust', 'INVENTORY.ADJUST must be stock-movement:adjust');
+  assert(PERMISSIONS.INVENTORY.STOCK_MOVEMENT_READ === 'stock-movement:read', 'INVENTORY.STOCK_MOVEMENT_READ must be stock-movement:read');
+  assert(PERMISSIONS.INVENTORY.STOCK_MOVEMENT_ADJUST === 'stock-movement:adjust', 'INVENTORY.STOCK_MOVEMENT_ADJUST must be stock-movement:adjust');
+  console.log('✓ stockMovementService contract verified');
 
   // 5. Test Proxy logic for mustChangePassword
   console.log('5. Testing Proxy middleware mustChangePassword logic...');

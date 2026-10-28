@@ -12,4 +12,7 @@ export * from "./production-routing.service";
 export * from "./production-operator.service";
 export * from "./product-category.service";
 export * from "./product-attribute.service";
+export * from "./material.service";
+export * from "./procurement.service";
+export * from "./stock-movement.service";
 

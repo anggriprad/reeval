@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTableFilters } from '@/hooks/useTableFilters';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
@@ -55,8 +56,32 @@ export function ProductCategorySection() {
   const hasFetchedRef = useRef(false);
   const isFetchingRef = useRef(false);
 
-  // Search state
-  const [categorySearch, setCategorySearch] = useState('');
+  // Table filters hook for product category search & pagination
+  const { filters, setFilter } = useTableFilters({
+    cat_search: '',
+    cat_page: 1,
+    cat_per_page: 50,
+  });
+
+  const [searchInput, setSearchInput] = useState(filters.cat_search || '');
+  const isSearchInitial = useRef(true);
+
+  // Debounce search input (500ms)
+  useEffect(() => {
+    if (isSearchInitial.current) {
+      isSearchInitial.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setFilter('cat_search', searchInput.trim());
+      setFilter('cat_page', 1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput, setFilter]);
+
+  useEffect(() => {
+    setSearchInput(filters.cat_search || '');
+  }, [filters.cat_search]);
 
   // Add state (muncul ketika tombol tambah diklik)
   const [showAddCat, setShowAddCat] = useState(false);
@@ -68,13 +93,17 @@ export function ProductCategorySection() {
   const [editingName, setEditingName] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
-      const response = await productCategoryService.getCategories({ per_page: 100 });
+      const response = await productCategoryService.getCategories({
+        page: filters.cat_page,
+        per_page: filters.cat_per_page,
+        search: filters.cat_search?.trim() || undefined,
+      });
       hasFetchedRef.current = true;
 
       if (response && Array.isArray(response.data)) {
@@ -109,7 +138,13 @@ export function ProductCategorySection() {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  };
+  }, [filters.cat_page, filters.cat_per_page, filters.cat_search, addProductCategory, productCategories, products]);
+
+  useEffect(() => {
+    if (isExpanded) {
+      loadCategories();
+    }
+  }, [isExpanded, loadCategories]);
 
   const handleToggle = (expanded: boolean) => {
     setIsExpanded(expanded);
@@ -226,10 +261,6 @@ export function ProductCategorySection() {
     }
   };
 
-  const filteredCategories = categories.filter((c) =>
-    c.name.toLowerCase().includes(categorySearch.toLowerCase())
-  );
-
   return (
     <ConfigSection
       title="Master Kategori Produk"
@@ -249,8 +280,8 @@ export function ProductCategorySection() {
             <Input
               type="text"
               placeholder="Cari kategori produk..."
-              value={categorySearch}
-              onChange={(e) => setCategorySearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-8 text-xs"
               inputSize="sm"
             />
@@ -290,16 +321,16 @@ export function ProductCategorySection() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredCategories.length === 0 ? (
+              ) : categories.length === 0 ? (
                 <tr>
                   <td colSpan={canManage ? 3 : 2} className="py-10 text-center text-slate-400 dark:text-slate-500">
-                    {categorySearch
+                    {filters.cat_search
                       ? 'Tidak ada kategori yang cocok dengan pencarian.'
                       : 'Belum ada kategori produk terdaftar.'}
                   </td>
                 </tr>
               ) : (
-                filteredCategories.map((cat) => {
+                categories.map((cat) => {
                   const count =
                     cat.product_count ??
                     products.filter((p) => p.category?.toLowerCase() === cat.name.toLowerCase()).length;

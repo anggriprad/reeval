@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
@@ -20,6 +20,11 @@ import {
   getPOStatusVariant,
 } from '@/lib/utils';
 import { canCreatePO, canManageInventory } from '@/lib/roles';
+import {
+  procurementService,
+  PurchaseOrderResponse,
+} from '@/services/procurement.service';
+import type { PurchaseOrder } from '@/lib/types';
 import {
   Check,
   X,
@@ -52,7 +57,58 @@ export default function ProcurementDetailPage() {
     bankAccounts = [],
   } = useApp();
 
-  const po = purchaseOrders.find((p) => p.id === id || p.poNumber === id);
+  const initialPo = purchaseOrders.find((p) => p.id === id || p.poNumber === id);
+  const [fetchedPO, setFetchedPO] = useState<PurchaseOrder | null>(null);
+  const [isLoading, setIsLoading] = useState(!initialPo);
+
+  const fetchPO = useCallback(async () => {
+    try {
+      const res = await procurementService.getProcurementById(id);
+      if (res.data) {
+        const p = res.data;
+        const mapped: PurchaseOrder = {
+          id: String(p.id),
+          poNumber: p.po_number,
+          supplier: p.supplier,
+          createdBy: p.created_by,
+          purchaseType: p.purchase_type as 'PO' | 'DIRECT',
+          status: p.status as any,
+          paymentStatus: (p.payment_status || 'UNPAID') as any,
+          totalAmount: p.total_amount,
+          additionalCost: p.additional_cost,
+          bankAccountId: p.bank_account_id ? String(p.bank_account_id) : undefined,
+          receivedAt: p.received_at || undefined,
+          paidAt: p.paid_at || undefined,
+          cancelReason: p.cancel_reason,
+          cancelledBy: p.cancelled_by,
+          cancelledAt: p.cancelled_at || undefined,
+          rejectionReason: p.rejection_reason,
+          rejectedBy: p.rejected_by,
+          rejectedAt: p.rejected_at || undefined,
+          createdAt: p.created_at,
+          items: (p.items || []).map((it) => ({
+            materialId: String(it.material_id),
+            materialName: it.material_name,
+            qty: it.qty,
+            unitCost: it.unit_cost,
+            unit: it.unit,
+            receivedQty: it.received_qty,
+          })),
+        };
+        setFetchedPO(mapped);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch PO from API:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchPO();
+  }, [fetchPO]);
+
+  const po = fetchedPO || initialPo;
 
   // State Modal Terima Barang
   const [showReceiveModal, setShowReceiveModal] = useState(false);
@@ -67,6 +123,20 @@ export default function ProcurementDetailPage() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelError, setCancelError] = useState('');
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto pb-12">
+        <PageHeader
+          backHref="/inventory?tab=procurement"
+          title="Memuat Pengadaan..."
+        />
+        <Card className="p-8 text-center text-slate-500 text-sm">
+          Memuat data pengadaan dari server...
+        </Card>
+      </div>
+    );
+  }
 
   if (!po) {
     return (
@@ -108,8 +178,14 @@ export default function ProcurementDetailPage() {
       confirmText: 'Pesan Sekarang',
     });
     if (ok) {
-      orderPO(po.id);
-      toast.success('Pengadaan Dipesan', `Pengadaan ${po.poNumber} berhasil disetujui.`);
+      try {
+        await procurementService.orderPO(po.id);
+        orderPO(po.id);
+        fetchPO();
+        toast.success('Pengadaan Dipesan', `Pengadaan ${po.poNumber} berhasil disetujui.`);
+      } catch (err: any) {
+        toast.error('Gagal Memesan PO', err?.response?.data?.message || err?.message || 'Terjadi kesalahan.');
+      }
     }
   };
 
@@ -120,17 +196,19 @@ export default function ProcurementDetailPage() {
     setShowRejectModal(true);
   };
 
-  const handleConfirmReject = () => {
+  const handleConfirmReject = async () => {
     if (!rejectReason.trim()) {
       setRejectError('Alasan penolakan wajib diisi.');
       return;
     }
-    const res = rejectPO(po.id, rejectReason.trim());
-    if (!res.success) {
-      setRejectError(res.error || 'Terjadi kesalahan.');
-    } else {
+    try {
+      await procurementService.rejectPO(po.id, { reason: rejectReason.trim() });
+      rejectPO(po.id, rejectReason.trim());
+      fetchPO();
       setShowRejectModal(false);
       toast.success('PO Ditolak', `PO ${po.poNumber} telah ditolak.`);
+    } catch (err: any) {
+      setRejectError(err?.response?.data?.message || err?.message || 'Terjadi kesalahan.');
     }
   };
 
@@ -145,7 +223,7 @@ export default function ProcurementDetailPage() {
     setShowReceiveModal(true);
   };
 
-  const handleConfirmReceive = () => {
+  const handleConfirmReceive = async () => {
     const itemsToReceive = po.items
       .map((item) => ({
         materialId: item.materialId,
@@ -158,16 +236,24 @@ export default function ProcurementDetailPage() {
       return;
     }
 
-    const res = receivePO(po.id, itemsToReceive);
-    if (!res.success) {
-      toast.error('Gagal Menerima', res.error || 'Terjadi kesalahan saat menerima barang.');
-    } else {
+    try {
+      const res = await procurementService.receivePO(po.id, {
+        received_items: itemsToReceive.map((i) => ({
+          material_id: Number(i.materialId),
+          qty: i.qty,
+        })),
+      });
+      receivePO(po.id, itemsToReceive);
+      fetchPO();
       setShowReceiveModal(false);
-      if (res.isPartial) {
+      const isPartial = res.data?.status === 'PARTIALLY_RECEIVED';
+      if (isPartial) {
         toast.success('Diterima Sebagian', 'Penerimaan sebagian barang berhasil dicatat.');
       } else {
         toast.success('Diterima Penuh', 'Seluruh barang pengadaan berhasil diterima.');
       }
+    } catch (err: any) {
+      toast.error('Gagal Menerima', err?.response?.data?.message || err?.message || 'Terjadi kesalahan saat menerima barang.');
     }
   };
 
@@ -180,11 +266,13 @@ export default function ProcurementDetailPage() {
       variant: 'danger',
     });
     if (ok) {
-      const res = cancelRemainingPO(po.id);
-      if (!res.success) {
-        toast.error('Gagal Membatalkan', res.error || 'Terjadi kesalahan.');
-      } else {
-        toast.success('Sisa PO Dibatalkan', 'Sisa barang pengadaan berhasil dibatalkan.');
+      try {
+        await procurementService.cancelRemainingPO(po.id, { reason: 'Sisa pesanan dibatalkan' });
+        cancelRemainingPO(po.id);
+        fetchPO();
+        toast.success('Sisa PO Dibatalkan', `Sisa barang pengadaan ${po.poNumber} berhasil dibatalkan.`);
+      } catch (err: any) {
+        toast.error('Gagal Membatalkan Sisa PO', err?.response?.data?.message || err?.message || 'Terjadi kesalahan.');
       }
     }
   };
@@ -196,17 +284,19 @@ export default function ProcurementDetailPage() {
     setShowCancelModal(true);
   };
 
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (!cancelReason.trim()) {
       setCancelError('Alasan pembatalan wajib diisi.');
       return;
     }
-    const res = cancelPO(po.id, cancelReason.trim());
-    if (!res.success) {
-      setCancelError(res.error || 'Terjadi kesalahan.');
-    } else {
+    try {
+      await procurementService.cancelPO(po.id, { reason: cancelReason.trim() });
+      cancelPO(po.id, cancelReason.trim());
+      fetchPO();
       setShowCancelModal(false);
       toast.success('PO Dibatalkan', `Pengadaan ${po.poNumber} berhasil dibatalkan.`);
+    } catch (err: any) {
+      setCancelError(err?.response?.data?.message || err?.message || 'Terjadi kesalahan.');
     }
   };
 
