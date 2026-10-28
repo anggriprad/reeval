@@ -37,27 +37,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [authenticated, isAuthPage, mounted, mustChange, pathname, router]);
 
-  // If on auth page (login, change-password), render full screen without sidebar
-  if (isAuthPage) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-100">
-        {children}
-      </div>
-    );
-  }
-
-  // If not logged in, or if must change password on non-change-password route, render null while redirecting
-  if (mounted && (!authenticated || (mustChange && pathname !== '/change-password'))) {
-    return null;
-  }
-  const isLoginPage = pathname === '/login';
-
-  useEffect(() => {
-    if (!isLoggedIn && !isLoginPage) {
-      router.push('/login');
-    }
-  }, [isLoggedIn, isLoginPage, router]);
-
   // Dynamically sync browser status bar / theme-color with the active dark/light mode
   useEffect(() => {
     const updateThemeMeta = () => {
@@ -85,8 +64,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect();
   }, []);
 
-  // If on login page, render full screen without sidebar
-  if (isLoginPage) {
+  // If on auth page (login, change-password), render full screen without sidebar
+  if (isAuthPage) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100">
         {children}
@@ -94,8 +73,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If not logged in, render null while redirecting
-  if (!isLoggedIn) {
+  // Prevent hydration mismatch: render null during SSR & before client mount on protected routes
+  if (!mounted || !authenticated || (mustChange && pathname !== '/change-password')) {
     return null;
   }
 
