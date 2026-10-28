@@ -223,6 +223,7 @@ interface AppContextType extends AppState {
 
   // Production
   updateJobCardProgress: (workOrderId: string, jobCardId: string, completedQty: number, picName: string) => void;
+  updateJobCardOperator: (workOrderId: string, jobCardId: string, picName: string, operatorId?: string) => void;
   startJobCard: (workOrderId: string, jobCardId: string) => void;
   pauseJobCard: (workOrderId: string, jobCardId: string) => void;
   completeJobCard: (workOrderId: string, jobCardId: string, completedQty: number, picName: string, actualMinutes?: number, operatorId?: string) => { success: boolean; error?: string };
@@ -4339,6 +4340,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const updateJobCardOperator = useCallback((workOrderId: string, jobCardId: string, picName: string, operatorId?: string) => {
+    setState(prev => {
+      const updatedWOs = prev.workOrders.map(wo => {
+        if (wo.id === workOrderId) {
+          const updatedJobCards = wo.jobCards.map(jc => {
+            if (jc.id === jobCardId) {
+              return { ...jc, picName, operatorId: operatorId || jc.operatorId };
+            }
+            return jc;
+          });
+          return { ...wo, jobCards: updatedJobCards };
+        }
+        return wo;
+      });
+      return { ...prev, workOrders: updatedWOs };
+    });
+  }, []);
+
   const startJobCard = useCallback((workOrderId: string, jobCardId: string) => {
     setState(prev => {
       const now = new Date().toISOString();
@@ -5669,6 +5688,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     processReturnedGoodAction,
     allocateFinishedGoodToOrder,
     updateJobCardProgress,
+    updateJobCardOperator,
     startJobCard,
     pauseJobCard,
     completeJobCard,
