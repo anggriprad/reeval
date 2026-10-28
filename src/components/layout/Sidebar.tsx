@@ -18,20 +18,30 @@ import {
   RotateCcw,
   LogOut,
   TrendingUp,
+  Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { ROLE_ALLOWED_ROUTES, isRouteAllowed } from '@/lib/roles';
+import { hasPermission, hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
 
-const allNavItems = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: any;
+  permission?: string | string[];
+}
+
+const allNavItems: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/order', label: 'Sales Order', icon: ShoppingCart },
-  { href: '/production', label: 'Production', icon: Factory },
-  { href: '/delivery', label: 'Delivery', icon: Truck },
-  { href: '/inventory', label: 'Inventory', icon: Warehouse },
-  { href: '/products', label: 'Product Catalog', icon: PackageOpen },
-  { href: '/finance', label: 'Finance', icon: DollarSign },
+  { href: '/order', label: 'Sales Order', icon: ShoppingCart, permission: PERMISSIONS.SALES.READ },
+  { href: '/production', label: 'Production', icon: Factory, permission: PERMISSIONS.PRODUCTION.READ },
+  { href: '/delivery', label: 'Delivery', icon: Truck, permission: PERMISSIONS.DELIVERY.READ },
+  { href: '/inventory', label: 'Inventory', icon: Warehouse, permission: [PERMISSIONS.INVENTORY.READ, PERMISSIONS.INVENTORY.ASSET_READ, PERMISSIONS.PURCHASING.READ] },
+  { href: '/products', label: 'Product Catalog', icon: PackageOpen, permission: PERMISSIONS.PRODUCT.READ },
+  { href: '/finance', label: 'Finance', icon: DollarSign, permission: PERMISSIONS.FINANCE.READ },
+  { href: '/settings', label: 'Settings', icon: Settings, permission: [PERMISSIONS.ROLE.READ, PERMISSIONS.USER.READ, PERMISSIONS.COMPANY.READ] },
 ];
 
 interface SidebarProps {
@@ -73,8 +83,27 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
 
   if (!currentUser) return null;
 
-  // Filter navigation items strictly based on active user's role
-  const visibleNavItems = allNavItems.filter(item => isRouteAllowed(currentUser.role, item.href));
+  const isSuperAdmin = Boolean(
+    currentUser.is_superadmin ||
+    currentUser.role === 'SUPER_ADMIN' ||
+    (Array.isArray(currentUser.roles) && currentUser.roles.includes('SUPER_ADMIN')) ||
+    (Array.isArray(currentUser.permissions) && (currentUser.permissions.includes('*') || currentUser.permissions.includes('system:*')))
+  );
+
+  // Filter navigation items dynamically based on granular permissions & roles
+  const visibleNavItems = allNavItems.filter(item => {
+    if (isSuperAdmin) return true;
+    if (item.href === '/') return true;
+
+    if (item.permission) {
+      const permitted = Array.isArray(item.permission)
+        ? hasAnyPermission(currentUser.permissions, item.permission, isSuperAdmin)
+        : hasPermission(currentUser.permissions, item.permission, isSuperAdmin);
+      if (!permitted) return false;
+    }
+
+    return isRouteAllowed(currentUser.roles || currentUser.role, item.href);
+  });
 
   return (
     <aside
@@ -108,9 +137,14 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       {/* Navigation Links */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {visibleNavItems.map(item => {
+          const isSettingsChild = item.href === '/settings' && (
+            pathname.startsWith('/company') ||
+            pathname.startsWith('/users') ||
+            pathname.startsWith('/roles')
+          );
           const isActive = pathname === item.href || (
             item.href !== '/' && pathname.startsWith(item.href)
-          );
+          ) || isSettingsChild;
           return (
             <Link
               key={item.href}

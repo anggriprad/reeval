@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useCardContext } from '@/components/ui/Card';
@@ -14,9 +16,9 @@ export interface TableColumn<T> {
   headerClassName?: string;
 }
 
-export interface TableProps<T> {
-  columns: TableColumn<T>[];
-  data: T[];
+export interface TableProps<T = any> {
+  columns?: TableColumn<T>[];
+  data?: T[];
   keyExtractor?: (item: T, index: number) => string | number;
   emptyTitle?: string;
   emptyDescription?: string;
@@ -31,9 +33,129 @@ export interface TableProps<T> {
   hoverable?: boolean;
   striped?: boolean;
   embedded?: boolean;
+  children?: React.ReactNode;
 }
 
-export function Table<T>({
+export interface TableHeaderProps extends React.HTMLAttributes<HTMLTableSectionElement> {}
+export const TableHeader = React.forwardRef<HTMLTableSectionElement, TableHeaderProps>(
+  ({ className, children, ...props }, ref) => (
+    <thead
+      ref={ref}
+      className={cn(
+        'border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-xs font-semibold text-slate-600 dark:text-slate-300',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </thead>
+  )
+);
+TableHeader.displayName = 'TableHeader';
+
+export interface TableBodyProps extends React.HTMLAttributes<HTMLTableSectionElement> {}
+export const TableBody = React.forwardRef<HTMLTableSectionElement, TableBodyProps>(
+  ({ className, children, ...props }, ref) => (
+    <tbody
+      ref={ref}
+      className={cn('divide-y divide-slate-100 dark:divide-slate-800/60', className)}
+      {...props}
+    >
+      {children}
+    </tbody>
+  )
+);
+TableBody.displayName = 'TableBody';
+
+export interface TableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {}
+export const TableRow = React.forwardRef<HTMLTableRowElement, TableRowProps>(
+  ({ className, children, ...props }, ref) => (
+    <tr
+      ref={ref}
+      className={cn(
+        'border-b border-slate-100 dark:border-slate-800/70 transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/40',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </tr>
+  )
+);
+TableRow.displayName = 'TableRow';
+
+export interface TableCellProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
+  isHeader?: boolean;
+  isHead?: boolean;
+  onClick?: (event: React.MouseEvent<HTMLTableCellElement>) => void;
+}
+export const TableCell = React.forwardRef<HTMLTableCellElement, TableCellProps>(
+  ({ isHeader, isHead, className, children, ...props }, ref) => {
+    if (isHeader || isHead) {
+      return (
+        <th
+          ref={ref as React.Ref<HTMLTableCellElement>}
+          className={cn(
+            'whitespace-nowrap px-4 py-3 text-xs font-semibold text-slate-600 dark:text-slate-300 text-left',
+            className
+          )}
+          {...(props as React.ThHTMLAttributes<HTMLTableCellElement>)}
+        >
+          {children}
+        </th>
+      );
+    }
+    return (
+      <td
+        ref={ref}
+        className={cn(
+          'whitespace-nowrap px-4 py-3.5 text-sm text-slate-800 dark:text-slate-200',
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </td>
+    );
+  }
+);
+TableCell.displayName = 'TableCell';
+
+export interface TableHeadProps extends React.ThHTMLAttributes<HTMLTableCellElement> {}
+export const TableHead = React.forwardRef<HTMLTableCellElement, TableHeadProps>(
+  ({ className, children, ...props }, ref) => (
+    <th
+      ref={ref}
+      className={cn(
+        'whitespace-nowrap px-4 py-3 text-xs font-semibold text-slate-600 dark:text-slate-300 text-left',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </th>
+  )
+);
+TableHead.displayName = 'TableHead';
+
+export interface TableFooterProps extends React.HTMLAttributes<HTMLTableSectionElement> {}
+export const TableFooter = React.forwardRef<HTMLTableSectionElement, TableFooterProps>(
+  ({ className, children, ...props }, ref) => (
+    <tfoot
+      ref={ref}
+      className={cn(
+        'border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 font-semibold',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </tfoot>
+  )
+);
+TableFooter.displayName = 'TableFooter';
+
+export function Table<T = any>({
   columns,
   data,
   keyExtractor,
@@ -50,10 +172,22 @@ export function Table<T>({
   hoverable = true,
   striped = false,
   embedded = false,
+  children,
+  ...restProps
 }: TableProps<T>) {
   const cardContext = useCardContext();
   const isInsideCardOnly = embedded || (cardContext.inCard && cardContext.isOnlyChild);
 
+  // Primitive table element usage: <Table>{children}</Table>
+  if (!columns) {
+    return (
+      <table className={cn('w-full text-sm border-collapse', className)} {...(restProps as any)}>
+        {children}
+      </table>
+    );
+  }
+
+  // Config-driven table loading state
   if (loading) {
     return (
       <div
@@ -73,6 +207,7 @@ export function Table<T>({
     );
   }
 
+  // Config-driven table empty state
   if (!data || data.length === 0) {
     return (
       <div
@@ -140,7 +275,7 @@ export function Table<T>({
       )}
     >
       <div className="overflow-x-auto">
-        <table className={cn('w-full text-sm border-collapse', className)}>
+        <table className={cn('w-full text-sm border-collapse', className)} {...(restProps as any)}>
           <thead>
             <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-xs font-semibold text-slate-600 dark:text-slate-300">
               {columns.map((col, colIdx) => (
@@ -213,3 +348,11 @@ export function Table<T>({
 }
 
 Table.displayName = 'Table';
+Table.Header = TableHeader;
+Table.Body = TableBody;
+Table.Row = TableRow;
+Table.Cell = TableCell;
+Table.Head = TableHead;
+Table.Footer = TableFooter;
+
+export default Table;

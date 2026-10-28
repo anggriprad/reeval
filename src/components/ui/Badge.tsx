@@ -31,3 +31,5 @@ export function Badge({ children, className, variant = 'default', title }: Badge
     </span>
   );
 }
+
+export default Badge;

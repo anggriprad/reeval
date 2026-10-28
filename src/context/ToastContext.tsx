@@ -92,15 +92,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setConfirmState(prev => ({ ...prev, isOpen: false, resolve: undefined }));
   };
 
-  const toast = {
+  const toast = React.useMemo(() => ({
     success: (title: string, message?: string) => showToast('success', title, message),
     error: (title: string, message?: string) => showToast('error', title, message),
     warning: (title: string, message?: string) => showToast('warning', title, message),
     info: (title: string, message?: string) => showToast('info', title, message),
-  };
+  }), [showToast]);
+
+  const contextValue = React.useMemo(() => ({
+    toast,
+    confirm,
+    showToast,
+  }), [toast, confirm, showToast]);
 
   return (
-    <ToastContext.Provider value={{ toast, confirm, showToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
 
       {/* ── Top-Center Noticeable Theme-Adaptive Toast Container ────────────────── */}

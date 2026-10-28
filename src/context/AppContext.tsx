@@ -102,7 +102,9 @@ import {
   createDividendJournal,
 } from '@/lib/accounting';
 import { generateId, calculateSubAssemblyCost, syncFinishedGoodsWithProducts, getEffectiveVariantBOM, generateOrderNumber, generateItemUnitNumber } from '@/lib/utils';
-import { DEFAULT_USER_ID, getUserById, USER_ACCOUNTS, UserAccount } from '@/lib/roles';
+import { DEFAULT_USER_ID, getUserById, USER_ACCOUNTS, UserAccount, RoleType, normalizeRole } from '@/lib/roles';
+import { authService, UserSummary } from '@/services/auth.service';
+import { getCookie, setCookie, deleteCookie } from 'cookies-next';
 
 const STORAGE_KEY = 'reeval-erp-state-v5';
 
@@ -115,6 +117,7 @@ interface AppContextType extends AppState {
   switchUser: (userId: string) => void;
   logout: () => void;
   login: (emailOrId: string, passwordInput: string) => { success: boolean; error?: string; user?: UserAccount };
+  refreshProfile: () => void;
 
   // Reusable BOM Templates & Variant-Level Overrides Actions
   cloneTemplateToVariant: (variantId: string, templateId: string) => void;
@@ -227,12 +230,15 @@ interface AppContextType extends AppState {
   createNormalWorkOrder: (productId: string, variantId: string | undefined, targetQty: number, customNotes?: string) => { success: boolean; error?: string };
   cancelWorkOrder: (workOrderId: string, reason?: string) => { success: boolean; error?: string };
   syncWorkOrderRouting: (workOrderId: string) => void;
+  setOperationsList: (ops: ProductionOperation[]) => void;
   addOperation: (op: Omit<ProductionOperation, 'id'>) => string;
   updateOperation: (id: string, op: Partial<Omit<ProductionOperation, 'id'>>) => void;
   deleteOperation: (id: string) => boolean;
+  setRoutingsList: (routings: ProductionRouting[]) => void;
   addRouting: (rt: Omit<ProductionRouting, 'id'>) => void;
   updateRouting: (id: string, rt: Partial<Omit<ProductionRouting, 'id'>>) => void;
   deleteRouting: (id: string) => boolean;
+  setOperatorsList: (operators: ProductionOperator[]) => void;
   addOperator: (op: Omit<ProductionOperator, 'id'>) => void;
   updateOperator: (id: string, op: Partial<Omit<ProductionOperator, 'id'>>) => void;
   deleteOperator: (id: string) => boolean;
@@ -351,6 +357,8 @@ function saveState(state: AppState) {
     // ignore
   }
 }
+
+
 
 export const initialOrderFormConfiguration: FormContainer[] = [
   {
@@ -587,16 +595,187 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveState(state);
   }, [state, initialized]);
 
-  const currentUser = getUserById(state.currentUserId || DEFAULT_USER_ID);
-  const isLoggedIn = Boolean(state.currentUserId);
+  const getStoredToken = useCallback((): string | null => {
+    if (typeof window === 'undefined') {
+      try {
+        return (getCookie('token') as string) || (getCookie('cookieKey') as string) || null;
+      } catch {
+        return null;
+      }
+    }
+    return (
+      localStorage.getItem('token') ||
+      (getCookie('token') as string) ||
+      (getCookie('cookieKey') as string) ||
+      null
+    );
+  }, []);
+
+  const [hasAuthToken, setHasAuthToken] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return Boolean(
+        localStorage.getItem('token') ||
+        getCookie('token') ||
+        getCookie('cookieKey')
+      );
+    }
+    try {
+      return Boolean(getCookie('token') || getCookie('cookieKey'));
+    } catch {
+      return false;
+    }
+  });
+
+  const [storedUser, setStoredUser] = useState<UserSummary | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const u = localStorage.getItem('user') || (getCookie('user') as string);
+        return u ? JSON.parse(u) : null;
+      } catch {
+        return null;
+      }
+    }
+    try {
+      const u = getCookie('user') as string;
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const refreshProfile = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const token = getStoredToken();
+    if (!token) {
+      setHasAuthToken(false);
+      setStoredUser(null);
+      return;
+    }
+
+    try {
+      const res = await authService.getProfile();
+      if (res && res.success && res.data) {
+        setStoredUser(res.data);
+        setHasAuthToken(true);
+        localStorage.setItem('user', JSON.stringify(res.data));
+        setCookie('user', JSON.stringify(res.data), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        setCookie('permissions', JSON.stringify(res.data.permissions || []), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        setCookie('role', (res.data.roles || []).join(','), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+
+        if (res.data.must_change_password) {
+          localStorage.setItem('mustChangePassword', '1');
+          setCookie('mustChangePassword', '1', { path: '/' });
+        } else {
+          localStorage.removeItem('mustChangePassword');
+          deleteCookie('mustChangePassword', { path: '/' });
+        }
+      }
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        setHasAuthToken(false);
+        setStoredUser(null);
+        authService.logout();
+      }
+    }
+  }, [getStoredToken]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = getStoredToken();
+      if (token) {
+        setHasAuthToken(true);
+        try {
+          const u = localStorage.getItem('user') || (getCookie('user') as string);
+          if (u) setStoredUser(JSON.parse(u));
+        } catch {}
+        refreshProfile();
+      } else {
+        setHasAuthToken(false);
+        setStoredUser(null);
+      }
+    }
+  }, [getStoredToken, refreshProfile]);
+
+  const currentUser = React.useMemo<UserAccount>(() => {
+    if (storedUser) {
+      const isSuper = Boolean(
+        storedUser.is_superadmin ||
+        (Array.isArray(storedUser.roles) && (storedUser.roles.includes('SUPER_ADMIN') || storedUser.roles.includes('SUPERADMIN')))
+      );
+      const rawRoles: string[] = Array.isArray(storedUser.roles) ? storedUser.roles : (storedUser.roles ? [storedUser.roles] : []);
+      const rawRole = isSuper ? 'SUPER_ADMIN' : (rawRoles[0] || 'ADMIN');
+      const normalizedRole = normalizeRole(rawRole);
+      const roleStr = isSuper ? 'SUPER_ADMIN' : normalizedRole;
+      const initials = storedUser.full_name
+        ? storedUser.full_name
+            .trim()
+            .split(/\s+/)
+            .map((n: string) => n[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase()
+        : (storedUser.email ? storedUser.email.slice(0, 2).toUpperCase() : 'U');
+      return {
+        id: String(storedUser.id),
+        name: storedUser.full_name || storedUser.email,
+        role: roleStr as any,
+        roles: rawRoles.length > 0 ? rawRoles : [roleStr],
+        roleLabel: isSuper ? 'Super Admin' : (rawRoles[0] || 'User'),
+        initials: initials || 'U',
+        email: storedUser.email,
+        phone: storedUser.phone,
+        permissions: storedUser.permissions || (isSuper ? ['*'] : []),
+        is_superadmin: isSuper,
+      };
+    }
+    // If we have an auth token or on SSR where auth token might be present in cookies:
+    // Never fallback to mock user Dewi Handayani!
+    if (hasAuthToken || typeof window === 'undefined') {
+      return {
+        id: '',
+        name: '',
+        role: 'ADMIN' as any,
+        roles: ['ADMIN'],
+        permissions: [],
+        roleLabel: '',
+        initials: '',
+        email: '',
+        is_superadmin: false,
+      };
+    }
+    // Only if in unauthenticated dev/demo mode without any auth token:
+    const fallbackUser = getUserById(state.currentUserId || DEFAULT_USER_ID);
+    return {
+      ...fallbackUser,
+      roles: fallbackUser.roles || [fallbackUser.role],
+      permissions: fallbackUser.permissions || (fallbackUser.is_superadmin ? ['*'] : []),
+    };
+  }, [storedUser, hasAuthToken, state.currentUserId]);
+
+  const isLoggedIn = Boolean(hasAuthToken);
 
   const switchUser = useCallback((userId: string) => {
     setState(prev => ({ ...prev, currentUserId: userId }));
   }, []);
 
   const logout = useCallback(() => {
+    setHasAuthToken(false);
+    setStoredUser(null);
     setState(prev => ({ ...prev, currentUserId: '' }));
+    deleteCookie('user', { path: '/' });
+    authService.logout();
   }, []);
+
+  // const currentUser = getUserById(state.currentUserId || DEFAULT_USER_ID);
+  // const isLoggedIn = Boolean(state.currentUserId);
+
+  // const switchUser = useCallback((userId: string) => {
+  //   setState(prev => ({ ...prev, currentUserId: userId }));
+  // }, []);
+
+  // const logout = useCallback(() => {
+  //   setState(prev => ({ ...prev, currentUserId: '' }));
+  // }, []);
 
   const login = useCallback((emailOrId: string, passwordInput: string) => {
     if (passwordInput !== '123456') {
@@ -3951,7 +4130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         spkNumber = String(spkNumSeq);
       }
 
-      const assignedRouting = (variant?.routingId ? prev.routings.find(r => r.id === variant.routingId) : null)
+      const assignedRouting = (variant?.routingId ? prev.routings.find(r => r.id === variant?.routingId) : null)
         || (product.defaultRoutingId ? prev.routings.find(r => r.id === product.defaultRoutingId) : null)
         || prev.routings[0];
 
@@ -4249,6 +4428,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return result;
   }, []);
 
+  const setOperatorsList = useCallback((operators: ProductionOperator[]) => {
+    setState(prev => ({
+      ...prev,
+      operators,
+    }));
+  }, []);
+
   const addOperator = useCallback((op: Omit<ProductionOperator, 'id'>) => {
     setState(prev => ({
       ...prev,
@@ -4309,6 +4495,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setOperationsList = useCallback((ops: ProductionOperation[]) => {
+    setState(prev => ({ ...prev, operations: ops }));
+  }, []);
+
   const addOperation = useCallback((op: Omit<ProductionOperation, 'id'>): string => {
     const id = `op-${generateId()}`;
     setState(prev => ({ ...prev, operations: [...prev.operations, { ...op, id }] }));
@@ -4327,6 +4517,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ...prev, operations: prev.operations.filter(o => o.id !== id) };
     });
     return success;
+  }, []);
+
+  const setRoutingsList = useCallback((routings: ProductionRouting[]) => {
+    setState(prev => ({ ...prev, routings }));
   }, []);
 
   const addRouting = useCallback((rt: Omit<ProductionRouting, 'id'>) => {
@@ -5407,6 +5601,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ...state,
     currentUser,
     isLoggedIn,
+    refreshProfile,
     switchUser,
     logout,
     login,
@@ -5481,12 +5676,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createNormalWorkOrder,
     cancelWorkOrder,
     syncWorkOrderRouting,
+    setOperationsList,
     addOperation,
     updateOperation,
     deleteOperation,
+    setRoutingsList,
     addRouting,
     updateRouting,
     deleteRouting,
+    setOperatorsList,
     addOperator,
     updateOperator,
     deleteOperator,

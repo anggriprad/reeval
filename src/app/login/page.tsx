@@ -1,42 +1,111 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Factory } from 'lucide-react';
+import { authService } from '@/services/auth.service';
+import { setCookie, deleteCookie } from 'cookies-next';
+import { toast } from 'sonner';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
-  const { login, isLoggedIn } = useApp();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const { isLoggedIn } = useApp();
 
-  const [email, setEmail] = useState<string>('admin@reeval.id');
-  const [password, setPassword] = useState<string>('123456');
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isLoggedIn) {
-      router.push('/');
+      const mustChange =
+        typeof window !== 'undefined' &&
+        localStorage.getItem('mustChangePassword') === '1';
+
+      if (mustChange) {
+        router.push('/change-password');
+      } else {
+        router.push('/');
+      }
     }
   }, [isLoggedIn, router]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsLoading(true);
 
-    setTimeout(() => {
-      const result = login(email, password);
-      setIsLoading(false);
-      if (result.success) {
-        router.push('/');
+    try {
+      const res = await authService.login({
+        email: email.trim(),
+        password: password,
+      });
+
+      if (res.success && res.data) {
+        const { access_token, user, company, must_change_password } = res.data;
+        const requiresPasswordChange = Boolean(
+          must_change_password || user?.must_change_password
+        );
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('token', access_token);
+          localStorage.setItem('user', JSON.stringify(user));
+          if (company) {
+            localStorage.setItem('company', JSON.stringify(company));
+          }
+        }
+
+        const isSuper = Boolean(
+          user.is_superadmin ||
+          (Array.isArray(user.roles) && (user.roles.includes('SUPER_ADMIN') || user.roles.includes('SUPERADMIN')))
+        );
+        const rawRoles: string[] = Array.isArray(user.roles) ? user.roles : (user.roles ? [user.roles] : []);
+        const primaryRole = isSuper ? 'SUPER_ADMIN' : (rawRoles[0] || 'ADMIN');
+        const roleCookieValue = isSuper ? 'SUPER_ADMIN' : (rawRoles.length > 0 ? rawRoles.join(',') : primaryRole);
+
+        setCookie('token', access_token, { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        setCookie('cookieKey', access_token, { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        setCookie('user', JSON.stringify(user), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        setCookie('role', roleCookieValue, { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        setCookie('permissions', JSON.stringify(user.permissions || []), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        if (company?.id) {
+          setCookie('activeCompanyId', company.id.toString(), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        }
+
+        if (requiresPasswordChange) {
+          setCookie('mustChangePassword', '1', { maxAge: 60 * 60 * 24 * 7, path: '/' });
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('mustChangePassword', '1');
+          }
+          toast.info('Akun Anda memerlukan penggantian password baru sebelum melanjutkan.');
+          window.location.href = '/change-password';
+          return;
+        }
+
+        deleteCookie('mustChangePassword', { path: '/' });
+        document.cookie = "mustChangePassword=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('mustChangePassword');
+        }
+
+        toast.success(`Selamat datang, ${user.full_name || user.email}!`);
+        const targetUrl = callbackUrl === '/login' || callbackUrl === '/change-password' ? '/' : callbackUrl;
+        window.location.href = targetUrl;
       } else {
-        setErrorMessage(result.error || 'Email atau password yang Anda masukkan salah.');
+        setErrorMessage(res.message || 'Login gagal. Periksa kembali email dan password Anda.');
       }
-    }, 400);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Gagal terhubung ke server. Pastikan backend aktif.';
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -51,9 +120,7 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold tracking-tight text-white">
               Reeval ERP
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Sistem Manajemen Operasional Pabrik &amp; Produksi
-            </p>
+         
           </div>
         </div>
 
@@ -102,9 +169,14 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 focus:outline-none"
+                  tabIndex={-1}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -113,30 +185,30 @@ export default function LoginPage() {
               type="submit"
               variant="primary"
               size="md"
-              disabled={isLoading || !email.trim() || !password}
-              className="w-full mt-2 font-bold justify-center"
+              className="w-full justify-center mt-2 shadow-md shadow-indigo-600/20"
+              isLoading={isLoading}
             >
-              {isLoading ? 'Memproses...' : 'Masuk'}
-              {!isLoading && <ArrowRight className="ml-2 h-4 w-4" />}
+              <span>Masuk</span>
+              <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
           </form>
 
-          {/* Clean Demo Info Footer */}
-          <div className="pt-4 border-t border-slate-800 text-[11px] text-slate-400 space-y-1.5">
-            <p className="font-semibold text-slate-300">Akun Demo (Password: 123456):</p>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-[10px] text-slate-400">
-              <div>&bull; Super Admin: <span className="text-indigo-400">admin@reeval.id</span></div>
-              <div>&bull; Sales: <span className="text-indigo-400">sales@reeval.id</span></div>
-              <div>&bull; Produksi: <span className="text-indigo-400">production@reeval.id</span></div>
-              <div>&bull; Gudang: <span className="text-indigo-400">gudang@reeval.id</span></div>
-            </div>
-          </div>
+         
         </div>
 
-        <div className="text-center text-[11px] text-slate-500">
-          Reeval ERP &bull; Enterprise Manufacturing System &copy; 2026
-        </div>
+        {/* Footer info */}
+        <p className="text-center text-[11px] text-slate-400">
+          Reeval ERP Enterprise Manufacturing System &copy; {new Date().getFullYear()}
+        </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">Memuat...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }

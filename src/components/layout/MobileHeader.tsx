@@ -21,11 +21,13 @@ import {
   PackageOpen,
   Truck,
   DollarSign,
+  Settings,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { Toggle } from '@/components/ui/Toggle';
 import { isRouteAllowed } from '@/lib/roles';
+import { hasPermission, hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
 export interface MobileHeaderSyncDetail {
@@ -72,6 +74,7 @@ const moduleRootRoutes = [
   '/delivery',
   '/finance',
   '/purchasing',
+  '/settings',
 ];
 
 // Helper to determine fallback module title, root vs subpage, & backHref from pathname
@@ -96,6 +99,7 @@ function getSectionMeta(pathname: string): { title: string; isSubpage: boolean; 
   if (pathname === '/customers') return { title: 'Pelanggan', isSubpage: true, isModuleRoot: true, defaultBackHref: '/' };
   if (pathname === '/suppliers') return { title: 'Supplier', isSubpage: true, isModuleRoot: true, defaultBackHref: '/' };
   if (pathname === '/users') return { title: 'Pengguna', isSubpage: true, isModuleRoot: true, defaultBackHref: '/' };
+  if (pathname.startsWith('/settings/')) return { title: 'Pengaturan Sistem', isSubpage: true, isModuleRoot: false, defaultBackHref: '/settings' };
   return { title: 'Reeval ERP', isSubpage: true, isModuleRoot, defaultBackHref: '/' };
 }
 
@@ -271,6 +275,13 @@ export function MobileHeader() {
   const activeWorkOrdersCount = workOrders.filter(w => w.status !== 'COMPLETED').length;
   const lowStockCount = materials.filter(m => m.stock <= m.minStock).length;
 
+  const isSuperAdmin = Boolean(
+    currentUser.is_superadmin ||
+    currentUser.role === 'SUPER_ADMIN' ||
+    (Array.isArray(currentUser.roles) && currentUser.roles.includes('SUPER_ADMIN')) ||
+    (Array.isArray(currentUser.permissions) && (currentUser.permissions.includes('*') || currentUser.permissions.includes('system:*')))
+  );
+
   const sheetModules = [
     {
       href: '/order',
@@ -278,6 +289,7 @@ export function MobileHeader() {
       icon: ShoppingCart,
       colorClass: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-900/60',
       badgeCount: activeOrdersCount,
+      permission: PERMISSIONS.SALES.READ,
     },
     {
       href: '/production',
@@ -285,12 +297,14 @@ export function MobileHeader() {
       icon: Factory,
       colorClass: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-900/60',
       badgeCount: activeWorkOrdersCount,
+      permission: PERMISSIONS.PRODUCTION.READ,
     },
     {
       href: '/delivery',
       label: 'Pengiriman',
       icon: Truck,
       colorClass: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-900/60',
+      permission: PERMISSIONS.DELIVERY.READ,
     },
     {
       href: '/inventory',
@@ -298,20 +312,39 @@ export function MobileHeader() {
       icon: Warehouse,
       colorClass: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-900/60',
       badgeCount: lowStockCount > 0 ? lowStockCount : undefined,
+      permission: [PERMISSIONS.INVENTORY.READ, PERMISSIONS.INVENTORY.ASSET_READ, PERMISSIONS.PURCHASING.READ],
     },
     {
       href: '/products',
       label: 'Katalog',
       icon: PackageOpen,
       colorClass: 'bg-sky-50 text-sky-600 border-sky-100 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-900/60',
+      permission: PERMISSIONS.PRODUCT.READ,
     },
     {
       href: '/finance',
       label: 'Keuangan',
       icon: DollarSign,
       colorClass: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-900/60',
+      permission: PERMISSIONS.FINANCE.READ,
     },
-  ].filter(item => isRouteAllowed(currentUser.role, item.href));
+    {
+      href: '/settings',
+      label: 'Pengaturan',
+      icon: Settings,
+      colorClass: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700',
+      permission: [PERMISSIONS.ROLE.READ, PERMISSIONS.USER.READ, PERMISSIONS.COMPANY.READ],
+    },
+  ].filter(item => {
+    if (isSuperAdmin) return true;
+    if (item.permission) {
+      const permitted = Array.isArray(item.permission)
+        ? hasAnyPermission(currentUser.permissions, item.permission, isSuperAdmin)
+        : hasPermission(currentUser.permissions, item.permission, isSuperAdmin);
+      if (!permitted) return false;
+    }
+    return isRouteAllowed(currentUser.roles || currentUser.role, item.href);
+  });
 
   return (
     <>

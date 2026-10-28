@@ -13,7 +13,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isLoggedIn } = useApp();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [hasToken, setHasToken] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
+  const isAuthPage = pathname === '/login' || pathname === '/signin' || pathname === '/change-password';
+
+  useEffect(() => {
+    setMounted(true);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    setHasToken(Boolean(token));
+  }, []);
+
+  const authenticated = isLoggedIn || hasToken;
+  const mustChange = mounted && typeof window !== 'undefined' && localStorage.getItem('mustChangePassword') === '1';
+
+  useEffect(() => {
+    if (mounted) {
+      if (authenticated && mustChange && pathname !== '/change-password') {
+        router.push('/change-password');
+      } else if (!authenticated && !isAuthPage) {
+        router.push('/login');
+      }
+    }
+  }, [authenticated, isAuthPage, mounted, mustChange, pathname, router]);
+
+  // If on auth page (login, change-password), render full screen without sidebar
+  if (isAuthPage) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        {children}
+      </div>
+    );
+  }
+
+  // If not logged in, or if must change password on non-change-password route, render null while redirecting
+  if (mounted && (!authenticated || (mustChange && pathname !== '/change-password'))) {
+    return null;
+  }
   const isLoginPage = pathname === '/login';
 
   useEffect(() => {

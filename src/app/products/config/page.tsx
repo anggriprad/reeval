@@ -14,6 +14,8 @@ import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { formatCurrency } from '@/lib/utils';
 import { canManageInventory, canSeeCosts } from '@/lib/roles';
 import type { BOMItem, ProductModifierGroup, ProductModifierOption } from '@/lib/types';
+import { ProductCategorySection } from './components/ProductCategorySection';
+import { ProductAttributeSection } from './components/ProductAttributeSection';
 import {
   ArrowLeft,
   FileSpreadsheet,
@@ -364,50 +366,8 @@ function ProductsConfigContent() {
   const seeCosts = canSeeCosts(currentUser.role);
 
   // Search terms per section
-  const [categorySearch, setCategorySearch] = useState('');
-  const [newCategoryName, setNewCategoryName] = useState('');
   const [bomSearch, setBomSearch] = useState('');
-  const [attrSearch, setAttrSearch] = useState('');
   const [modSearch, setModSearch] = useState('');
-
-  // Category handlers
-  const handleAddCategory = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = newCategoryName.trim();
-    if (!trimmed) {
-      toast.error('Gagal', 'Nama kategori tidak boleh kosong.');
-      return;
-    }
-    if (productCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
-      toast.error('Sudah Ada', `Kategori "${trimmed}" sudah terdaftar.`);
-      return;
-    }
-    addProductCategory(trimmed);
-    setNewCategoryName('');
-    toast.success('Berhasil', `Kategori "${trimmed}" berhasil ditambahkan.`);
-  };
-
-  const handleDeleteCategory = async (cat: string) => {
-    const isOk = await confirm({
-      title: 'Hapus Kategori Produk?',
-      message: `Apakah Anda yakin ingin menghapus kategori "${cat}"? Kategori yang sedang digunakan oleh produk aktif tidak dapat dihapus.`,
-      confirmText: 'Hapus Kategori',
-      cancelText: 'Batal',
-      variant: 'danger',
-    });
-    if (!isOk) return;
-
-    const success = deleteProductCategory(cat);
-    if (success) {
-      toast.success('Berhasil Dihapus', `Kategori "${cat}" berhasil dihapus.`);
-    } else {
-      toast.error('Gagal Menghapus', `Kategori "${cat}" tidak dapat dihapus karena masih digunakan oleh produk di katalog.`);
-    }
-  };
-
-  const filteredCategories = productCategories.filter(c =>
-    c.toLowerCase().includes(categorySearch.toLowerCase())
-  );
 
   // Preset BOM Modal State
   const [showBomTemplateModal, setShowBomTemplateModal] = useState(false);
@@ -422,13 +382,6 @@ function ProductsConfigContent() {
   const [newBomQty, setNewBomQty] = useState('');
   const [expandedBomTemplateId, setExpandedBomTemplateId] = useState<string | null>(null);
 
-  // Master Attribute Modal State
-  const [showAttributeModal, setShowAttributeModal] = useState(false);
-  const [editAttributeId, setEditAttributeId] = useState<string | null>(null);
-  const [formAttrName, setFormAttrName] = useState('');
-  const [formAttrValues, setFormAttrValues] = useState('');
-  const [attributeModalError, setAttributeModalError] = useState('');
-
   // Modifier Group Modal State
   const [showModifierModal, setShowModifierModal] = useState(false);
   const [editModifierGroupId, setEditModifierGroupId] = useState<string | null>(null);
@@ -441,10 +394,6 @@ function ProductsConfigContent() {
   // Filtered lists
   const filteredBomTemplates = bomTemplates.filter(t =>
     !bomSearch || t.name.toLowerCase().includes(bomSearch.toLowerCase()) || (t.description || '').toLowerCase().includes(bomSearch.toLowerCase())
-  );
-
-  const filteredAttributes = attributes.filter(a =>
-    !attrSearch || a.name.toLowerCase().includes(attrSearch.toLowerCase()) || a.values.some(v => v.toLowerCase().includes(attrSearch.toLowerCase()))
   );
 
   const filteredModifiers = masterModifierGroups.filter(g =>
@@ -556,65 +505,6 @@ function ProductsConfigContent() {
     setFormBomItems(formBomItems.filter(i => i.materialId !== matId));
   };
 
-  // --- Handlers for Master Attribute ---
-  const openAddAttribute = () => {
-    setEditAttributeId(null);
-    setFormAttrName('');
-    setFormAttrValues('');
-    setAttributeModalError('');
-    setShowAttributeModal(true);
-  };
-
-  const openEditAttribute = (attr: { id: string; name: string; values: string[] }) => {
-    setEditAttributeId(attr.id);
-    setFormAttrName(attr.name);
-    setFormAttrValues(attr.values.join(', '));
-    setAttributeModalError('');
-    setShowAttributeModal(true);
-  };
-
-  const handleSaveAttribute = () => {
-    if (!formAttrName.trim()) {
-      setAttributeModalError('Nama atribut wajib diisi.');
-      return;
-    }
-    const valArray = formAttrValues
-      .split(',')
-      .map(v => v.trim())
-      .filter(v => v);
-
-    if (editAttributeId) {
-      updateAttribute(editAttributeId, {
-        name: formAttrName.trim(),
-        values: valArray,
-      });
-      toast.success('Atribut Diperbarui', `Atribut "${formAttrName.trim()}" berhasil diperbarui.`);
-    } else {
-      addAttribute({
-        name: formAttrName.trim(),
-        values: valArray,
-      });
-      toast.success('Atribut Ditambahkan', `Atribut "${formAttrName.trim()}" berhasil ditambahkan.`);
-    }
-    setShowAttributeModal(false);
-  };
-
-  const handleDeleteAttribute = async (attrId: string, attrName: string) => {
-    const isOk = await confirm({
-      title: 'Hapus Master Atribut',
-      message: `Apakah Anda yakin ingin menghapus atribut "${attrName}"?`,
-      confirmText: 'Hapus Atribut',
-      variant: 'danger',
-    });
-    if (isOk) {
-      if (!deleteAttribute(attrId)) {
-        toast.error('Gagal Menghapus', 'Atribut ini masih digunakan oleh salah satu produk.');
-      } else {
-        toast.success('Atribut Dihapus', `Master atribut "${attrName}" berhasil dihapus.`);
-      }
-    }
-  };
-
   // --- Handlers for Modifier Group ---
   const openAddModifier = () => {
     setEditModifierGroupId(null);
@@ -708,93 +598,7 @@ function ProductsConfigContent() {
 
       <div className="space-y-4">
         {/* SECTION 1: MASTER KATEGORI PRODUK */}
-        <ConfigSection
-          title="Master Kategori Produk"
-          description="Kelola daftar kategori untuk pengelompokan produk di katalog."
-          icon={FolderTree}
-          iconWrapperClass="bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400"
-          defaultExpanded={true}
-        >
-          <div className="space-y-4 pt-4">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                  type="text"
-                  placeholder="Cari kategori produk..."
-                  value={categorySearch}
-                  onChange={e => setCategorySearch(e.target.value)}
-                  className="pl-9 text-xs"
-                />
-              </div>
-              {canManage && (
-                <form onSubmit={handleAddCategory} className="flex items-center gap-2">
-                  <Input
-                    type="text"
-                    placeholder="Nama kategori baru..."
-                    value={newCategoryName}
-                    onChange={e => setNewCategoryName(e.target.value)}
-                    className="text-xs w-48 sm:w-60"
-                  />
-                  <Button type="submit" size="sm" disabled={!newCategoryName.trim()}>
-                    <Plus className="h-4 w-4" /> Tambah
-                  </Button>
-                </form>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-left font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                    <th className="px-4 py-3">Nama Kategori</th>
-                    <th className="px-4 py-3 text-center">Jumlah Produk Terkait</th>
-                    {canManage && <th className="px-4 py-3 text-right">Aksi</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredCategories.length === 0 ? (
-                    <tr>
-                      <td colSpan={canManage ? 3 : 2} className="py-10 text-center text-slate-400 dark:text-slate-500">
-                        {categorySearch ? 'Tidak ada kategori yang cocok dengan pencarian.' : 'Belum ada kategori produk terdaftar.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredCategories.map(cat => {
-                      const count = products.filter(p => p.category?.toLowerCase() === cat.toLowerCase()).length;
-                      return (
-                        <tr key={cat} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
-                            <div className="flex items-center gap-2">
-                              <span className="h-2 w-2 rounded-full bg-blue-500"></span>
-                              <span>{cat}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Badge variant={count > 0 ? 'info' : 'default'}>
-                              {count} Produk
-                            </Badge>
-                          </td>
-                          {canManage && (
-                            <td className="px-4 py-3 text-right">
-                              <button
-                                onClick={() => handleDeleteCategory(cat)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                                title="Hapus Kategori"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </ConfigSection>
+        <ProductCategorySection />
 
         {/* SECTION 2: MASTER PRESET BOM */}
         <ConfigSection
@@ -947,77 +751,7 @@ function ProductsConfigContent() {
         </ConfigSection>
 
         {/* SECTION 2: MASTER ATRIBUT VARIAN */}
-        <ConfigSection
-          title="Master Atribut Varian"
-          description="Kelola atribut master seperti Ukuran, Warna, Finishing, dan Material yang digunakan pada produk."
-          icon={Tag}
-          iconWrapperClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
-          defaultExpanded={true}
-        >
-          <div className="space-y-4 pt-4">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                  type="text"
-                  placeholder="Cari atribut master..."
-                  value={attrSearch}
-                  onChange={e => setAttrSearch(e.target.value)}
-                  className="pl-9 text-xs"
-                />
-              </div>
-              {canManage && (
-                <Button onClick={openAddAttribute} size="sm">
-                  <Plus className="h-4 w-4" /> Tambah Atribut
-                </Button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredAttributes.length === 0 ? (
-                <div className="md:col-span-2 rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center text-slate-400 dark:text-slate-500 text-xs">
-                  {attrSearch ? 'Tidak ada atribut yang cocok dengan pencarian.' : 'Belum ada master atribut terdaftar.'}
-                </div>
-              ) : (
-                filteredAttributes.map(attr => (
-                  <div key={attr.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Tag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">{attr.name}</h4>
-                      </div>
-                      {canManage && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => openEditAttribute(attr)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
-                            title="Edit Atribut"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteAttribute(attr.id, attr.name)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                            title="Hapus Atribut"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
-                      {attr.values.map((val, idx) => (
-                        <span key={idx} className="inline-block px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium">
-                          {val}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </ConfigSection>
+        <ProductAttributeSection />
 
         {/* SECTION 3: MODIFIER ADD-ON MASTER */}
         <ConfigSection
@@ -1296,53 +1030,6 @@ function ProductsConfigContent() {
             ) : (
               <p className="text-xs text-slate-400 italic">Belum ada material dikaitkan dengan preset BOM ini.</p>
             )}
-          </div>
-        </div>
-      </Modal>
-
-      {/* MODAL 2: CRUD MASTER ATRIBUT VARIAN */}
-      <Modal
-        isOpen={showAttributeModal}
-        onClose={() => setShowAttributeModal(false)}
-        title={editAttributeId ? 'Edit Master Atribut' : 'Tambah Master Atribut Varian'}
-        size="md"
-        actions={
-          <>
-            <Button variant="outline" onClick={() => setShowAttributeModal(false)}>Batal</Button>
-            <Button onClick={handleSaveAttribute}>
-              {editAttributeId ? 'Simpan Perubahan' : 'Tambah Atribut'}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          {attributeModalError && (
-            <div className="rounded-lg bg-red-50 p-3 text-xs font-semibold text-red-600 dark:bg-red-950/20 dark:text-red-400 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> {attributeModalError}
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Nama Atribut <span className="text-red-500">*</span></label>
-            <Input
-              type="text"
-              value={formAttrName}
-              onChange={e => setFormAttrName(e.target.value)}
-              placeholder="Contoh: Ukuran, Warna, Finishing, Material"
-              className="text-xs"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Opsi / Nilai Varian (pisahkan dengan koma)</label>
-            <textarea
-              rows={3}
-              value={formAttrValues}
-              onChange={e => setFormAttrValues(e.target.value)}
-              placeholder="Contoh: 120x200 cm, 160x200 cm, 180x200 cm"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
-            />
-            <p className="text-[10px] text-slate-400">Pisahkan setiap opsi dengan tanda koma ( , ).</p>
           </div>
         </div>
       </Modal>

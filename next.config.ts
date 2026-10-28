@@ -23,6 +23,15 @@ const nextConfig: NextConfig = {
     'localhost:3000',
     ...localIps,
   ],
+  async rewrites() {
+    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:3005';
+    return [
+      {
+        source: '/api/v1/:path*',
+        destination: `${backendUrl}/api/v1/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
