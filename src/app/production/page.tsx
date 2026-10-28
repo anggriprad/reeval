@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useUrlTab } from '@/lib/useUrlTab';
 import { useApp } from '@/context/AppContext';
@@ -14,11 +14,13 @@ import { Table, type TableColumn } from '@/components/ui/Table';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { formatCurrency, formatDate, formatDateTime, formatDurationBetween, formatVariantLabel, cn } from '@/lib/utils';
 import { canManageProduction } from '@/lib/roles';
-import type { JobCard, WorkOrder, Product } from '@/lib/types';
+import type { JobCard, WorkOrder, Product, ProductionOperation } from '@/lib/types';
+import { productionOperationService } from '@/services/production-operation.service';
 import { ActionMenu } from '@/components/ui/ActionMenu';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { OptionList } from '@/components/ui/OptionList';
 import {
   Factory,
   CheckCircle,
@@ -47,6 +49,7 @@ import {
   Sparkles,
   TrendingDown,
   Plus,
+  Pencil,
   Layers,
   Package,
   AlertCircle,
@@ -144,6 +147,8 @@ function ProductionContent() {
     materials = [],
     operators = [],
     operations = [],
+    setOperationsList,
+    updateJobCardOperator,
     startJobCard,
     pauseJobCard,
     completeJobCard,
@@ -151,6 +156,28 @@ function ProductionContent() {
     createNormalWorkOrder,
     cancelWorkOrder,
   } = useApp();
+
+  // Sinkronisasi data master operasi dari API backend
+  useEffect(() => {
+    productionOperationService.getOperations({ per_page: 100 })
+      .then(res => {
+        if (res && Array.isArray(res.data)) {
+          const mapped: ProductionOperation[] = res.data.map(op => ({
+            id: String(op.id),
+            name: op.name,
+            costingMethod: op.wage_type === 'HOURLY' ? 'hourly' : 'fixed',
+            durationMinutes: op.standard_duration_minutes,
+            laborCostPerHour: op.cost_per_hour,
+            fixedLaborCost: op.fixed_cost,
+            description: op.description,
+          }));
+          setOperationsList(mapped);
+        }
+      })
+      .catch(err => {
+        console.warn('Gagal memuat master operasi dari API:', err);
+      });
+  }, [setOperationsList]);
 
   const canManage = canManageProduction(currentUser.role);
   const [activeTab, setActiveTab] = useUrlTab(['active', 'completed', 'canceled', 'analytics'] as const, 'active');
@@ -199,11 +226,20 @@ function ProductionContent() {
     pauseJobCard(woId, jcId);
   };
 
+  // Active operators
+  const activeOperators = useMemo(() => operators.filter(o => o.status === 'ACTIVE'), [operators]);
+
   // JobCard completion modal state
   const [completeTarget, setCompleteTarget] = useState<{ woId: string; jc: JobCard } | null>(null);
   const [selectedOperatorName, setSelectedOperatorName] = useState('');
   const [operatorSearch, setOperatorSearch] = useState('');
   const [completeError, setCompleteError] = useState('');
+
+  const filteredOperators = useMemo(() => {
+    if (!operatorSearch.trim()) return activeOperators;
+    const q = operatorSearch.toLowerCase();
+    return activeOperators.filter(op => op.name.toLowerCase().includes(q));
+  }, [activeOperators, operatorSearch]);
 
   const handleOpenCompleteModal = (woId: string, jc: JobCard, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -238,6 +274,43 @@ function ProductionContent() {
     setSelectedOperatorName('');
     setOperatorSearch('');
     setCompleteError('');
+  };
+
+  // Edit Operator Modal state for Analysis Modal
+  const [editingJobCard, setEditingJobCard] = useState<JobCard | null>(null);
+  const [editingOperatorName, setEditingOperatorName] = useState('');
+  const [editOperatorSearch, setEditOperatorSearch] = useState('');
+  const [editOperatorError, setEditOperatorError] = useState('');
+
+  const filteredEditOperators = useMemo(() => {
+    if (!editOperatorSearch.trim()) return activeOperators;
+    const q = editOperatorSearch.toLowerCase();
+    return activeOperators.filter(op => op.name.toLowerCase().includes(q));
+  }, [activeOperators, editOperatorSearch]);
+
+  const handleOpenEditOperatorModal = (jc: JobCard, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingJobCard(jc);
+    setEditingOperatorName(jc.picName || '');
+    setEditOperatorSearch('');
+    setEditOperatorError('');
+  };
+
+  const handleSaveOperator = () => {
+    if (!selectedWO || !editingJobCard) return;
+    const picName = editingOperatorName.trim();
+    if (!picName) {
+      setEditOperatorError('Silakan pilih operator terlebih dahulu.');
+      return;
+    }
+    const foundOp = operators.find(o => o.name === picName);
+    updateJobCardOperator(selectedWO.id, editingJobCard.id, picName, foundOp?.id);
+    setWorkerInputs(prev => ({ ...prev, [editingJobCard.id]: picName }));
+    toast.success('Operator Diperbarui', `Operator untuk "${editingJobCard.operationName}" berhasil diubah.`);
+    setEditingJobCard(null);
+    setEditingOperatorName('');
+    setEditOperatorSearch('');
+    setEditOperatorError('');
   };
 
   // SPK Berjalan: Urutan terlama di paling atas (FIFO), yang baru di paling bawah
@@ -275,19 +348,13 @@ function ProductionContent() {
         return b.spkNumber.localeCompare(a.spkNumber);
       });
   }, [workOrders]);
-  const activeOperators = operators.filter(o => o.status === 'ACTIVE');
-  const filteredOperators = useMemo(() => {
-    if (!operatorSearch.trim()) return activeOperators;
-    const q = operatorSearch.toLowerCase();
-    return activeOperators.filter(op => op.name.toLowerCase().includes(q));
-  }, [activeOperators, operatorSearch]);
 
   const filterWO = (woList: typeof workOrders) => {
     let list = woList;
-    if (spkTypeFilter === 'CUSTOM') {
-      list = list.filter(w => w.isCustom);
-    } else if (spkTypeFilter === 'STANDARD') {
-      list = list.filter(w => !w.isCustom);
+    if (spkTypeFilter === 'FINISHED_GOOD') {
+      list = list.filter(w => !w.isSubAssembly);
+    } else if (spkTypeFilter === 'SUB_ASSEMBLY') {
+      list = list.filter(w => Boolean(w.isSubAssembly));
     }
 
     if (!searchTerm.trim()) return list;
@@ -626,8 +693,8 @@ function ProductionContent() {
         onFilterChange={setSpkTypeFilter}
         filterPlaceholder="Semua Tipe SPK"
         filterOptions={[
-          { value: 'CUSTOM', label: 'Pesanan Kustom' },
-          { value: 'STANDARD', label: 'Pesanan Standar' },
+          { value: 'FINISHED_GOOD', label: 'Barang Jadi' },
+          { value: 'SUB_ASSEMBLY', label: 'Bahan Setengah Jadi' },
         ]}
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
@@ -1308,123 +1375,186 @@ function ProductionContent() {
         isOpen={!!selectedWO}
         onClose={() => setSelectedWOId(null)}
         title={`Analisis Kinerja`}
-        size="lg"
+        size="md"
       >
-        {selectedWO && (
-          <div className="space-y-5">
-            {/* Summary Box */}
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl text-sm border border-slate-100 dark:border-slate-700">
-              <div className='flex justify-between gap-4'>
-                <div>
-                  <div className="font-bold text-base text-slate-900 dark:text-white">{selectedWO.productName}</div>
-                  {selectedWO?.variantName && (
-                    <div className="text-sm font-medium text-slate-600 dark:text-slate-300 mt-0.5">{formatVariantLabel(selectedWO.variantName)}</div>
-                  )}
+        {selectedWO && (() => {
+          const prod = products.find(p => p.id === selectedWO.productId || p.name === selectedWO.productName);
+          const plannedJobMins = selectedWO.jobCards.reduce((acc, jc) => {
+            const op = operations.find(o =>
+              o.id === jc.operationId ||
+              (jc.operationName && o.name && o.name.toLowerCase() === jc.operationName.toLowerCase())
+            );
+            return acc + (jc.plannedMinutes || op?.durationMinutes || 0);
+          }, 0);
+          const targetMinutes = plannedJobMins > 0
+            ? plannedJobMins
+            : (prod?.defaultEstimatedHours ? Math.round(prod.defaultEstimatedHours * 60) : 0);
+
+          const elapsedMinutes = selectedWO.completedAt && selectedWO.issuedAt
+            ? Math.max(0, Math.round((new Date(selectedWO.completedAt).getTime() - new Date(selectedWO.issuedAt).getTime()) / 60000))
+            : 0;
+          const totalActualJobMins = selectedWO.jobCards.reduce(
+            (acc, jc) => acc + (typeof jc.actualMinutes === 'number' ? jc.actualMinutes : 0),
+            0
+          );
+          const actualMinutes = elapsedMinutes > 0 ? elapsedMinutes : totalActualJobMins;
+
+          let durationColorClass = 'text-slate-800 dark:text-slate-200 font-bold';
+          if (!selectedWO.completedAt) {
+            durationColorClass = 'text-slate-500 dark:text-slate-400 font-bold';
+          } else if (targetMinutes > 0) {
+            const redThreshold = targetMinutes * 1.25;
+            if (actualMinutes <= targetMinutes) {
+              durationColorClass = 'text-emerald-600 dark:text-emerald-400 font-semibold';
+            } else if (actualMinutes <= redThreshold) {
+              durationColorClass = 'text-amber-600 dark:text-amber-400 font-semibold';
+            } else {
+              durationColorClass = 'text-red-600 dark:text-red-400 font-semibold';
+            }
+          }
+
+          return (
+            <div className="space-y-5">
+              {/* Summary Box */}
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
+                <div className="pb-2 flex items-start justify-between border-b border-slate-200 dark:border-slate-800 gap-3">
+                  <div>
+                    <div className="font-bold text-base text-slate-900 dark:text-white">{selectedWO.productName}</div>
+                    {selectedWO?.variantName && (
+                      <div className="text-sm font-medium text-slate-600 dark:text-slate-300 mt-0.5">{formatVariantLabel(selectedWO.variantName)}</div>
+                    )}
+                  </div>
+                  <Badge
+                    variant={
+                      selectedWO.status === 'COMPLETED'
+                        ? 'success'
+                        : selectedWO.status === 'PROCESSING'
+                          ? 'info'
+                          : selectedWO.status === 'CANCELED'
+                            ? 'danger'
+                            : 'warning'
+                    }
+                  >
+                    {selectedWO.status === 'COMPLETED'
+                      ? 'Selesai'
+                      : selectedWO.status === 'PROCESSING'
+                        ? 'Berjalan'
+                        : selectedWO.status === 'CANCELED'
+                          ? 'Dibatalkan'
+                          : 'Menunggu'}
+                  </Badge>
                 </div>
-                <span className='text-xs text-slate-600 dark:text-slate-400'>Order #{selectedWO.salesOrderNumber}</span>
+                <div className="space-y-2 mt-4 text-[13.5px] md:text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">No. Order</span>
+                    <span className="text-indigo-600 dark:text-indigo-400 font-semibold">{selectedWO.salesOrderNumber || '-'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Waktu Mulai</span>
+                    <span className="text-slate-800 dark:text-slate-200">{formatDateTime(selectedWO.issuedAt)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Waktu Selesai</span>
+                    <span className="text-slate-800 dark:text-slate-200">
+                      {selectedWO.completedAt ? formatDateTime(selectedWO.completedAt) : '-'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Durasi Pengerjaan</span>
+                    <span className={durationColorClass}>
+                      {selectedWO.completedAt ? formatDurationBetween(selectedWO.issuedAt, selectedWO.completedAt) : '-'}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 text-sm">
-                <div>
-                  <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Mulai</span>
-                  <strong className="text-slate-800 dark:text-slate-200 font-medium">{formatDateTime(selectedWO.issuedAt)}</strong>
-                </div>
-                <div>
-                  <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Selesai</span>
-                  <strong className="text-slate-800 dark:text-slate-200 font-medium">
-                    {selectedWO.completedAt ? formatDateTime(selectedWO.completedAt) : '-'}
-                  </strong>
-                </div>
-                <div>
-                  <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Durasi</span>
-                  <strong className="text-indigo-600 dark:text-indigo-400 font-medium">
-                    {selectedWO.completedAt ? formatDurationBetween(selectedWO.issuedAt, selectedWO.completedAt) : '-'}
-                  </strong>
-                </div>
-              </div>
-            </div>
 
-            {/* KPI Analysis Table per Operation Step */}
-            <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl">
-              <table className="w-full text-xs text-left whitespace-nowrap">
-                <thead className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 font-bold uppercase tracking-wider">
-                  <tr>
-                    <th className="py-3 px-3.5">Operasi</th>
-                    <th className="py-3 px-3.5">Operator PIC</th>
-                    <th className="py-3 px-3.5 text-center">Durasi Target vs Realisasi</th>
-                    <th className="py-3 px-3.5 text-center">Performa KPI</th>
-                    <th className="py-3 px-3.5 text-right">Upah Operasi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                  {selectedWO.jobCards.slice().sort((a, b) => a.sequence - b.sequence).map(jc => {
-                    const op = operations.find(o => o.id === jc.operationId);
-                    const plannedMins = jc.plannedMinutes || op?.durationMinutes || 0;
-                    const actualMins = jc.actualMinutes;
-                    const diff = typeof actualMins === 'number' ? actualMins - plannedMins : 0;
+              {/* List Card Operasi */}
+              <div className="space-y-2">
+                {selectedWO.jobCards.slice().sort((a, b) => a.sequence - b.sequence).map(jc => {
+                  const op = operations.find(o =>
+                    o.id === jc.operationId ||
+                    (jc.operationName && o.name && o.name.toLowerCase() === jc.operationName.toLowerCase())
+                  );
+                  const targetOpMins = jc.plannedMinutes || op?.durationMinutes || (
+                    prod?.defaultEstimatedHours
+                      ? Math.round((prod.defaultEstimatedHours * 60) / Math.max(1, selectedWO.jobCards.length))
+                      : 45
+                  );
+                  const actualMins = jc.actualMinutes;
 
-                    const laborCost = op ? (
-                      op.costingMethod === 'fixed'
-                        ? (op.fixedLaborCost || 0) * jc.targetQty
-                        : ((typeof actualMins === 'number' ? actualMins : plannedMins) / 60) * (op.laborCostPerHour || 0)
-                    ) : 0;
+                  let opDurationColor = 'text-slate-500 dark:text-slate-400 font-bold';
+                  if (typeof actualMins === 'number') {
+                    if (targetOpMins > 0) {
+                      const redThreshold = targetOpMins * 1.25;
+                      if (actualMins <= targetOpMins) {
+                        opDurationColor = 'text-emerald-600 dark:text-emerald-400 font-bold';
+                      } else if (actualMins <= redThreshold) {
+                        opDurationColor = 'text-amber-600 dark:text-amber-400 font-bold';
+                      } else {
+                        opDurationColor = 'text-red-600 dark:text-red-400 font-bold';
+                      }
+                    } else {
+                      opDurationColor = 'text-slate-800 dark:text-slate-200 font-bold';
+                    }
+                  }
 
-                    return (
-                      <tr key={jc.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                        <td className="py-3 px-3.5 font-semibold text-slate-800 dark:text-slate-200">{jc.operationName}</td>
-                        <td className="py-3 px-3.5">
-                          {jc.picName ? (
-                            <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
-                              <UserCheck className="h-3.5 w-3.5 text-indigo-500" />
-                              {jc.picName}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 italic">Belum Ditugaskan</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3.5 text-center font-mono">
-                          {plannedMins}m vs <span className="font-bold">{typeof actualMins === 'number' ? `${actualMins}m` : '-'}</span>
-                        </td>
-                        <td className="py-3 px-3.5 text-center">
-                          {typeof actualMins !== 'number' ? (
-                            <span className="text-slate-400 text-[10px] font-bold">MENUNGGU</span>
-                          ) : diff < 0 ? (
-                            <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              Cepat +{Math.abs(diff)}m
-                            </span>
-                          ) : diff === 0 ? (
-                            <span className="bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              Tepat Waktu
-                            </span>
-                          ) : (
-                            <span className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              Terlambat +{diff}m
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                  const laborCost = op ? (
+                    op.costingMethod === 'fixed'
+                      ? (op.fixedLaborCost || 0) * jc.targetQty
+                      : ((typeof actualMins === 'number' ? actualMins : targetOpMins) / 60) * (op.laborCostPerHour || 0)
+                  ) : 0;
+
+                  return (
+                    <div
+                      key={jc.id}
+                      className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/80"
+                    >
+                      <div className="flex items-center justify-between text-sm md:text-base">
+                        <span className="text-slate-900 dark:text-white truncate pr-2">
+                          {jc.operationName}
+                        </span>
+                        <span className={cn('shrink-0 text-sm md:text-xs', opDurationColor)}>
+                          {typeof actualMins === 'number' ? `${actualMins} menit` : '-'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                          <span className="text-slate-500 dark:text-slate-400 truncate">
+                            {jc.picName || 'Belum Ditugaskan'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleOpenEditOperatorModal(jc, e)}
+                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 rounded-md transition-colors shrink-0 cursor-pointer"
+                            title="Ubah Operator"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <span className="shrink-0 text-slate-600 dark:text-slate-300">
                           {formatCurrency(laborCost)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-            <div className="flex items-center justify-between bg-white dark:bg-slate-900 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-800">
-              <div className="text-xs uppercase font-bold text-slate-400">Total Upah</div>
-              <div className="font-extrabold text-indigo-600 dark:text-indigo-400 text-base">
-                {formatCurrency(selectedWO.jobCards.reduce((acc, jc) => {
-                  const op = operations.find(o => o.id === jc.operationId);
-                  if (!op) return acc;
-                  if (op.costingMethod === 'fixed') return acc + (op.fixedLaborCost || 0);
-                  const hrs = (jc.actualMinutes || jc.plannedMinutes) / 60;
-                  return acc + (hrs * (op.laborCostPerHour || 0));
-                }, 0))}
+              <div className="flex items-center justify-between bg-white dark:bg-slate-900 px-3.5 py-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                <div className="text-xs uppercase font-bold text-slate-400">Total Upah</div>
+                <div className="font-extrabold text-indigo-600 dark:text-indigo-400 text-base">
+                  {formatCurrency(selectedWO.jobCards.reduce((acc, jc) => {
+                    const op = operations.find(o => o.id === jc.operationId);
+                    if (!op) return acc;
+                    if (op.costingMethod === 'fixed') return acc + (op.fixedLaborCost || 0);
+                    const hrs = (jc.actualMinutes || jc.plannedMinutes) / 60;
+                    return acc + (hrs * (op.laborCostPerHour || 0));
+                  }, 0))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </Modal>
 
       {/* MODAL: BUAT SPK (NORMAL & WIP) */}
@@ -1764,38 +1894,77 @@ function ProductionContent() {
               </p>
             )}
 
-            <div className="space-y-1.5 pt-0.5">
-              {filteredOperators.map(op => {
-                const isSelected = selectedOperatorName === op.name;
-                return (
-                  <button
-                    key={op.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedOperatorName(op.name);
-                      if (completeError) setCompleteError('');
-                    }}
-                    className={cn(
-                      "w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left text-sm transition-all",
-                      isSelected
-                        ? "bg-blue-50 text-blue-900 border border-blue-400 dark:bg-blue-950/50 dark:text-blue-100 dark:border-blue-600 font-semibold shadow-xs"
-                        : "bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200/80 dark:bg-slate-800/50 dark:hover:bg-slate-800 dark:text-slate-200 dark:border-slate-700/80 font-medium"
-                    )}
-                  >
-                    <span>{op.name}</span>
-                    {isSelected && (
-                      <Check className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
+            <OptionList
+              options={filteredOperators.map(op => ({
+                value: op.name,
+                label: op.name,
+              }))}
+              value={selectedOperatorName}
+              onChange={val => {
+                setSelectedOperatorName(String(val));
+                if (completeError) setCompleteError('');
+              }}
+              emptyMessage="Tidak ada operator yang ditemukan."
+            />
+          </div>
+        )}
+      </Modal>
 
-              {filteredOperators.length === 0 && (
-                <div className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                  Tidak ada operator yang ditemukan.
-                </div>
-              )}
-            </div>
+      {/* Modal / Bottom Sheet Ubah Operator untuk JobCard */}
+      <Modal
+        isOpen={!!editingJobCard}
+        onClose={() => {
+          setEditingJobCard(null);
+          setEditingOperatorName('');
+          setEditOperatorSearch('');
+          setEditOperatorError('');
+        }}
+        title="Pilih Operator"
+        size="sm"
+        sheetHeight="auto"
+        actions={
+          editingJobCard ? (
+            <Button
+              variant="primary"
+              onClick={handleSaveOperator}
+              disabled={!editingOperatorName}
+            >
+              Simpan
+            </Button>
+          ) : undefined
+        }
+      >
+        {editingJobCard && (
+          <div className="space-y-3">
+            <Input
+              icon={Search}
+              inputSize="md"
+              placeholder="Cari nama operator..."
+              value={editOperatorSearch}
+              onChange={e => {
+                setEditOperatorSearch(e.target.value);
+                if (editOperatorError) setEditOperatorError('');
+              }}
+            />
+
+            {editOperatorError && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                {editOperatorError}
+              </p>
+            )}
+
+            <OptionList
+              options={filteredEditOperators.map(op => ({
+                value: op.name,
+                label: op.name,
+              }))}
+              value={editingOperatorName}
+              onChange={val => {
+                setEditingOperatorName(String(val));
+                if (editOperatorError) setEditOperatorError('');
+              }}
+              emptyMessage="Tidak ada operator yang ditemukan."
+            />
           </div>
         )}
       </Modal>

@@ -82,8 +82,8 @@ const vid = (prefix: string) => prefix;
 // PRODUCTION OPERATIONS (Master Data: 2 Operasi)
 // ========================================
 export const initialOperations: ProductionOperation[] = [
-  { id: 'op-1', name: 'Potong & Rakit Rangka', costingMethod: 'fixed', fixedLaborCost: 35000 },
-  { id: 'op-2', name: 'Finishing & QC', costingMethod: 'fixed', fixedLaborCost: 25000 },
+  { id: 'op-1', name: 'Potong & Rakit Rangka', costingMethod: 'fixed', durationMinutes: 60, fixedLaborCost: 35000 },
+  { id: 'op-2', name: 'Finishing & QC', costingMethod: 'fixed', durationMinutes: 45, fixedLaborCost: 25000 },
 ];
 
 export const initialOperators: ProductionOperator[] = [
