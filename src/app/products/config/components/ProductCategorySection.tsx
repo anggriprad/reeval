@@ -108,37 +108,16 @@ export function ProductCategorySection() {
 
       if (response && Array.isArray(response.data)) {
         setCategories(response.data);
-        // Synchronize AppContext productCategories
-        response.data.forEach((cat) => {
-          if (cat.name && !productCategories.some((c) => c.toLowerCase() === cat.name.toLowerCase())) {
-            addProductCategory(cat.name);
-          }
-        });
       }
     } catch (err: any) {
-      console.warn('Gagal memuat kategori produk dari API, fallback ke AppContext:', err);
+      console.warn('Gagal memuat kategori produk dari API:', err);
       hasFetchedRef.current = true;
-      setCategories((prev) => {
-        if (prev.length > 0) return prev;
-        return productCategories.map((name, index) => {
-          const count = products.filter((p) => p.category?.toLowerCase() === name.toLowerCase()).length;
-          return {
-            id: index + 1,
-            company_id: 1,
-            name,
-            product_count: count,
-            can_delete: count === 0,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-        });
-      });
+      toast.error('Gagal Memuat Data', 'Tidak dapat mengambil data master kategori produk.');
     } finally {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [filters.cat_page, filters.cat_per_page, filters.cat_search, addProductCategory, productCategories, products]);
+  }, [filters.cat_page, filters.cat_per_page, filters.cat_search, toast]);
 
   useEffect(() => {
     if (isExpanded) {

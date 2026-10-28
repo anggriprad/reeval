@@ -15,4 +15,6 @@ export * from "./product-attribute.service";
 export * from "./material.service";
 export * from "./procurement.service";
 export * from "./stock-movement.service";
+export * from "./bom-preset.service";
+export * from "./product-modifier.service";
 

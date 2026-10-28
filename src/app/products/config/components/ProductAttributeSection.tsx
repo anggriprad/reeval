@@ -105,40 +105,16 @@ export function ProductAttributeSection() {
 
       if (response && Array.isArray(response.data)) {
         setAttributes(response.data);
-        // Sync with AppContext
-        response.data.forEach((attr) => {
-          const valStrings = (attr.values || []).map((v) =>
-            typeof v === 'string' ? v : v.value
-          );
-          const existing = appAttributes.find((a) => a.id === String(attr.id));
-          if (!existing) {
-            addAppAttribute({
-              name: attr.name,
-              values: valStrings,
-            });
-          }
-        });
       }
     } catch (err: any) {
-      console.warn('Gagal memuat master atribut dari API, fallback ke AppContext:', err);
+      console.warn('Gagal memuat master atribut dari API:', err);
       hasFetchedRef.current = true;
-      setAttributes((prev) => {
-        if (prev.length > 0) return prev;
-        return appAttributes.map((a, idx) => ({
-          id: Number(a.id) || idx + 1,
-          name: a.name,
-          can_delete: true,
-          is_active: true,
-          values: a.values.map((v, vIdx) => ({ id: vIdx + 1, value: v })),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }));
-      });
+      toast.error('Gagal Memuat Data', 'Tidak dapat mengambil data master atribut varian.');
     } finally {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [filters.attr_page, filters.attr_per_page, filters.attr_search, addAppAttribute, appAttributes]);
+  }, [filters.attr_page, filters.attr_per_page, filters.attr_search, toast]);
 
   useEffect(() => {
     if (isExpanded) {

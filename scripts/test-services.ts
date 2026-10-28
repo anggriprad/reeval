@@ -15,6 +15,8 @@ import { productAttributeService } from '../src/services/product-attribute.servi
 import { materialService } from '../src/services/material.service';
 import { procurementService } from '../src/services/procurement.service';
 import { stockMovementService } from '../src/services/stock-movement.service';
+import { bomPresetService } from '../src/services/bom-preset.service';
+import { productModifierService } from '../src/services/product-modifier.service';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
 import { NextRequest } from 'next/server';
@@ -254,6 +256,34 @@ async function runTests() {
   assert(PERMISSIONS.INVENTORY.STOCK_MOVEMENT_READ === 'stock-movement:read', 'INVENTORY.STOCK_MOVEMENT_READ must be stock-movement:read');
   assert(PERMISSIONS.INVENTORY.STOCK_MOVEMENT_ADJUST === 'stock-movement:adjust', 'INVENTORY.STOCK_MOVEMENT_ADJUST must be stock-movement:adjust');
   console.log('✓ stockMovementService contract verified');
+
+  // 4o. Verify bomPresetService structure & PBAC mapping
+  console.log('4o. Checking bomPresetService contract & PBAC mapping...');
+  assert(typeof bomPresetService.getPresets === 'function', 'bomPresetService.getPresets must be a function');
+  assert(typeof bomPresetService.getPresetOptions === 'function', 'bomPresetService.getPresetOptions must be a function');
+  assert(typeof bomPresetService.getPresetById === 'function', 'bomPresetService.getPresetById must be a function');
+  assert(typeof bomPresetService.createPreset === 'function', 'bomPresetService.createPreset must be a function');
+  assert(typeof bomPresetService.updatePreset === 'function', 'bomPresetService.updatePreset must be a function');
+  assert(typeof bomPresetService.deletePreset === 'function', 'bomPresetService.deletePreset must be a function');
+  assert(PERMISSIONS.PRODUCT.BOM_READ === 'bom-preset:read', 'PRODUCT.BOM_READ must be bom-preset:read');
+  assert(PERMISSIONS.PRODUCT.BOM_CREATE === 'bom-preset:create', 'PRODUCT.BOM_CREATE must be bom-preset:create');
+  assert(PERMISSIONS.PRODUCT.BOM_UPDATE === 'bom-preset:update', 'PRODUCT.BOM_UPDATE must be bom-preset:update');
+  assert(PERMISSIONS.PRODUCT.BOM_DELETE === 'bom-preset:delete', 'PRODUCT.BOM_DELETE must be bom-preset:delete');
+  console.log('✓ bomPresetService contract verified');
+
+  // 4p. Verify productModifierService structure & PBAC mapping
+  console.log('4p. Checking productModifierService contract & PBAC mapping...');
+  assert(typeof productModifierService.getGroups === 'function', 'productModifierService.getGroups must be a function');
+  assert(typeof productModifierService.getGroupOptions === 'function', 'productModifierService.getGroupOptions must be a function');
+  assert(typeof productModifierService.getGroupById === 'function', 'productModifierService.getGroupById must be a function');
+  assert(typeof productModifierService.createGroup === 'function', 'productModifierService.createGroup must be a function');
+  assert(typeof productModifierService.updateGroup === 'function', 'productModifierService.updateGroup must be a function');
+  assert(typeof productModifierService.deleteGroup === 'function', 'productModifierService.deleteGroup must be a function');
+  assert(PERMISSIONS.PRODUCT.MODIFIER_READ === 'modifier-group:read', 'PRODUCT.MODIFIER_READ must be modifier-group:read');
+  assert(PERMISSIONS.PRODUCT.MODIFIER_CREATE === 'modifier-group:create', 'PRODUCT.MODIFIER_CREATE must be modifier-group:create');
+  assert(PERMISSIONS.PRODUCT.MODIFIER_UPDATE === 'modifier-group:update', 'PRODUCT.MODIFIER_UPDATE must be modifier-group:update');
+  assert(PERMISSIONS.PRODUCT.MODIFIER_DELETE === 'modifier-group:delete', 'PRODUCT.MODIFIER_DELETE must be modifier-group:delete');
+  console.log('✓ productModifierService contract verified');
 
   // 5. Test Proxy logic for mustChangePassword
   console.log('5. Testing Proxy middleware mustChangePassword logic...');
