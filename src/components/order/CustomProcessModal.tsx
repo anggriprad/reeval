@@ -9,6 +9,9 @@ import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
+import { orderService } from '@/services/order.service';
+import { materialService, MaterialOption } from '@/services/material.service';
+import { productionRoutingService, ProductionRoutingOption } from '@/services/production-routing.service';
 import { SalesOrder, SalesOrderItem, CustomBomItem, CustomOperationItem, UnitCustomProcess } from '@/lib/types';
 import { formatVariantLabel, cn } from '@/lib/utils';
 import {
@@ -23,10 +26,11 @@ import {
 interface CustomProcessModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: () => void;
   order: SalesOrder;
 }
 
-export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModalProps) {
+export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: CustomProcessModalProps) {
   const { products, materials, routings, operations, finishedGoods, updateOrderCustomProcess } = useApp();
   const { toast } = useToast();
 
@@ -36,10 +40,150 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
   const [selectedNewMaterialId, setSelectedNewMaterialId] = useState('');
   const [newMaterialQty, setNewMaterialQty] = useState<number | ''>('');
   const [selectedOpToAdd, setSelectedOpToAdd] = useState('');
+  const [selectedRoutingTemplateId, setSelectedRoutingTemplateId] = useState('');
+
+  // Live options from backend API
+  const [apiMaterials, setApiMaterials] = useState<MaterialOption[]>([]);
+  const [apiRoutings, setApiRoutings] = useState<ProductionRoutingOption[]>([]);
 
   // Accordion toggle states
   const [isMaterialOpen, setIsMaterialOpen] = useState(true);
   const [isRoutingOpen, setIsRoutingOpen] = useState(true);
+
+  // Fetch live options on modal open
+  useEffect(() => {
+    if (isOpen) {
+      materialService
+        .getMaterialOptions()
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setApiMaterials(res.data);
+          }
+        })
+        .catch((err) => {
+          console.warn('Gagal memuat material options dari backend:', err);
+        });
+
+      productionRoutingService
+        .getRoutingOptions()
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setApiRoutings(res.data);
+          }
+        })
+        .catch((err) => {
+          console.warn('Gagal memuat routing options dari backend:', err);
+        });
+    }
+  }, [isOpen]);
+
+  // Effective materials: combines live API options with context fallback
+  const effectiveMaterials = useMemo(() => {
+    if (apiMaterials.length > 0) {
+      return apiMaterials.map((m) => ({
+        id: String(m.id),
+        name: m.name,
+        code: m.code,
+        unit: m.unit,
+        costPrice: m.unit_cost,
+        stock: m.stock ?? 0,
+        isSubAssembly: Boolean(m.is_sub_assembly),
+      }));
+    }
+    return materials.map((m) => ({
+      id: String(m.id),
+      name: m.name,
+      code: m.code,
+      unit: m.unit,
+      costPrice: m.unitCost,
+      stock: m.stock,
+      isSubAssembly: Boolean(m.isSubAssembly),
+    }));
+  }, [apiMaterials, materials]);
+
+  // Effective routings: combines live API routing options with steps
+  const effectiveRoutings = useMemo(() => {
+    if (apiRoutings.length > 0) {
+      return apiRoutings.map((r) => ({
+        id: String(r.id),
+        name: r.name,
+        steps: (r.steps || []).map((s) => ({
+          id: String(s.id),
+          operationId: String(s.operation_id),
+          operationName: s.operation_name,
+          sequence: s.sequence,
+          durationMinutes: s.duration_minutes,
+          costingMethod: (s.costing_method === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
+          fixedLaborCost: s.fixed_labor_cost,
+          laborCostPerHour: s.labor_cost_per_hour,
+        })),
+      }));
+    }
+    return routings.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      steps: (r.steps || []).map((s) => {
+        const op = operations.find((o) => String(o.id) === String(s.operationId));
+        return {
+          id: String(s.sequence),
+          operationId: String(s.operationId),
+          operationName: op?.name || 'Operasi',
+          sequence: s.sequence,
+          durationMinutes: op?.durationMinutes || 0,
+          costingMethod: (op?.costingMethod === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
+          fixedLaborCost: op?.fixedLaborCost || 0,
+          laborCostPerHour: op?.laborCostPerHour || 0,
+        };
+      }),
+    }));
+  }, [apiRoutings, routings, operations]);
+
+  // Effective operations pool for dropdown selection & label lookup
+  const effectiveOperations = useMemo(() => {
+    const opMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        costingMethod: 'fixed' | 'hourly';
+        fixedLaborCost: number;
+        laborCostPerHour: number;
+        durationMinutes: number;
+      }
+    >();
+
+    // 1. From API routing steps
+    effectiveRoutings.forEach((r) => {
+      r.steps.forEach((s) => {
+        if (!opMap.has(s.operationId)) {
+          opMap.set(s.operationId, {
+            id: s.operationId,
+            name: s.operationName,
+            costingMethod: s.costingMethod,
+            fixedLaborCost: s.fixedLaborCost,
+            laborCostPerHour: s.laborCostPerHour,
+            durationMinutes: s.durationMinutes,
+          });
+        }
+      });
+    });
+
+    // 2. From context operations fallback
+    operations.forEach((o) => {
+      if (!opMap.has(String(o.id))) {
+        opMap.set(String(o.id), {
+          id: String(o.id),
+          name: o.name,
+          costingMethod: o.costingMethod === 'hourly' ? 'hourly' : 'fixed',
+          fixedLaborCost: o.fixedLaborCost || 0,
+          laborCostPerHour: o.laborCostPerHour || 0,
+          durationMinutes: o.durationMinutes || 0,
+        });
+      }
+    });
+
+    return Array.from(opMap.values());
+  }, [effectiveRoutings, operations]);
 
   // Helper to build default master BOM for a single unit of a SalesOrderItem
   const getDefaultBomForItem = (item: SalesOrderItem): CustomBomItem[] => {
@@ -82,19 +226,19 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
       : product?.variants[0];
 
     if (!variant?.routingId) return [];
-    const routing = routings.find(r => r.id === variant.routingId);
+    const routing = effectiveRoutings.find(r => String(r.id) === String(variant.routingId));
     if (!routing) return [];
 
     return routing.steps
       .sort((a, b) => a.sequence - b.sequence)
       .map(s => {
-        const op = operations.find(o => o.id === s.operationId);
+        const op = effectiveOperations.find(o => String(o.id) === String(s.operationId));
         return {
           operationId: s.operationId,
-          costingMethod: op?.costingMethod || 'fixed',
-          fixedLaborCost: op?.fixedLaborCost || 0,
-          laborCostPerHour: op?.laborCostPerHour || 0,
-          durationMinutes: op?.durationMinutes || 0,
+          costingMethod: s.costingMethod || op?.costingMethod || 'fixed',
+          fixedLaborCost: s.fixedLaborCost ?? op?.fixedLaborCost ?? 0,
+          laborCostPerHour: s.laborCostPerHour ?? op?.laborCostPerHour ?? 0,
+          durationMinutes: s.durationMinutes ?? op?.durationMinutes ?? 0,
         };
       });
   };
@@ -344,7 +488,7 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
     if (!targetUnit) return;
 
     const isFinishedGood = finishedGoods.some(fg => fg.id === selectedNewMaterialId);
-    const targetMat = materials.find(m => m.id === selectedNewMaterialId);
+    const targetMat = effectiveMaterials.find(m => String(m.id) === String(selectedNewMaterialId));
     const itemType = isFinishedGood ? 'FINISHED_GOOD' : (targetMat?.isSubAssembly ? 'SUB_ASSEMBLY' : 'RAW_MATERIAL');
 
     targetUnit.customBom = targetUnit.customBom || [];
@@ -384,9 +528,34 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
   };
 
   // Handlers for modifying active unit operations
+  const handleApplyRoutingTemplate = (routingId: string) => {
+    if (!routingId || !activeItem || !activeUnit) return;
+    const routing = effectiveRoutings.find((r) => String(r.id) === String(routingId));
+    if (!routing) return;
+
+    const updated = structuredClone(itemsState);
+    const targetItem = updated[activeItemIndex];
+    const targetUnit = targetItem.unitCustomProcesses?.find((u) => u.unitIndex === activeUnitIndex);
+    if (!targetUnit) return;
+
+    targetUnit.customOperations = routing.steps.map((s) => ({
+      operationId: s.operationId,
+      costingMethod: s.costingMethod,
+      fixedLaborCost: s.fixedLaborCost,
+      laborCostPerHour: s.laborCostPerHour,
+      durationMinutes: s.durationMinutes,
+    }));
+    targetUnit.customOperationIds = targetUnit.customOperations.map((o) => o.operationId);
+    targetUnit.isBomCustomized = checkIfUnitIsCustomized(targetItem, targetUnit);
+    targetItem.isBomCustomized = targetItem.unitCustomProcesses!.some((u) => u.isBomCustomized);
+    setItemsState(updated);
+    setSelectedRoutingTemplateId('');
+    toast.success('Alur Produksi Diterapkan', `Alur "${routing.name}" berhasil diterapkan ke Unit ${activeUnitIndex}.`);
+  };
+
   const handleAddOperationFromMaster = () => {
     if (!activeItem || !activeUnit || !selectedOpToAdd) return;
-    const op = operations.find(o => o.id === selectedOpToAdd);
+    const op = effectiveOperations.find((o) => String(o.id) === String(selectedOpToAdd));
     if (!op) return;
 
     const updated = structuredClone(itemsState);
@@ -521,6 +690,68 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
       };
     });
 
+    const customizePayload = {
+      items: sanitizedItems.map(itm => ({
+        id: (itm as any).id ? Number((itm as any).id) : undefined,
+        productId: Number(itm.productId) || 1,
+        variantId: itm.variantId ? Number(itm.variantId) : undefined,
+        isBomCustomized: Boolean(itm.isBomCustomized),
+        customBom: (itm.customBom || []).map(b => ({
+          materialId: String(b.materialId),
+          qty: Number(b.qty) || 1,
+          itemType: b.itemType,
+        })),
+        customOperationIds: itm.customOperationIds || [],
+        customOperations: (itm.customOperations || []).map(o => ({
+          operationId: String(o.operationId),
+          costingMethod: o.costingMethod,
+          fixedLaborCost: o.fixedLaborCost || 0,
+          laborCostPerHour: o.laborCostPerHour || 0,
+          durationMinutes: o.durationMinutes || 0,
+        })),
+        unitCustomProcesses: (itm.unitCustomProcesses || []).map(u => ({
+          unitIndex: u.unitIndex,
+          isBomCustomized: Boolean(u.isBomCustomized),
+          customBom: (u.customBom || []).map(b => ({
+            materialId: String(b.materialId),
+            qty: Number(b.qty) || 1,
+            itemType: b.itemType,
+          })),
+          customOperationIds: u.customOperationIds || [],
+          customOperations: (u.customOperations || []).map(o => ({
+            operationId: String(o.operationId),
+            costingMethod: o.costingMethod,
+            fixedLaborCost: o.fixedLaborCost || 0,
+            laborCostPerHour: o.laborCostPerHour || 0,
+            durationMinutes: o.durationMinutes || 0,
+          })),
+        })),
+      })),
+    };
+
+    if (Number(order.id) > 0) {
+      orderService.customizeProcess(order.id, customizePayload)
+        .then(() => {
+          updateOrderCustomProcess(order.id, sanitizedItems);
+          const anyStillCustom = sanitizedItems.some(i => i.isBomCustomized);
+          if (anyStillCustom) {
+            toast.success('Kustom Proses Disimpan', `Kustomisasi proses untuk ${order.orderNumber} berhasil diperbarui di server.`);
+          } else {
+            toast.success('Proses Standar Diterapkan', `Kustomisasi ${order.orderNumber} telah direset penuh ke standar master.`);
+          }
+          onSuccess?.();
+          onClose();
+        })
+        .catch(err => {
+          console.warn('Backend customize process failed, using local fallback:', err);
+          updateOrderCustomProcess(order.id, sanitizedItems);
+          toast.success('Kustom Proses Disimpan', `Kustomisasi proses untuk ${order.orderNumber} berhasil diperbarui.`);
+          onSuccess?.();
+          onClose();
+        });
+      return;
+    }
+
     const res = updateOrderCustomProcess(order.id, sanitizedItems);
     if (res.success) {
       const anyStillCustom = sanitizedItems.some(i => i.isBomCustomized);
@@ -529,6 +760,7 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
       } else {
         toast.success('Proses Standar Diterapkan', `Kustomisasi ${order.orderNumber} telah direset penuh ke standar master.`);
       }
+      onSuccess?.();
       onClose();
     }
   };
@@ -687,8 +919,8 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
               {/* LIST CARD MATERIAL */}
               <div className="space-y-1.5">
                 {(activeUnit.customBom || []).map((bomItem, bIdx) => {
-                  const mat = materials.find(m => m.id === bomItem.materialId);
-                  const fg = !mat ? finishedGoods.find(f => f.id === bomItem.materialId) : null;
+                  const mat = effectiveMaterials.find(m => String(m.id) === String(bomItem.materialId));
+                  const fg = !mat ? finishedGoods.find(f => String(f.id) === String(bomItem.materialId)) : null;
                   const unitLabel = mat?.unit || fg?.unit || 'unit';
 
                   return (
@@ -772,18 +1004,18 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                     searchPlaceholder="Cari material..."
                   >
                     <option value="">-- Tambah material --</option>
-                    {materials
-                      .filter(m => !existingMaterialIds.has(m.id))
+                    {effectiveMaterials
+                      .filter(m => !existingMaterialIds.has(String(m.id)))
                       .map(m => (
-                        <option key={m.id} value={m.id}>
+                        <option key={m.id} value={String(m.id)}>
                           {m.isSubAssembly ? '[Bahan Setengah Jadi] ' : '[Bahan Baku] '}
-                          {m.name}
+                          {m.name} ({m.code})
                         </option>
                       ))}
                     {finishedGoods
-                      .filter(fg => (fg.stock || 0) > 0 && !existingMaterialIds.has(fg.id))
+                      .filter(fg => (fg.stock || 0) > 0 && !existingMaterialIds.has(String(fg.id)))
                       .map(fg => (
-                        <option key={fg.id} value={fg.id}>
+                        <option key={fg.id} value={String(fg.id)}>
                           [Barang Jadi] {fg.productName} {fg.variantLabel ? `(${fg.variantLabel})` : ''}
                         </option>
                       ))}
@@ -858,7 +1090,7 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
               {/* LIST CARD ALUR OPERASI (COMPACT & RAMPING) */}
               <div className="space-y-1.5">
                 {(activeUnit.customOperations || []).map((cOp, idx) => {
-                  const op = operations.find(o => o.id === cOp.operationId);
+                  const op = effectiveOperations.find(o => String(o.id) === String(cOp.operationId));
                   const isHourly = cOp.costingMethod === 'hourly';
                   const currentRate = isHourly ? (cOp.laborCostPerHour ?? 0) : (cOp.fixedLaborCost ?? 0);
 
@@ -925,6 +1157,8 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                 )}
               </div>
 
+             
+
               {/* INPUT BAR TAMBAH ALUR OPERASI */}
               <div className="flex items-center gap-2 pt-1">
                 <div className="flex-1 min-w-0">
@@ -933,11 +1167,11 @@ export function CustomProcessModal({ isOpen, onClose, order }: CustomProcessModa
                     onChange={e => setSelectedOpToAdd(e.target.value)}
                     inputSize="sm"
                   >
-                    <option value="">-- Tambah alur produksi --</option>
-                    {operations
-                      .filter(op => !existingOperationIds.has(op.id))
+                    <option value="">-- Tambah operasi produksi --</option>
+                    {effectiveOperations
+                      .filter(op => !existingOperationIds.has(String(op.id)))
                       .map(op => (
-                        <option key={op.id} value={op.id}>
+                        <option key={op.id} value={String(op.id)}>
                           {op.name}
                         </option>
                       ))}

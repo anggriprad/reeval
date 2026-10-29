@@ -129,13 +129,28 @@ export interface ProductVariantOptionDTO {
   id: number;
   sku: string;
   label: string;
+  combination?: Record<string, string>;
   price: number;
   stock: number;
+  estimated_hours?: number;
+  bom_items?: VariantBOMItemResponse[];
 }
 
 export interface ProductOption {
   id: number;
   name: string;
+  category_id?: number;
+  category_name?: string;
+  category?: string;
+  description?: string;
+  image_icon?: string;
+  image_url?: string;
+  base_price?: number;
+  has_variants?: boolean;
+  variant_types_json?: string;
+  modifier_group_ids?: number[];
+  default_routing_id?: number;
+  default_estimated_hours?: number;
   variants?: ProductVariantOptionDTO[];
 }
 
@@ -218,6 +233,46 @@ export function mapProductDetailToProduct(detail: ProductDetail): Product {
     variants,
     modifierGroupIds: (detail.modifier_group_ids || []).map(String),
     isActive: detail.is_active,
+  };
+}
+
+export function mapProductOptionToProduct(opt: ProductOption): Product {
+  let variantTypes: VariantType[] = [];
+  try {
+    if (opt.variant_types_json) {
+      variantTypes = JSON.parse(opt.variant_types_json);
+    }
+  } catch {}
+
+  const variants = (opt.variants || []).map((v) => ({
+    id: String(v.id),
+    sku: v.sku,
+    combination: v.combination || {},
+    price: v.price,
+    estimatedHours: v.estimated_hours || 0,
+    isCustomBOM: false,
+    bom: (v.bom_items || []).map((item) => ({
+      materialId: String(item.material_id),
+      qty: item.qty,
+    })),
+    initialStock: v.stock,
+    isActive: true,
+  }));
+
+  return {
+    id: String(opt.id),
+    name: opt.name,
+    description: opt.description || "",
+    category: opt.category_name || opt.category || (opt.category_id ? String(opt.category_id) : "Umum"),
+    imageIcon: opt.image_icon || "BedDouble",
+    image: opt.image_url ? resolveProductImageUrl(opt.image_url) : undefined,
+    basePrice: opt.base_price,
+    defaultRoutingId: opt.default_routing_id ? String(opt.default_routing_id) : undefined,
+    defaultEstimatedHours: opt.default_estimated_hours,
+    variantTypes,
+    variants,
+    modifierGroupIds: (opt.modifier_group_ids || []).map(String),
+    isActive: true,
   };
 }
 

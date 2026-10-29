@@ -13,7 +13,7 @@ export type OrderStatus =
   | 'SENT'               // Semua item diterima pelanggan
   | 'CANCELED';          // Dibatalkan
 
-export type SPKStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELED';
+export type SPKStatus = 'PENDING' | 'PROCESSING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED';
 
 export type InvoiceStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 
@@ -283,6 +283,7 @@ export interface UnitCustomProcess {
 }
 
 export interface SalesOrderItem {
+  id?: string;
   productId: string;
   variantId?: string;       // ID of the specific ProductVariantSKU selected
   productName: string;      // Pure product title
@@ -343,6 +344,9 @@ export interface OrderComplaint {
   handledAt?: string;
   replacementStatus?: 'READY_FOR_DELIVERY' | 'WAITING_PRODUCTION' | 'SHIPPED' | 'DELIVERED';
   replacementWOId?: string;
+  orderId?: string;
+  orderNumber?: string;
+  customerName?: string;
 }
 
 // --- Sales Order ---

@@ -27,7 +27,10 @@ import {
   getComplaintStatusLabel,
 } from '@/lib/utils';
 import { canApproveOrder, USER_ACCOUNTS } from '@/lib/roles';
-import { ComplaintAttachment } from '@/lib/types';
+import { ComplaintAttachment, SalesOrder } from '@/lib/types';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
+import { orderService, mapOrderResponseToSalesOrder } from '@/services/order.service';
 import { CustomProcessModal } from '@/components/order/CustomProcessModal';
 import {
   ArrowLeft,
@@ -143,7 +146,38 @@ export default function OrderDetailPage() {
     }
   }, []);
 
-  const order = salesOrders.find(o => o.id === orderId);
+  const { can } = usePermission();
+  const [liveOrder, setLiveOrder] = useState<SalesOrder | null>(null);
+  const [isLoadingOrder, setIsLoadingOrder] = useState(true);
+
+  const fetchLiveOrderDetail = React.useCallback(() => {
+    if (!orderId) return;
+    setIsLoadingOrder(true);
+    orderService.getOrderById(orderId)
+      .then(res => {
+        if (res.success && res.data) {
+          setLiveOrder(mapOrderResponseToSalesOrder(res.data));
+        }
+      })
+      .catch(err => {
+        console.error('Failed to fetch live order:', err);
+      })
+      .finally(() => setIsLoadingOrder(false));
+  }, [orderId]);
+
+  useEffect(() => {
+    fetchLiveOrderDetail();
+  }, [fetchLiveOrderDetail]);
+
+  const order = liveOrder || salesOrders.find(o => o.id === orderId);
+
+  if (isLoadingOrder && !order) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+      </div>
+    );
+  }
 
   if (!order) {
     return (
@@ -166,30 +200,46 @@ export default function OrderDetailPage() {
     );
   }
 
-  const salesPhone = order.salesPhone || USER_ACCOUNTS.find(u => u.name === order.createdBy)?.phone || '';
+  const salesPhone = order!.salesPhone || USER_ACCOUNTS.find(u => u.name === order!.createdBy)?.phone || '';
 
-  const handleProcess = () => {
-    const res = processOrder(order.id);
-    if (res.success) {
-      toast.success(
-        'Pesanan Diproses',
-        `Pesanan ${order.orderNumber} berhasil diproses.`
-      );
-    } else {
-      toast.error('Gagal Memproses Pesanan', res.error || 'Terjadi kesalahan saat memproses pesanan.');
+  const handleProcess = async () => {
+    try {
+      const res = await orderService.processOrder(order!.id);
+      if (res.success) {
+        toast.success(
+          'Pesanan Diproses',
+          `Pesanan ${order!.orderNumber} berhasil diproses.`
+        );
+        processOrder(order!.id);
+        fetchLiveOrderDetail();
+      } else {
+        toast.error('Gagal Memproses Pesanan', res.message || 'Terjadi kesalahan saat memproses pesanan.');
+      }
+    } catch (err: any) {
+      toast.error('Gagal Memproses Pesanan', err?.response?.data?.message || err?.message || 'Gagal memproses pesanan.');
     }
   };
 
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (!cancelReasonInput.trim()) {
       setCancelReasonError('Alasan pembatalan wajib diisi.');
       return;
     }
-    cancelOrder(order.id, cancelReasonInput.trim());
-    toast.success('Sales Order Dibatalkan', `Sales Order ${order.orderNumber} telah berhasil dibatalkan.`);
-    setCancelModalOpen(false);
-    setCancelReasonInput('');
-    setCancelReasonError('');
+    try {
+      const res = await orderService.cancelOrder(order!.id, { reason: cancelReasonInput.trim() });
+      if (res.success) {
+        toast.success('Sales Order Dibatalkan', `Sales Order ${order!.orderNumber} telah berhasil dibatalkan.`);
+        cancelOrder(order!.id, cancelReasonInput.trim());
+        fetchLiveOrderDetail();
+        setCancelModalOpen(false);
+        setCancelReasonInput('');
+        setCancelReasonError('');
+      } else {
+        toast.error('Gagal Membatalkan Order', res.message || 'Gagal.');
+      }
+    } catch (err: any) {
+      toast.error('Gagal Membatalkan Order', err?.response?.data?.message || err?.message || 'Gagal membatalkan order.');
+    }
   };
 
   const handleCopyOrderNumber = (e: React.MouseEvent) => {
@@ -285,7 +335,7 @@ export default function OrderDetailPage() {
     setComplaintAttachments(prev => prev.filter(a => a.id !== id));
   };
 
-  const handleSubmitComplaint = () => {
+  const handleSubmitComplaint = async () => {
     if (order.status !== 'SENT') {
       setComplaintError('Komplain hanya dapat diajukan untuk pesanan yang sudah terkirim.');
       return;
@@ -318,6 +368,48 @@ export default function OrderDetailPage() {
         unitPrice: oItem.unitPrice
       };
     });
+
+    const complaintPayload = {
+      category: complaintCategory,
+      description: complaintDesc,
+      items: items.map(it => ({
+        product_id: Number(it.productId) || 1,
+        variant_id: it.variantId ? Number(it.variantId) : null,
+        product_name: it.productName,
+        variant_label: it.variantLabel || '',
+        qty: it.qty,
+        unit_price: it.unitPrice,
+      })),
+      attachments: complaintAttachments.map(att => ({
+        name: att.name,
+        type: att.type,
+        url: att.url,
+        size: att.size,
+      })),
+    };
+
+    try {
+      const res = await orderService.createComplaint(order.id, complaintPayload);
+      if (res.success) {
+        toast.success('Komplain Diajukan', 'Komplain penjualan berhasil dicatat dan masuk status menunggu tinjauan.');
+        submitOrderComplaint(order.id, {
+          category: complaintCategory as any,
+          description: complaintDesc,
+          items,
+          attachments: complaintAttachments,
+        });
+        fetchLiveOrderDetail();
+        setComplaintModalOpen(false);
+        setComplaintCategory('');
+        setComplaintDesc('');
+        setComplaintItems([]);
+        setComplaintAttachments([]);
+        setComplaintError('');
+        return;
+      }
+    } catch (err: any) {
+      console.warn('Backend complaint filing failed, syncing local mock:', err);
+    }
 
     submitOrderComplaint(order.id, {
       category: complaintCategory as any,
@@ -1368,6 +1460,7 @@ export default function OrderDetailPage() {
       <CustomProcessModal
         isOpen={customProcessModalOpen}
         onClose={() => setCustomProcessModalOpen(false)}
+        onSuccess={fetchLiveOrderDetail}
         order={order}
       />
     </div>

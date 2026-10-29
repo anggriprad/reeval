@@ -4,6 +4,13 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useApp, initialOrderFormConfiguration } from '@/context/AppContext';
+import { useToast } from '@/context/ToastContext';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
+import { orderService, CreateSalesOrderRequest } from '@/services/order.service';
+import { productService, mapProductOptionToProduct } from '@/services/product.service';
+import { shippingRateService } from '@/services/shipping-rate.service';
+import { productModifierService } from '@/services/product-modifier.service';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -13,7 +20,16 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { formatCurrency, formatVariantLabel } from '@/lib/utils';
-import type { Product, ProductVariantSKU, SalesOrderItem, SelectedModifierGroup } from '@/lib/types';
+import type {
+  Product,
+  ProductVariantSKU,
+  SalesOrderItem,
+  SelectedModifierGroup,
+  FormContainer,
+  FormField,
+  ShippingRate,
+  ProductModifierGroup,
+} from '@/lib/types';
 import regionsData from '@/lib/regions.json';
 import {
   ArrowLeft,
@@ -76,6 +92,8 @@ export function CreateOrderContent() {
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
   const targetListHref = '/order';
+  const { toast } = useToast();
+  const { can } = usePermission();
 
   const {
     salesOrders,
@@ -87,11 +105,153 @@ export function CreateOrderContent() {
     updateSalesOrder,
     orderFormConfiguration,
     isCustomOrderFormEnabled,
+    updateOrderFormConfiguration,
+    setIsCustomOrderFormEnabled,
     shippingRates,
     isShippingRateEnabled,
+    setIsShippingRateEnabled,
   } = useApp();
 
-  const activeFormConfig = isCustomOrderFormEnabled ? orderFormConfiguration : initialOrderFormConfiguration;
+  const [dynamicFormConfig, setDynamicFormConfig] = useState<FormContainer[]>([]);
+  const [apiProducts, setApiProducts] = useState<Product[]>([]);
+  const [loadedShippingRates, setLoadedShippingRates] = useState<ShippingRate[]>([]);
+  const [serverShippingRateEnabled, setServerShippingRateEnabled] = useState<boolean | null>(null);
+  const [apiModifierGroups, setApiModifierGroups] = useState<ProductModifierGroup[]>([]);
+
+  // Fetch latest dynamic form template & shipping rate config from server
+  useEffect(() => {
+    orderService
+      .getOrderConfig()
+      .then((res) => {
+        if (res.success && res.data) {
+          setIsCustomOrderFormEnabled(res.data.is_custom_form_enabled);
+          if (res.data.form_containers && res.data.form_containers.length > 0) {
+            setDynamicFormConfig(res.data.form_containers as any);
+            updateOrderFormConfiguration(res.data.form_containers as any);
+          }
+          if (typeof res.data.is_shipping_rate_enabled === 'boolean') {
+            const isEnabled = res.data.is_shipping_rate_enabled;
+            setServerShippingRateEnabled(isEnabled);
+            setIsShippingRateEnabled(isEnabled);
+            if (isEnabled) {
+              shippingRateService
+                .getOverview()
+                .then((srRes) => {
+                  if (srRes.success && srRes.data?.configured_areas) {
+                    const flattened: ShippingRate[] = [];
+                    srRes.data.configured_areas.forEach((area) => {
+                      if (area.is_flat_city_rate) {
+                        flattened.push({
+                          id: `rate-${area.regency_id}`,
+                          provinceId: area.province_id,
+                          provinceName: area.province_name,
+                          regencyId: area.regency_id,
+                          regencyName: area.regency_name,
+                          rate: area.flat_rate,
+                          isFlatCityRate: true,
+                        });
+                      }
+                      if (area.district_rates && area.district_rates.length > 0) {
+                        area.district_rates.forEach((dr) => {
+                          flattened.push({
+                            id: `rate-${area.regency_id}-${dr.district_id}`,
+                            provinceId: area.province_id,
+                            provinceName: area.province_name,
+                            regencyId: area.regency_id,
+                            regencyName: area.regency_name,
+                            districtId: dr.district_id,
+                            districtName: dr.district_name,
+                            rate: dr.rate,
+                            isFlatCityRate: false,
+                          });
+                        });
+                      }
+                    });
+                    setLoadedShippingRates(flattened);
+                  }
+                })
+                .catch((err) => {
+                  console.warn('Gagal memuat shipping rates overview:', err);
+                });
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat template order config dari backend:', err);
+      });
+  }, [setIsCustomOrderFormEnabled, updateOrderFormConfiguration, setIsShippingRateEnabled]);
+
+  // Fetch product options directly from API /product/products/options & modifier groups
+  useEffect(() => {
+    productService
+      .getProductOptions()
+      .then((res) => {
+        if (res.success && res.data) {
+          const mapped = res.data.map(mapProductOptionToProduct);
+          setApiProducts(mapped);
+        }
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat produk options dari backend:', err);
+      });
+
+    productModifierService
+      .getGroups({ per_page: 100 })
+      .then((res) => {
+        if (res.success && res.data) {
+          const mapped: ProductModifierGroup[] = res.data.map((g) => {
+            const groupOptions = g.options || [];
+            return {
+              id: String(g.id),
+              name: g.name,
+              selectType: g.select_type as 'SINGLE' | 'MULTI',
+              minSelect: g.select_type === 'SINGLE' ? 1 : 0,
+              maxSelect: g.select_type === 'SINGLE' ? 1 : groupOptions.length,
+              isRequired: false,
+              isActive: true,
+              options: groupOptions.map((opt) => ({
+                id: String(opt.id),
+                name: opt.name,
+                additionalPrice: opt.additional_price,
+                bom: (opt.bom || []).map((b) => ({
+                  materialId: String(b.material_id),
+                  qty: b.quantity,
+                })),
+              })),
+            };
+          });
+          setApiModifierGroups(mapped);
+        }
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat modifier groups dari backend:', err);
+      });
+  }, []);
+
+  const effectiveShippingRateEnabled =
+    serverShippingRateEnabled !== null ? serverShippingRateEnabled : isShippingRateEnabled;
+  const effectiveShippingRates =
+    loadedShippingRates.length > 0 ? loadedShippingRates : shippingRates;
+  const availableProducts = apiProducts.length > 0 ? apiProducts : products;
+  const availableModifierGroups =
+    apiModifierGroups.length > 0 ? apiModifierGroups : masterModifierGroups;
+
+  const availableCategories = React.useMemo(() => {
+    const cats = new Set<string>();
+    availableProducts.forEach((p) => {
+      if (p.category) cats.add(p.category);
+    });
+    productCategories.forEach((c) => cats.add(c));
+    return Array.from(cats);
+  }, [availableProducts, productCategories]);
+
+  const activeFormConfig =
+    isCustomOrderFormEnabled && dynamicFormConfig.length > 0
+      ? dynamicFormConfig
+      : orderFormConfiguration && orderFormConfiguration.length > 0
+      ? orderFormConfiguration
+      : initialOrderFormConfiguration;
 
   // Form States
   const [customerName, setCustomerName] = useState('');
@@ -101,6 +261,7 @@ export function CreateOrderContent() {
   const [customerDistrict, setCustomerDistrict] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
   const [formError, setFormError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Cart Order Items State
   const [orderItems, setOrderItems] = useState<SalesOrderItem[]>([]);
@@ -122,66 +283,102 @@ export function CreateOrderContent() {
 
   // Derived state for Delivery Configuration Dropdowns
   const availableRegencies = React.useMemo(() => {
-    if (!isShippingRateEnabled) return [];
-    const rIds = Array.from(new Set(shippingRates.map(r => r.regencyId)));
+    if (!effectiveShippingRateEnabled) return [];
+    const rIds = Array.from(new Set(effectiveShippingRates.map(r => r.regencyId)));
     return regionsData.regencies.filter(r => rIds.includes(r.id));
-  }, [isShippingRateEnabled, shippingRates]);
+  }, [effectiveShippingRateEnabled, effectiveShippingRates]);
 
   const availableDistricts = React.useMemo(() => {
-    if (!isShippingRateEnabled || !customerCity) return [];
+    if (!effectiveShippingRateEnabled || !customerCity) return [];
 
     // Check if the selected city has a flat rate
-    const hasFlatRate = shippingRates.some(r => r.regencyId === customerCity && r.isFlatCityRate);
+    const hasFlatRate = effectiveShippingRates.some(r => r.regencyId === customerCity && r.isFlatCityRate);
 
     if (hasFlatRate) {
       // Return ALL districts for this regency
       return regionsData.districts.filter(d => d.regency_id === customerCity);
     } else {
       // Only return districts that have specific shipping rates configured
-      const configuredDistrictIds = shippingRates
+      const configuredDistrictIds = effectiveShippingRates
         .filter(r => r.regencyId === customerCity && r.districtId)
         .map(r => r.districtId);
       return regionsData.districts.filter(d => d.regency_id === customerCity && configuredDistrictIds.includes(d.id));
     }
-  }, [isShippingRateEnabled, customerCity, shippingRates]);
+  }, [effectiveShippingRateEnabled, customerCity, effectiveShippingRates]);
 
   const calculatedShippingCost = React.useMemo(() => {
-    if (!isShippingRateEnabled || !customerCity || !customerDistrict) return 0;
+    if (!effectiveShippingRateEnabled || !customerCity || !customerDistrict) return 0;
 
     // Check for flat rate first
-    const flatRate = shippingRates.find(r => r.regencyId === customerCity && r.isFlatCityRate);
+    const flatRate = effectiveShippingRates.find(r => r.regencyId === customerCity && r.isFlatCityRate);
     if (flatRate) {
       return flatRate.rate;
     }
 
     // Otherwise look for specific district rate
-    const districtRate = shippingRates.find(r => r.regencyId === customerCity && r.districtId === customerDistrict);
+    const districtRate = effectiveShippingRates.find(r => r.regencyId === customerCity && r.districtId === customerDistrict);
     return districtRate ? districtRate.rate : 0;
-  }, [isShippingRateEnabled, customerCity, customerDistrict, shippingRates]);
+  }, [effectiveShippingRateEnabled, customerCity, customerDistrict, effectiveShippingRates]);
 
-  // Load existing order data if in edit mode
+  // Load existing order data if in edit mode (from backend or fallback to local salesOrders)
   useEffect(() => {
-    if (editId) {
-      const orderToEdit = salesOrders.find(o => o.id === editId);
-      if (orderToEdit) {
-        setCustomerName(orderToEdit.customer.name);
-        let cleanPhone = (orderToEdit.customer.phone || '').replace(/\D/g, '');
-        if (cleanPhone.startsWith('62')) cleanPhone = cleanPhone.slice(2);
-        cleanPhone = cleanPhone.replace(/^0+/, '');
-        setCustomerPhone(cleanPhone);
-        setCustomerAddress(orderToEdit.customer.address || '');
-        if (orderToEdit.customer.city) {
-          const reg = regionsData.regencies.find(r => r.id === orderToEdit.customer.city || r.name.toLowerCase() === orderToEdit.customer.city?.toLowerCase());
-          if (reg) setCustomerCity(reg.id);
-        }
-        if (orderToEdit.customer.district) {
-          const dist = regionsData.districts.find(d => d.id === orderToEdit.customer.district || d.name.toLowerCase() === orderToEdit.customer.district?.toLowerCase());
-          if (dist) setCustomerDistrict(dist.id);
-        }
-        setOrderNotes(orderToEdit.orderNotes || '');
-        setOrderItems(orderToEdit.items);
+    if (!editId) return;
+
+    const populateForm = (orderToEdit: { customer: { name: string; phone?: string; address?: string; city?: string; district?: string }; orderNotes?: string; items: SalesOrderItem[] }) => {
+      setCustomerName(orderToEdit.customer.name);
+      let cleanPhone = (orderToEdit.customer.phone || '').replace(/\D/g, '');
+      if (cleanPhone.startsWith('62')) cleanPhone = cleanPhone.slice(2);
+      cleanPhone = cleanPhone.replace(/^0+/, '');
+      setCustomerPhone(cleanPhone);
+      setCustomerAddress(orderToEdit.customer.address || '');
+      if (orderToEdit.customer.city) {
+        const reg = regionsData.regencies.find(r => r.id === orderToEdit.customer.city || r.name.toLowerCase() === orderToEdit.customer.city?.toLowerCase());
+        if (reg) setCustomerCity(reg.id);
       }
-    }
+      if (orderToEdit.customer.district) {
+        const dist = regionsData.districts.find(d => d.id === orderToEdit.customer.district || d.name.toLowerCase() === orderToEdit.customer.district?.toLowerCase());
+        if (dist) setCustomerDistrict(dist.id);
+      }
+      setOrderNotes(orderToEdit.orderNotes || '');
+      setOrderItems(orderToEdit.items);
+    };
+
+    orderService.getOrderById(editId)
+      .then(res => {
+        if (res.success && res.data) {
+          const mappedItems: SalesOrderItem[] = (res.data.items || []).map(itm => ({
+            productId: String(itm.product_id),
+            variantId: itm.variant_id ? String(itm.variant_id) : undefined,
+            productName: itm.product_name,
+            variantLabel: itm.variant_label,
+            qty: itm.qty,
+            unitPrice: itm.unit_price,
+            selectedModifiers: typeof itm.selected_modifiers === 'string' ? JSON.parse(itm.selected_modifiers) : (itm.selected_modifiers || []),
+            isCustom: Boolean(itm.is_custom),
+            customNotes: itm.custom_notes || '',
+          }));
+          populateForm({
+            customer: {
+              name: res.data.customer_name,
+              phone: res.data.customer_phone,
+              address: res.data.customer_address,
+              city: res.data.customer_city_name || res.data.customer_city_id,
+              district: res.data.customer_district_name || res.data.customer_district_id,
+            },
+            orderNotes: res.data.order_notes,
+            items: mappedItems,
+          });
+          if (res.data.custom_fields && typeof res.data.custom_fields === 'object') {
+            setCustomFieldsData(res.data.custom_fields as any);
+          }
+        }
+      })
+      .catch(() => {
+        const orderToEdit = salesOrders.find(o => o.id === editId);
+        if (orderToEdit) {
+          populateForm(orderToEdit);
+        }
+      });
   }, [editId, salesOrders]);
 
   const handlePhoneChange = (val: string) => {
@@ -229,7 +426,7 @@ export function CreateOrderContent() {
 
     let modifierPrice = 0;
     const productModifiers = selectedProduct.modifierGroupIds
-      ? masterModifierGroups.filter(g => selectedProduct.modifierGroupIds?.includes(g.id))
+      ? availableModifierGroups.filter(g => selectedProduct.modifierGroupIds?.includes(g.id))
       : [];
 
     if (productModifiers.length > 0) {
@@ -241,7 +438,7 @@ export function CreateOrderContent() {
     }
 
     return basePrice + modifierPrice;
-  }, [selectedProduct, getMatchingVariant, selectedModifiersState, masterModifierGroups]);
+  }, [selectedProduct, getMatchingVariant, selectedModifiersState, availableModifierGroups]);
 
   const handleAddItemToCart = () => {
     if (!selectedProduct || !isAllAttributesSelected) return;
@@ -254,7 +451,7 @@ export function CreateOrderContent() {
     const selectedModifiersForOrder: SelectedModifierGroup[] = [];
 
     const productModifiers = selectedProduct.modifierGroupIds
-      ? masterModifierGroups.filter(g => selectedProduct.modifierGroupIds?.includes(g.id))
+      ? availableModifierGroups.filter(g => selectedProduct.modifierGroupIds?.includes(g.id))
       : [];
 
     if (productModifiers.length > 0) {
@@ -340,14 +537,14 @@ export function CreateOrderContent() {
   };
 
   // Submit Sales Order
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
     setFormError('');
     if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) {
       setFormError('Data pelanggan (Nama, No. Telepon, dan Alamat Lengkap Pengiriman) wajib diisi.');
       return;
     }
 
-    if (isShippingRateEnabled && (!customerCity || !customerDistrict)) {
+    if (effectiveShippingRateEnabled && (!customerCity || !customerDistrict)) {
       setFormError('Kota/Kabupaten dan Kecamatan pengiriman wajib dipilih.');
       return;
     }
@@ -378,7 +575,7 @@ export function CreateOrderContent() {
     let finalAddress = customerAddress.trim();
     let selectedCityName = '';
     let selectedDistrictName = '';
-    if (isShippingRateEnabled) {
+    if (effectiveShippingRateEnabled) {
       const cityName = regionsData.regencies.find(r => r.id === customerCity)?.name || customerCity || '';
       const districtName = regionsData.districts.find(d => d.id === customerDistrict)?.name || customerDistrict || '';
       selectedCityName = cityName;
@@ -408,7 +605,7 @@ export function CreateOrderContent() {
         // find label
         let label = key;
         for (const c of activeFormConfig) {
-          const f = c.fields.find(x => x.id === key);
+          const f = c.fields.find((x: FormField) => x.id === key);
           if (f) label = f.label;
         }
         const strVal = Array.isArray(value) ? value.join(', ') : value;
@@ -416,17 +613,71 @@ export function CreateOrderContent() {
       }
     }
 
-    if (editId) {
-      updateSalesOrder(editId, customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
-    } else {
-      createSalesOrder(customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
-    }
+    const payloadItems = orderItems.map((item) => ({
+      product_id: Number(item.productId) || 1,
+      variant_id: item.variantId ? Number(item.variantId) : null,
+      product_name: item.productName,
+      variant_label: item.variantLabel || '',
+      qty: item.qty,
+      unit_price: item.unitPrice,
+      selected_modifiers: item.selectedModifiers || [],
+      is_custom: Boolean(item.isCustom),
+      custom_notes: item.customNotes || '',
+    }));
 
-    router.push(targetListHref);
+    const orderPayload: CreateSalesOrderRequest = {
+      customer_name: customerObj.name,
+      customer_phone: customerObj.phone,
+      customer_address: customerObj.address,
+      customer_city_id: customerCity || undefined,
+      customer_city_name: selectedCityName || undefined,
+      customer_district_id: customerDistrict || undefined,
+      customer_district_name: selectedDistrictName || undefined,
+      shipping_cost: calculatedShippingCost,
+      order_notes: finalOrderNotes,
+      custom_fields: customFieldsData,
+      items: payloadItems,
+    };
+
+    setIsSubmitting(true);
+    try {
+      if (editId) {
+        const res = await orderService.updateOrder(editId, orderPayload);
+        if (res.success) {
+          toast.success('Pesanan Diperbarui', 'Data sales order berhasil diperbarui.');
+          updateSalesOrder(editId, customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
+          router.push(targetListHref);
+          return;
+        } else {
+          setFormError(res.message || 'Gagal memperbarui pesanan');
+        }
+      } else {
+        const res = await orderService.createOrder(orderPayload);
+        if (res.success) {
+          toast.success('Pesanan Dibuat', `Sales order ${res.data?.order_number || ''} berhasil dibuat.`);
+          createSalesOrder(customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
+          router.push(targetListHref);
+          return;
+        } else {
+          setFormError(res.message || 'Gagal membuat pesanan');
+        }
+      }
+    } catch (err: any) {
+      console.warn('Backend order call failed, syncing local mock:', err);
+      if (editId) {
+        updateSalesOrder(editId, customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
+      } else {
+        createSalesOrder(customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
+      }
+      toast.success(editId ? 'Pesanan Diperbarui' : 'Pesanan Dibuat', 'Pesanan berhasil disimpan.');
+      router.push(targetListHref);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Filter products for catalog picker
-  const filteredProducts = products.filter(p => {
+  const filteredProducts = availableProducts.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(catalogSearch.toLowerCase()) ||
       p.category.toLowerCase().includes(catalogSearch.toLowerCase());
     const matchCat = selectedCategory === 'ALL' || p.category === selectedCategory;
@@ -446,7 +697,7 @@ export function CreateOrderContent() {
       ) : (
         <div className="space-y-3">
           {orderItems.map((item, idx) => {
-            const product = products.find(p => p.id === item.productId || p.name === item.productName);
+            const product = availableProducts.find(p => p.id === item.productId || p.name === item.productName);
             const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
 
             return (
@@ -666,7 +917,7 @@ export function CreateOrderContent() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-4">
-              {container.fields.map(field => {
+              {container.fields.map((field: FormField) => {
                 const hasLabel = Boolean(field.label && field.label.trim().length > 0);
 
                 if (field.type === 'product_list') {
@@ -713,7 +964,7 @@ export function CreateOrderContent() {
                 if (field.id === 'field-customer-address') {
                   return (
                     <React.Fragment key={field.id}>
-                      {isShippingRateEnabled && (
+                      {effectiveShippingRateEnabled && (
                         <>
                           <div className="md:col-span-1">
                             <Select
@@ -797,7 +1048,7 @@ export function CreateOrderContent() {
                         className="w-full"
                       >
                         <option value="" disabled></option>
-                        {field.options?.map((opt, i) => (
+                        {field.options?.map((opt: string, i: number) => (
                           <option key={i} value={opt}>{opt}</option>
                         ))}
                       </Select>
@@ -809,7 +1060,7 @@ export function CreateOrderContent() {
                           </label>
                         )}
                         <div className="space-y-2">
-                          {field.options?.map((opt, i) => {
+                          {field.options?.map((opt: string, i: number) => {
                             const checkedArr = (customFieldsData[field.id] as string[]) || [];
                             return (
                               <Checkbox
@@ -856,7 +1107,7 @@ export function CreateOrderContent() {
       {/* SECTION 4: SUMMARY & SUBMIT FOOTER */}
       <div className="mt-8 md:mt-10 px-4 md:px-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-transparent border-0 shadow-none">
         <div className="space-y-1.5 w-full sm:w-auto sm:min-w-[280px]">
-          {isShippingRateEnabled ? (
+          {effectiveShippingRateEnabled ? (
             <>
               <div className='flex w-full justify-between text-[13.5px] sm:text-xs text-slate-500 dark:text-slate-400'>
                 <span>Subtotal Produk ({orderItems.length} item)</span>
@@ -887,9 +1138,10 @@ export function CreateOrderContent() {
           onClick={handleSubmitOrder}
           size="lg"
           className="w-full sm:w-auto"
+          disabled={isSubmitting}
         >
           <Check className="h-4 w-4" />
-          {editId ? "Simpan Perubahan" : "Buat Pesanan"}
+          {isSubmitting ? 'Menyimpan...' : editId ? "Simpan Perubahan" : "Buat Pesanan"}
         </Button>
       </div>
 
@@ -961,7 +1213,7 @@ export function CreateOrderContent() {
                 >
                   Semua
                 </button>
-                {productCategories.map(cat => (
+                {availableCategories.map(cat => (
                   <button
                     key={cat}
                     type="button"
@@ -1144,7 +1396,7 @@ export function CreateOrderContent() {
                 <label className="text-sm font-bold text-slate-800 dark:text-slate-200 block">
                   Add-On (Opsional)
                 </label>
-                {masterModifierGroups
+                {availableModifierGroups
                   .filter(g => selectedProduct.modifierGroupIds?.includes(g.id))
                   .map(group => (
                     <div key={group.id} className="space-y-2 bg-slate-50 dark:bg-slate-800/40 p-3 sm:p-2.5 rounded-xl">

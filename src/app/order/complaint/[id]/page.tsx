@@ -15,7 +15,10 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { cn, formatCurrency, formatDateTime, formatVariantLabel, getComplaintStatusLabel } from '@/lib/utils';
-import { ComplaintAttachment } from '@/lib/types';
+import { ComplaintAttachment, SalesOrder, OrderComplaint } from '@/lib/types';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
+import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '@/services/order.service';
 import {
   AlertCircle,
   CheckCircle,
@@ -98,9 +101,58 @@ export default function ComplaintDetailPage() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectionError, setRejectionError] = useState('');
 
+  const [liveComplaint, setLiveComplaint] = useState<OrderComplaint | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchLiveComplaint = React.useCallback(() => {
+    if (!complaintId) return;
+    setIsLoading(true);
+    orderService.getComplaintById(complaintId)
+      .then(res => {
+        if (res.success && res.data) {
+          setLiveComplaint(mapComplaintResponseToOrderComplaint(res.data));
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load complaint:', err);
+      })
+      .finally(() => setIsLoading(false));
+  }, [complaintId]);
+
+  useEffect(() => {
+    fetchLiveComplaint();
+  }, [fetchLiveComplaint]);
+
   // Find the order that contains this complaint
-  const order = salesOrders.find(o => o.complaints?.some(c => c.id === complaintId));
-  const complaint = order?.complaints?.find(c => c.id === complaintId);
+  const orderFromMock = salesOrders.find(o => o.complaints?.some(c => c.id === complaintId) || (liveComplaint && (o.id === liveComplaint.orderId || o.orderNumber === liveComplaint.orderNumber)));
+  const complaintFromMock = orderFromMock?.complaints?.find(c => c.id === complaintId);
+
+  const complaint: OrderComplaint | undefined = liveComplaint || complaintFromMock;
+  const order: SalesOrder | null = orderFromMock || (complaint ? {
+    id: complaint.orderId || '',
+    orderNumber: complaint.orderNumber || '',
+    createdBy: 'Sales',
+    customer: { name: complaint.customerName || 'Pelanggan', phone: '', address: '' },
+    items: (complaint.items || []).map(itm => ({
+      productId: itm.productId,
+      variantId: itm.variantId,
+      productName: itm.productName,
+      variantLabel: itm.variantLabel,
+      qty: itm.qty,
+      unitPrice: itm.unitPrice,
+      selectedModifiers: [],
+      isCustom: false,
+      producedQty: itm.qty,
+      shippedQty: itm.qty,
+      deliveredQty: itm.qty,
+      isBomCustomized: false,
+    })),
+    status: 'SENT' as const,
+    totalAmount: 0,
+    shippingCost: 0,
+    createdAt: complaint.createdAt,
+    complaints: [complaint],
+  } : null);
 
   // Set default bank account
   useEffect(() => {
@@ -108,6 +160,14 @@ export default function ComplaintDetailPage() {
       setRefundBankAccountId(bankAccounts[0].id);
     }
   }, [bankAccounts, refundBankAccountId]);
+
+  if (isLoading && (!order || !complaint)) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+      </div>
+    );
+  }
 
   if (!order || !complaint) {
     return (
@@ -127,10 +187,10 @@ export default function ComplaintDetailPage() {
   const invoice = invoices.find(inv => inv.salesOrderId === order.id || inv.salesOrderNumber === order.orderNumber);
 
   // Financial calculations
-  const refundAmount = complaint.items.reduce((sum, item) => {
+  const refundAmount = complaint.items.reduce((sum: number, item: any) => {
     const price = (item.unitPrice && item.unitPrice > 0)
       ? item.unitPrice
-      : (order.items.find(oi => oi.productId === item.productId)?.unitPrice ?? 0);
+      : (order.items.find((oi: any) => oi.productId === item.productId)?.unitPrice ?? 0);
     return sum + (price * item.qty);
   }, 0);
 
@@ -141,7 +201,7 @@ export default function ComplaintDetailPage() {
   const newRemainingUnpaid = Math.max(0, newTotal - currentPaid);
 
   // Check available finished goods stock for complaint items
-  const totalAvailableStockForComplaint = complaint.items.reduce((acc, ci) => {
+  const totalAvailableStockForComplaint = complaint.items.reduce((acc: number, ci: any) => {
     const fg = finishedGoods.find(f =>
       (f.productId === ci.productId || f.productName === ci.productName) &&
       ((ci.variantId && f.variantId === ci.variantId) || (ci.variantLabel && f.variantLabel === ci.variantLabel) || (!ci.variantId && !ci.variantLabel))
@@ -151,9 +211,26 @@ export default function ComplaintDetailPage() {
     const avail = Math.max(0, fg.stock - reservedCount);
     return acc + avail;
   }, 0);
-  const totalNeededStock = complaint.items.reduce((acc, ci) => acc + ci.qty, 0);
+  const totalNeededStock = complaint.items.reduce((acc: number, ci: any) => acc + ci.qty, 0);
 
-  const handleConfirmFulfillment = () => {
+  const handleConfirmFulfillment = async () => {
+    try {
+      const res = await orderService.resolveComplaint(complaint.id, {
+        resolution: 'Penuhi Barang Pengganti',
+        resolution_notes: fulfillmentNotes.trim() || undefined,
+        replacement_source: replacementSource,
+        is_return_requested: isReturnRequested,
+      });
+      if (res.success) {
+        toast.success('Komplain Sedang Ditangani', 'Unit dialokasikan dan status komplain berhasil diperbarui.');
+        fetchLiveComplaint();
+        setIsFulfillmentModalOpen(false);
+        return;
+      }
+    } catch (err: any) {
+      console.warn('Backend resolve complaint failed, syncing local mock:', err);
+    }
+
     const res = resolveOrderComplaint(
       order.id,
       complaint.id,
@@ -171,10 +248,28 @@ export default function ComplaintDetailPage() {
     } else {
       toast.success('Komplain Sedang Ditangani', res?.spkNumber ? `${res.spkNumber} telah diterbitkan untuk produksi.` : 'SPK pengganti telah diterbitkan.');
     }
+    fetchLiveComplaint();
     setIsFulfillmentModalOpen(false);
   };
 
-  const handleConfirmRefund = () => {
+  const handleConfirmRefund = async () => {
+    try {
+      const res = await orderService.resolveComplaint(complaint.id, {
+        resolution: 'Batalkan Pesanan (Refund)',
+        resolution_notes: refundNotes.trim() || 'Direfund sesuai item yang diretur.',
+        refund_bank_account_id: refundBankAccountId,
+        is_return_requested: isRefundReturnRequested,
+      });
+      if (res.success) {
+        toast.success('Komplain Diselesaikan', 'Pengembalian dana telah diproses.');
+        fetchLiveComplaint();
+        setIsRefundModalOpen(false);
+        return;
+      }
+    } catch (err: any) {
+      console.warn('Backend refund failed, syncing local mock:', err);
+    }
+
     resolveOrderComplaint(
       order.id,
       complaint.id,
@@ -186,22 +281,55 @@ export default function ComplaintDetailPage() {
       }
     );
     toast.success('Komplain Diselesaikan', 'Pengembalian dana telah diproses.');
+    fetchLiveComplaint();
     setIsRefundModalOpen(false);
   };
 
-  const handleConfirmManualComplete = () => {
+  const handleConfirmManualComplete = async () => {
+    try {
+      const res = await orderService.resolveComplaint(complaint.id, {
+        resolution: 'Perbaikan',
+        resolution_notes: manualCompleteNotes.trim() || undefined,
+      });
+      if (res.success) {
+        toast.success('Komplain Diselesaikan', 'Status komplain telah ditandai selesai.');
+        fetchLiveComplaint();
+        setIsManualCompleteModalOpen(false);
+        return;
+      }
+    } catch (err: any) {
+      console.warn('Backend resolve failed, syncing local mock:', err);
+    }
+
     manuallyResolveComplaint(order.id, complaint.id, manualCompleteNotes.trim() || undefined);
     toast.success('Komplain Diselesaikan', 'Status komplain telah ditandai selesai.');
+    fetchLiveComplaint();
     setIsManualCompleteModalOpen(false);
   };
 
-  const handleConfirmReject = () => {
+  const handleConfirmReject = async () => {
     if (!rejectionReason.trim()) {
       setRejectionError('Alasan penolakan wajib diisi.');
       return;
     }
+
+    try {
+      const res = await orderService.rejectComplaint(complaint.id, {
+        reason: rejectionReason.trim(),
+      });
+      if (res.success) {
+        toast.success('Komplain Ditolak', 'Pengajuan komplain telah ditolak.');
+        fetchLiveComplaint();
+        setIsRejectModalOpen(false);
+        return;
+      }
+    } catch (err: any) {
+      console.warn('Backend reject failed, syncing local mock:', err);
+    }
+
     rejectOrderComplaint(order.id, complaint.id, rejectionReason.trim());
     toast.success('Komplain Ditolak', 'Pengajuan komplain telah ditolak.');
+    fetchLiveComplaint();
     setIsRejectModalOpen(false);
   };
 
@@ -247,7 +375,7 @@ export default function ComplaintDetailPage() {
               Item Bermasalah
             </h3>
             <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-              {complaint.items.map((item, idx) => {
+              {complaint.items.map((item: any, idx: number) => {
                 const product = products.find(p => p.id === item.productId || p.name === item.productName);
                 const IconComp = iconMap[product?.imageIcon || 'BedDouble'] || BedDouble;
 
@@ -289,7 +417,7 @@ export default function ComplaintDetailPage() {
             </h3>
             {complaint.attachments && complaint.attachments.length > 0 ? (
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
-                {complaint.attachments.map((att) => (
+                {complaint.attachments.map((att: any) => (
                   <button
                     key={att.id}
                     type="button"

@@ -18,4 +18,6 @@ export * from "./stock-movement.service";
 export * from "./bom-preset.service";
 export * from "./product-modifier.service";
 export * from "./product.service";
+export * from "./order.service";
+export * from "./work-order.service";
 

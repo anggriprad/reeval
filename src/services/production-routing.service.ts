@@ -50,12 +50,24 @@ export interface ProductionRoutingItem {
   updated_at: string;
 }
 
+export interface ProductionRoutingStepOption {
+  id: number;
+  sequence: number;
+  operation_id: number;
+  operation_name: string;
+  duration_minutes: number;
+  costing_method: 'fixed' | 'hourly' | string;
+  fixed_labor_cost: number;
+  labor_cost_per_hour: number;
+}
+
 export interface ProductionRoutingOption {
   id: number;
   name: string;
   step_count?: number;
   total_duration_minutes: number;
   total_labor_cost: number;
+  steps?: ProductionRoutingStepOption[];
 }
 
 export interface GetProductionRoutingsParams {

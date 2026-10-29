@@ -41,6 +41,7 @@ export const PERMISSIONS = {
     READ: 'production:read',
     CREATE: 'production:create',
     UPDATE: 'production:update',
+    DELETE: 'production:delete',
     COMPLETE: 'production:complete',
     OPERATION_READ: 'production-operation:read',
     OPERATION_CREATE: 'production-operation:create',

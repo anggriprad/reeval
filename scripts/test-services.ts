@@ -18,6 +18,8 @@ import { stockMovementService } from '../src/services/stock-movement.service';
 import { bomPresetService } from '../src/services/bom-preset.service';
 import { productModifierService } from '../src/services/product-modifier.service';
 import { productService, resolveProductImageUrl } from '../src/services/product.service';
+import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '../src/services/order.service';
+import { workOrderService, mapWorkOrderResponseToWorkOrder, mapJobCardResponseToJobCard } from '../src/services/work-order.service';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
 import { NextRequest } from 'next/server';
@@ -300,6 +302,173 @@ async function runTests() {
   assert(PERMISSIONS.PRODUCT.DELETE === 'product:delete', 'PRODUCT.DELETE must be product:delete');
   assert(resolveProductImageUrl('products/1.jpg').includes('s3.reeval.tech/products/1.jpg'), 'resolveProductImageUrl must resolve S3 URL');
   console.log('✓ productService contract verified');
+
+  // 4r. Verify orderService structure, mappers & PBAC mapping
+  console.log('4r. Checking orderService contract & PBAC mapping...');
+  assert(typeof orderService.getOrders === 'function', 'orderService.getOrders must be a function');
+  assert(typeof orderService.getStatusCounts === 'function', 'orderService.getStatusCounts must be a function');
+  assert(typeof orderService.getOrderById === 'function', 'orderService.getOrderById must be a function');
+  assert(typeof orderService.getOrderHistories === 'function', 'orderService.getOrderHistories must be a function');
+  assert(typeof orderService.createOrder === 'function', 'orderService.createOrder must be a function');
+  assert(typeof orderService.updateOrder === 'function', 'orderService.updateOrder must be a function');
+  assert(typeof orderService.processOrder === 'function', 'orderService.processOrder must be a function');
+  assert(typeof orderService.cancelOrder === 'function', 'orderService.cancelOrder must be a function');
+  assert(typeof orderService.getCustomProcessDetail === 'function', 'orderService.getCustomProcessDetail must be a function');
+  assert(typeof orderService.customizeProcess === 'function', 'orderService.customizeProcess must be a function');
+  assert(typeof orderService.getOrderConfig === 'function', 'orderService.getOrderConfig must be a function');
+  assert(typeof orderService.updateOrderConfig === 'function', 'orderService.updateOrderConfig must be a function');
+  assert(typeof orderService.resetOrderConfig === 'function', 'orderService.resetOrderConfig must be a function');
+  assert(typeof orderService.getComplaints === 'function', 'orderService.getComplaints must be a function');
+  assert(typeof orderService.getComplaintById === 'function', 'orderService.getComplaintById must be a function');
+  assert(typeof orderService.createComplaint === 'function', 'orderService.createComplaint must be a function');
+  assert(typeof orderService.resolveComplaint === 'function', 'orderService.resolveComplaint must be a function');
+  assert(typeof orderService.rejectComplaint === 'function', 'orderService.rejectComplaint must be a function');
+
+  // Verify Mappers
+  assert(typeof mapOrderResponseToSalesOrder === 'function', 'mapOrderResponseToSalesOrder must be a function');
+  assert(typeof mapComplaintResponseToOrderComplaint === 'function', 'mapComplaintResponseToOrderComplaint must be a function');
+
+  // Test mapper transformation logic
+  const mockOrderDto: any = {
+    id: 10,
+    order_number: 'SO-TEST-001',
+    status: 'PROCESSING',
+    customer_name: 'PT Mitra Jaya',
+    customer_phone: '081234567890',
+    customer_address: 'Jakarta Selatan',
+    subtotal: 100000,
+    shipping_cost: 15000,
+    total_amount: 115000,
+    created_at: '2026-10-29T10:00:00Z',
+    items: [
+      {
+        id: 1,
+        product_id: 5,
+        product_name: 'Custom Box',
+        qty: 10,
+        unit_price: 10000,
+        subtotal: 100000,
+        produced_qty: 5,
+        shipped_qty: 2,
+        delivered_qty: 0,
+        is_bom_customized: false,
+      }
+    ]
+  };
+  const mappedOrder = mapOrderResponseToSalesOrder(mockOrderDto);
+  assert(mappedOrder.id === '10', 'mappedOrder.id must be string "10"');
+  assert(mappedOrder.orderNumber === 'SO-TEST-001', 'mappedOrder.orderNumber must match');
+  assert(mappedOrder.status === 'PROCESSING', 'mappedOrder.status must be PROCESSING');
+  assert(mappedOrder.items.length === 1, 'mappedOrder.items length must be 1');
+  assert(mappedOrder.items[0].producedQty === 5, 'producedQty must map correctly');
+  assert(mappedOrder.items[0].id === '1', 'item.id must be string "1"');
+
+  const mockComplaintDto: any = {
+    id: 99,
+    sales_order_id: 10,
+    sales_order_number: 'SO-TEST-001',
+    customer_name: 'PT Mitra Jaya',
+    reason: 'Barang cacat minor',
+    status: 'DIAJUKAN',
+    created_at: '2026-10-29T11:00:00Z',
+  };
+  const mappedComplaint = mapComplaintResponseToOrderComplaint(mockComplaintDto);
+  assert(mappedComplaint.id === '99', 'mappedComplaint.id must be string "99"');
+  assert(mappedComplaint.orderNumber === 'SO-TEST-001', 'mappedComplaint.orderNumber must match');
+  assert(mappedComplaint.status === 'DIAJUKAN', 'mappedComplaint.status must be DIAJUKAN');
+  assert(mappedComplaint.description === 'Barang cacat minor', 'mappedComplaint.description must map from reason fallback');
+
+  // PBAC alignment
+  assert(PERMISSIONS.SALES.READ === 'sales:read', 'SALES.READ must be sales:read');
+  assert(PERMISSIONS.SALES.CREATE === 'sales:create', 'SALES.CREATE must be sales:create');
+  assert(PERMISSIONS.SALES.UPDATE === 'sales:update', 'SALES.UPDATE must be sales:update');
+  assert(PERMISSIONS.SALES.APPROVE === 'sales:approve', 'SALES.APPROVE must be sales:approve');
+  assert(PERMISSIONS.SALES.DELETE === 'sales:delete', 'SALES.DELETE must be sales:delete');
+  console.log('✓ orderService contract, mappers & PBAC verified');
+
+  // 4s. Verify workOrderService structure, mappers & PBAC mapping
+  console.log('4s. Checking workOrderService contract & PBAC mapping...');
+  assert(typeof workOrderService.getWorkOrders === 'function', 'workOrderService.getWorkOrders must be a function');
+  assert(typeof workOrderService.getWorkOrderById === 'function', 'workOrderService.getWorkOrderById must be a function');
+  assert(typeof workOrderService.getWorkOrderKPI === 'function', 'workOrderService.getWorkOrderKPI must be a function');
+  assert(typeof workOrderService.createManualWorkOrder === 'function', 'workOrderService.createManualWorkOrder must be a function');
+  assert(typeof workOrderService.cancelWorkOrder === 'function', 'workOrderService.cancelWorkOrder must be a function');
+  assert(typeof workOrderService.startJobCard === 'function', 'workOrderService.startJobCard must be a function');
+  assert(typeof workOrderService.pauseJobCard === 'function', 'workOrderService.pauseJobCard must be a function');
+  assert(typeof workOrderService.assignJobCardOperator === 'function', 'workOrderService.assignJobCardOperator must be a function');
+  assert(typeof workOrderService.completeJobCard === 'function', 'workOrderService.completeJobCard must be a function');
+  assert(typeof workOrderService.getJobCardLogs === 'function', 'workOrderService.getJobCardLogs must be a function');
+  assert(typeof workOrderService.getAnalytics === 'function', 'workOrderService.getAnalytics must be a function');
+
+  // Verify Mappers
+  assert(typeof mapWorkOrderResponseToWorkOrder === 'function', 'mapWorkOrderResponseToWorkOrder must be a function');
+  assert(typeof mapJobCardResponseToJobCard === 'function', 'mapJobCardResponseToJobCard must be a function');
+
+  // Test mapWorkOrderResponseToWorkOrder
+  const mockWorkOrderDto = {
+    id: 101,
+    spk_number: 'SPK-20261029-0001',
+    sales_order_id: 50,
+    sales_order_number: 'SO-20261029-0001',
+    sales_order_item_id: 12,
+    unit_index: 1,
+    product_id: 2,
+    variant_id: 5,
+    product_name: 'Dipan Standar',
+    variant_name: '180x200 cm',
+    target_qty: 2,
+    status: 'IN_PROGRESS' as const,
+    material_cost: 1500000,
+    planned_labor_cost: 300000,
+    actual_labor_cost: 250000,
+    materials_consumed: [{ materialId: 'm1', qty: 2 }],
+    is_custom: true,
+    custom_notes: 'Finishing Walnut Glossy',
+    is_sub_assembly: false,
+    issued_at: '2026-10-29T10:00:00Z',
+    total_duration_minutes: 120,
+    job_cards: [
+      {
+        id: 201,
+        work_order_id: 101,
+        operation_id: 3,
+        operation_name: 'Pemotongan Kayu',
+        sequence: 1,
+        target_qty: 2,
+        completed_qty: 2,
+        status: 'COMPLETED' as const,
+        operator_id: 7,
+        pic_name: 'Budi Tukang',
+        planned_minutes: 60,
+        actual_minutes: 55,
+        total_duration_minutes: 55,
+        paused_minutes: 0,
+        costing_method: 'hourly',
+        fixed_labor_cost: 0,
+        labor_cost_per_hour: 50000,
+        started_at: '2026-10-29T10:05:00Z',
+        completed_at: '2026-10-29T11:00:00Z',
+      },
+    ],
+  };
+
+  const mappedWO = mapWorkOrderResponseToWorkOrder(mockWorkOrderDto);
+  assert(mappedWO.id === '101', 'mappedWO.id must be string "101"');
+  assert(mappedWO.spkNumber === 'SPK-20261029-0001', 'mappedWO.spkNumber must match');
+  assert(mappedWO.salesOrderNumber === 'SO-20261029-0001', 'mappedWO.salesOrderNumber must match');
+  assert(mappedWO.productName === 'Dipan Standar', 'mappedWO.productName must match');
+  assert(mappedWO.jobCards.length === 1, 'mappedWO.jobCards.length must be 1');
+  assert(mappedWO.jobCards[0].operationName === 'Pemotongan Kayu', 'jobCard.operationName must match');
+  assert(mappedWO.jobCards[0].picName === 'Budi Tukang', 'jobCard.picName must match');
+  assert(mappedWO.isCustom === true, 'mappedWO.isCustom must be true');
+
+  // Verify PBAC constants
+  assert(PERMISSIONS.PRODUCTION.READ === 'production:read', 'PRODUCTION.READ must be production:read');
+  assert(PERMISSIONS.PRODUCTION.CREATE === 'production:create', 'PRODUCTION.CREATE must be production:create');
+  assert(PERMISSIONS.PRODUCTION.UPDATE === 'production:update', 'PRODUCTION.UPDATE must be production:update');
+  assert(PERMISSIONS.PRODUCTION.DELETE === 'production:delete', 'PRODUCTION.DELETE must be production:delete');
+  assert(PERMISSIONS.PRODUCTION.COMPLETE === 'production:complete', 'PRODUCTION.COMPLETE must be production:complete');
+  console.log('✓ workOrderService contract, mappers & PBAC verified');
 
   // 5. Test Proxy logic for mustChangePassword
   console.log('5. Testing Proxy middleware mustChangePassword logic...');

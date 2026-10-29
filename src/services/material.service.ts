@@ -53,6 +53,7 @@ export interface MaterialOption {
   name: string;
   unit: string;
   unit_cost: number;
+  stock?: number;
   is_sub_assembly: boolean;
 }
 
