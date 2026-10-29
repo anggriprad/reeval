@@ -76,6 +76,9 @@ function getAuthHeaders(withAuth: boolean, customHeaders: Record<string, any> = 
     ...config.headers,
     ...customHeaders,
   };
+  if (customHeaders && "Content-Type" in customHeaders && (customHeaders["Content-Type"] === null || customHeaders["Content-Type"] === undefined)) {
+    delete headers["Content-Type"];
+  }
   if (withAuth) {
     const token = getStoredToken();
     if (token) {
@@ -88,6 +91,15 @@ function getAuthHeaders(withAuth: boolean, customHeaders: Record<string, any> = 
   }
   return headers;
 }
+
+axiosInstance.interceptors.request.use((reqConfig) => {
+  if (typeof FormData !== "undefined" && reqConfig.data instanceof FormData) {
+    if (!reqConfig.headers["Content-Type"] || reqConfig.headers["Content-Type"] === "application/json") {
+      reqConfig.headers["Content-Type"] = "multipart/form-data";
+    }
+  }
+  return reqConfig;
+});
 
 axiosInstance.interceptors.response.use(
   (response: AxiosResponse) => response,

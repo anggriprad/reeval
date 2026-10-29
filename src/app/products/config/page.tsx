@@ -8,7 +8,6 @@ import { ArrowLeft } from 'lucide-react';
 import { ProductCategorySection } from './components/ProductCategorySection';
 import { ProductAttributeSection } from './components/ProductAttributeSection';
 import { BomPresetSection } from './components/BomPresetSection';
-import { ProductModifierSection } from './components/ProductModifierSection';
 
 function ProductsConfigContent() {
   return (
@@ -33,9 +32,6 @@ function ProductsConfigContent() {
 
         {/* SECTION 3: MASTER ATRIBUT VARIAN */}
         <ProductAttributeSection />
-
-        {/* SECTION 4: GRUP MODIFIER ADD-ON */}
-        <ProductModifierSection />
       </div>
     </div>
   );

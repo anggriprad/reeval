@@ -70,6 +70,7 @@ export interface GetProductModifierGroupsParams {
   page?: number;
   per_page?: number;
   search?: string;
+  select_type?: string;
 }
 
 export const productModifierService = {

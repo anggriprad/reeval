@@ -17,4 +17,5 @@ export * from "./procurement.service";
 export * from "./stock-movement.service";
 export * from "./bom-preset.service";
 export * from "./product-modifier.service";
+export * from "./product.service";
 

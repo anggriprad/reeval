@@ -17,6 +17,7 @@ import { procurementService } from '../src/services/procurement.service';
 import { stockMovementService } from '../src/services/stock-movement.service';
 import { bomPresetService } from '../src/services/bom-preset.service';
 import { productModifierService } from '../src/services/product-modifier.service';
+import { productService, resolveProductImageUrl } from '../src/services/product.service';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
 import { NextRequest } from 'next/server';
@@ -284,6 +285,21 @@ async function runTests() {
   assert(PERMISSIONS.PRODUCT.MODIFIER_UPDATE === 'modifier-group:update', 'PRODUCT.MODIFIER_UPDATE must be modifier-group:update');
   assert(PERMISSIONS.PRODUCT.MODIFIER_DELETE === 'modifier-group:delete', 'PRODUCT.MODIFIER_DELETE must be modifier-group:delete');
   console.log('✓ productModifierService contract verified');
+
+  // 4q. Verify productService structure & PBAC mapping
+  console.log('4q. Checking productService contract & PBAC mapping...');
+  assert(typeof productService.getProducts === 'function', 'productService.getProducts must be a function');
+  assert(typeof productService.getProductOptions === 'function', 'productService.getProductOptions must be a function');
+  assert(typeof productService.getProductById === 'function', 'productService.getProductById must be a function');
+  assert(typeof productService.createProduct === 'function', 'productService.createProduct must be a function');
+  assert(typeof productService.updateProduct === 'function', 'productService.updateProduct must be a function');
+  assert(typeof productService.deleteProduct === 'function', 'productService.deleteProduct must be a function');
+  assert(PERMISSIONS.PRODUCT.READ === 'product:read', 'PRODUCT.READ must be product:read');
+  assert(PERMISSIONS.PRODUCT.CREATE === 'product:create', 'PRODUCT.CREATE must be product:create');
+  assert(PERMISSIONS.PRODUCT.UPDATE === 'product:update', 'PRODUCT.UPDATE must be product:update');
+  assert(PERMISSIONS.PRODUCT.DELETE === 'product:delete', 'PRODUCT.DELETE must be product:delete');
+  assert(resolveProductImageUrl('products/1.jpg').includes('s3.reeval.tech/products/1.jpg'), 'resolveProductImageUrl must resolve S3 URL');
+  console.log('✓ productService contract verified');
 
   // 5. Test Proxy logic for mustChangePassword
   console.log('5. Testing Proxy middleware mustChangePassword logic...');

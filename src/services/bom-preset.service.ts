@@ -53,6 +53,8 @@ export interface BOMPresetResponse {
 export interface BOMPresetOption {
   id: number;
   name: string;
+  total_cost?: number;
+  items?: BOMPresetItemResponse[];
 }
 
 export interface GetBOMPresetsParams {
@@ -74,6 +76,14 @@ export const bomPresetService = {
   },
 
   async getPresetOptions(): Promise<ApiResponse<BOMPresetOption[]>> {
+    const response = await httpGet<BOMPresetOption[]>(
+      endpointUrl("product/bom-presets/options"),
+      true
+    );
+    return response.data;
+  },
+
+  async getBOMOptions(): Promise<ApiResponse<BOMPresetOption[]>> {
     const response = await httpGet<BOMPresetOption[]>(
       endpointUrl("product/bom-presets/options"),
       true

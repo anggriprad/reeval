@@ -76,7 +76,7 @@ export function BomPresetModal({
       try {
         const [matRes, presetOptRes] = await Promise.all([
           materialService.getMaterialOptions(),
-          bomPresetService.getPresetOptions(),
+          bomPresetService.getBOMOptions(),
         ]);
         if (isMounted) {
           if (matRes?.data && Array.isArray(matRes.data)) {

@@ -69,6 +69,38 @@ import {
   Sparkles,
 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  productService,
+  resolveProductImageUrl,
+  CreateProductPayload,
+  ProductVariantRequest,
+} from '@/services/product.service';
+import {
+  productCategoryService,
+  ProductCategoryOption,
+} from '@/services/product-category.service';
+import {
+  productAttributeService,
+  ProductAttributeOption,
+} from '@/services/product-attribute.service';
+import {
+  bomPresetService,
+  BOMPresetOption,
+} from '@/services/bom-preset.service';
+import { materialService, MaterialItem, MaterialOption } from '@/services/material.service';
+
+function dataURLtoFile(dataurl: string, filename: string): File {
+  const arr = dataurl.split(',');
+  const mimeMatch = arr[0].match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
 
 const availableIcons: { name: string; label: string; icon: React.ElementType }[] = [
   { name: 'Box', label: 'Box / Kotak', icon: Box },
@@ -119,6 +151,126 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   } = useApp();
 
   const isEditMode = !!initialProduct;
+
+  const [categoriesList, setCategoriesList] = useState<ProductCategoryOption[]>([]);
+  const [materialsList, setMaterialsList] = useState<MaterialOption[]>([]);
+  const [apiMaterials, setApiMaterials] = useState<MaterialItem[]>([]);
+  const [bomPresetsList, setBomPresetsList] = useState<BOMPresetOption[]>([]);
+  const [attributeOptionsList, setAttributeOptionsList] = useState<ProductAttributeOption[]>([]);
+
+  useEffect(() => {
+    productCategoryService.getCategoryOptions().then(res => {
+      if (res.success && res.data) {
+        setCategoriesList(res.data);
+      }
+    }).catch(() => {});
+
+    productAttributeService.getAttributeOptions().then(res => {
+      if (res.success && res.data) {
+        setAttributeOptionsList(res.data);
+      }
+    }).catch(() => {});
+
+    materialService.getMaterialOptions().then(res => {
+      if (res.success && res.data) {
+        setMaterialsList(res.data);
+      }
+    }).catch(() => {});
+
+    materialService.getMaterials({ per_page: 100 }).then(res => {
+      if (res.success && res.data) {
+        setApiMaterials(res.data);
+      }
+    }).catch(() => {});
+
+    bomPresetService.getBOMOptions().then(res => {
+      if (res.success && res.data && res.data.length > 0) {
+        setBomPresetsList(res.data);
+      }
+    }).catch(() => {
+      bomPresetService.getBOMOptions().then(res => {
+        if (res.success && res.data) {
+          setBomPresetsList(res.data);
+        }
+      }).catch(() => {});
+    });
+  }, []);
+
+  const availableAttributes = useMemo(() => {
+    if (attributeOptionsList.length > 0) {
+      return attributeOptionsList.map(a => ({
+        id: String(a.id),
+        name: a.name,
+        values: a.values || [],
+      }));
+    }
+    return (attributes || []).map(a => ({
+      id: String(a.id),
+      name: a.name,
+      values: Array.isArray(a.values) ? a.values : [],
+    }));
+  }, [attributeOptionsList, attributes]);
+
+  const availablePresets = useMemo(() => {
+    if (bomPresetsList.length > 0) {
+      return bomPresetsList.map(p => ({ id: String(p.id), name: p.name }));
+    }
+    return bomTemplates.map(t => ({ id: String(t.id), name: t.name }));
+  }, [bomPresetsList, bomTemplates]);
+
+  const allTemplateItems = useMemo(() => {
+    if (bomPresetsList.length > 0) {
+      const items: { templateId: string; materialId: string; defaultQty: number }[] = [];
+      for (const p of bomPresetsList) {
+        for (const it of (p.items || [])) {
+          items.push({
+            templateId: String(p.id),
+            materialId: String(it.material_id),
+            defaultQty: it.quantity,
+          });
+        }
+      }
+      return items;
+    }
+    return bomTemplateItems;
+  }, [bomPresetsList, bomTemplateItems]);
+
+  const combinedMaterials = useMemo(() => {
+    const list = [...(materials || [])];
+    for (const m of (apiMaterials || [])) {
+      const idStr = String(m.id);
+      if (!list.some(existing => String(existing.id) === idStr)) {
+        list.push({
+          id: idStr,
+          name: m.name,
+          code: m.code,
+          category: m.category || '',
+          unit: m.unit || 'unit',
+          unitCost: m.unit_cost ?? 0,
+          stock: m.stock ?? 0,
+          isSubAssembly: Boolean(m.is_sub_assembly),
+        } as any);
+      }
+    }
+    for (const p of bomPresetsList) {
+      for (const it of (p.items || [])) {
+        const mId = String(it.material_id);
+        if (!list.some(existing => String(existing.id) === mId)) {
+          list.push({
+            id: mId,
+            name: it.material_name,
+            code: it.material_code,
+            category: '',
+            unit: it.unit || 'unit',
+            unitCost: it.unit_cost ?? 0,
+            stock: 0,
+            isSubAssembly: false,
+          } as any);
+        }
+      }
+    }
+    return list;
+  }, [materials, apiMaterials, bomPresetsList]);
 
   // ── Mode Switch: Single Product vs Product with Variants ───────────────────
   const [hasVariants, setHasVariants] = useState<boolean>(() => {
@@ -237,9 +389,9 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const effectiveSingleBom = useMemo(() => {
     return getEffectiveVariantBOM(
       { presetId: singlePresetId, isCustomBOM: isSingleCustomBOM, bom: singleBom },
-      bomTemplateItems
+      allTemplateItems
     );
-  }, [singlePresetId, isSingleCustomBOM, singleBom, bomTemplateItems]);
+  }, [singlePresetId, isSingleCustomBOM, singleBom, allTemplateItems]);
 
   const toggleSingleCustomBOM = () => {
     if (!isSingleCustomBOM) {
@@ -254,8 +406,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
   // Filter available materials for Single Product BOM (exclude materials already in singleBom)
   const availableMaterialsForSingle = useMemo(() => {
-    return materials.filter(m => !effectiveSingleBom.some(b => b.materialId === m.id));
-  }, [materials, effectiveSingleBom]);
+    return combinedMaterials.filter(m => !effectiveSingleBom.some(b => String(b.materialId) === String(m.id)));
+  }, [combinedMaterials, effectiveSingleBom]);
 
   // ── 3. Multi-Variant States (when hasVariants === true) ─────────────────────
   const [defaultVariantPrice, setDefaultVariantPrice] = useState<number>(initialProduct?.basePrice ?? 0);
@@ -360,10 +512,10 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     }
     if (variants.length === 0) return true;
     return variants.some(v => {
-      const eff = v.isCustomBOM ? (v.bom || []) : getEffectiveVariantBOM(v, bomTemplateItems);
+      const eff = v.isCustomBOM ? (v.bom || []) : getEffectiveVariantBOM(v, allTemplateItems);
       return eff.length === 0;
     });
-  }, [hasVariants, effectiveSingleBom, variants, bomTemplateItems]);
+  }, [hasVariants, effectiveSingleBom, variants, allTemplateItems]);
 
   // Bahan Setengah Jadi expandable rows state
   const [expandedSubAssemblies, setExpandedSubAssemblies] = useState<Record<string, boolean>>({});
@@ -386,8 +538,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   // Filter available materials for active variant in modal (exclude materials already in variant.bom)
   const availableMaterialsForVariant = useMemo(() => {
     if (!activeEditingVariant) return [];
-    return materials.filter(m => !activeEditingVariant.bom.some(b => b.materialId === m.id));
-  }, [materials, activeEditingVariant]);
+    return combinedMaterials.filter(m => !activeEditingVariant.bom.some(b => String(b.materialId) === String(m.id)));
+  }, [combinedMaterials, activeEditingVariant]);
 
   // ── Batch Edit / Bulk Update State ──────────────────────────────────────
   const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([]);
@@ -476,7 +628,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
       } else if (bulkField === 'isCustomBOM') {
         let newBom = v.bom;
         if (bulkValIsCustomBOM && (!v.bom || v.bom.length === 0)) {
-          const eff = getEffectiveVariantBOM({ presetId: v.presetId, isCustomBOM: false }, bomTemplateItems);
+          const eff = getEffectiveVariantBOM({ presetId: v.presetId, isCustomBOM: false }, allTemplateItems);
           newBom = structuredClone(eff);
         }
         return { ...v, isCustomBOM: bulkValIsCustomBOM, bom: newBom };
@@ -548,7 +700,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   };
 
   const importFromGlobalAttribute = (attrId: string) => {
-    const found = attributes.find(a => a.id === attrId);
+    const found = availableAttributes.find(a => String(a.id) === String(attrId));
     if (!found) return;
 
     const cleanValues = Array.from(new Set(
@@ -564,7 +716,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
       return [...prev, {
         name: found.name,
         values: cleanValues,
-        valueImages: found.valueImages ? { ...found.valueImages } : undefined,
+        valueImages: (found as any).valueImages ? { ...(found as any).valueImages } : undefined,
       }];
     });
   };
@@ -653,7 +805,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   // ── BOM Handlers (Single Product) ──────────────────────────────────────────
   const handleImportPresetToSingleProduct = () => {
     if (!singlePresetId) return;
-    const templateItems = bomTemplateItems.filter(item => item.templateId === singlePresetId);
+    const templateItems = allTemplateItems.filter(item => String(item.templateId) === String(singlePresetId));
     if (templateItems.length === 0) {
       setSingleCloneMsg('Preset ini belum memiliki daftar material.');
       return;
@@ -666,7 +818,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     }));
     setSingleBom(cloned);
 
-    const tplName = bomTemplates.find(t => t.id === singlePresetId)?.name || 'Preset';
+    const tplName = availablePresets.find(t => String(t.id) === String(singlePresetId))?.name || 'Preset';
     setSingleCloneMsg(`Berhasil mengimpor ${cloned.length} material dari "${tplName}".`);
     setTimeout(() => setSingleCloneMsg(null), 4000);
   };
@@ -707,7 +859,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   // ── BOM Handlers (Modal for Multi-Variant) ──────────────────────────────────
   const handleImportPresetToActiveVariant = () => {
     if (!activeEditingVariant || !modalPresetTemplateId) return;
-    const templateItems = bomTemplateItems.filter(item => item.templateId === modalPresetTemplateId);
+    const templateItems = allTemplateItems.filter(item => String(item.templateId) === String(modalPresetTemplateId));
     if (templateItems.length === 0) {
       setModalCloneFeedback('Preset ini belum memiliki material.');
       return;
@@ -723,7 +875,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
       return { ...v, bom: deepCopiedBOM };
     }));
 
-    const tplName = bomTemplates.find(t => t.id === modalPresetTemplateId)?.name || 'Preset';
+    const tplName = availablePresets.find(t => String(t.id) === String(modalPresetTemplateId))?.name || 'Preset';
     setModalCloneFeedback(`Berhasil mengimpor ${deepCopiedBOM.length} material dari "${tplName}".`);
     setTimeout(() => setModalCloneFeedback(null), 4000);
   };
@@ -733,7 +885,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     const qtyNum = Math.max(0.01, Number(newQty) || 0.01);
     setVariants(prev => prev.map(v => {
       if (v.id !== activeEditingVariant.id) return v;
-      const currentEff = getEffectiveVariantBOM(v, bomTemplateItems);
+      const currentEff = getEffectiveVariantBOM(v, allTemplateItems);
       const baseBom = (v.bom && v.bom.length > 0) ? v.bom : structuredClone(currentEff);
       return {
         ...v,
@@ -747,7 +899,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     if (!activeEditingVariant) return;
     setVariants(prev => prev.map(v => {
       if (v.id !== activeEditingVariant.id) return v;
-      const currentEff = getEffectiveVariantBOM(v, bomTemplateItems);
+      const currentEff = getEffectiveVariantBOM(v, allTemplateItems);
       const baseBom = (v.bom && v.bom.length > 0) ? v.bom : structuredClone(currentEff);
       return {
         ...v,
@@ -762,7 +914,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     const qty = Math.max(0.01, Number(modalNewMaterialQty) || 1);
     setVariants(prev => prev.map(v => {
       if (v.id !== activeEditingVariant.id) return v;
-      const currentEff = getEffectiveVariantBOM(v, bomTemplateItems);
+      const currentEff = getEffectiveVariantBOM(v, allTemplateItems);
       const baseBom = (v.bom && v.bom.length > 0) ? v.bom : structuredClone(currentEff);
       const exists = baseBom.some(b => b.materialId === modalNewMaterialId);
       let updatedBom: BOMItem[];
@@ -779,11 +931,11 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
   // ── Helper: Calculate BOM Cost (with recursive Bahan Setengah Jadi rollup including labor) ──────
   const calculateBOMCost = (bom: BOMItem[]): number => {
-    return calculateRollupBOMCost(bom, materials, routings, operations);
+    return calculateRollupBOMCost(bom, combinedMaterials, routings, operations);
   };
 
   // ── Save Handler ───────────────────────────────────────────────────────────
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -821,7 +973,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         return;
       }
       const emptyBOMVariants = variants.filter(v => {
-        const eff = v.isCustomBOM ? (v.bom || []) : getEffectiveVariantBOM(v, bomTemplateItems);
+        const eff = v.isCustomBOM ? (v.bom || []) : getEffectiveVariantBOM(v, allTemplateItems);
         return eff.length === 0;
       });
       if (emptyBOMVariants.length > 0) {
@@ -873,7 +1025,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         finalDefaultEstimatedHours = defaultVariantEstimatedHours || undefined;
         finalVariantTypes = variantTypes.filter(vt => vt.name.trim() && vt.values.length > 0);
         finalVariants = variants.map(v => {
-          const effectiveBom = getEffectiveVariantBOM(v, bomTemplateItems);
+          const effectiveBom = getEffectiveVariantBOM(v, allTemplateItems);
           const resolvedBom = v.isCustomBOM
             ? (v.bom || [])
             : structuredClone(effectiveBom);
@@ -899,11 +1051,127 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         modifierGroupIds,
       };
 
+      // Resolve category ID for Backend API
+      let categoryId = 1;
+      const matchedCat = categoriesList.find(
+        c => String(c.id) === String(category) || c.name.toLowerCase() === category.trim().toLowerCase()
+      );
+      if (matchedCat) {
+        categoryId = matchedCat.id;
+      } else if (!isNaN(Number(category)) && Number(category) > 0) {
+        categoryId = Number(category);
+      }
+
+      // Format variants for Backend API
+      const apiVariants: ProductVariantRequest[] = finalVariants.map(v => {
+        const parsedRoutingId = v.routingId && !isNaN(Number(v.routingId)) ? Number(v.routingId) : undefined;
+        const parsedPresetId = v.presetId && !isNaN(Number(v.presetId)) ? Number(v.presetId) : undefined;
+
+        const mapBOM = (bomList: BOMItem[]) => (bomList || []).map(b => {
+          let mId = Number(b.materialId);
+          if (isNaN(mId) || mId <= 0) {
+            const cleanStr = String(b.materialId).replace(/^mat-/, '');
+            mId = Number(cleanStr);
+          }
+          if (isNaN(mId) || mId <= 0) {
+            const foundMat = (materialsList || []).find(m => String(m.id) === String(b.materialId) || m.code === b.materialId);
+            if (foundMat) mId = foundMat.id;
+          }
+          return {
+            material_id: mId > 0 ? mId : 1,
+            qty: Number(b.qty) || 1,
+          };
+        });
+
+        const req: ProductVariantRequest = {
+          sku: v.sku.trim(),
+          combination: v.combination || {},
+          price: Number(v.price) || 0,
+          estimated_hours: Number(v.estimatedHours) || 0,
+          routing_id: parsedRoutingId,
+          preset_id: parsedPresetId,
+          is_custom_bom: Boolean(v.isCustomBOM),
+          initial_stock: Number(v.initialStock) || 0,
+          min_stock: 0,
+          unit: 'unit',
+          bom: mapBOM(v.bom),
+        };
+
+        if (v.id && !isNaN(Number(v.id)) && Number(v.id) > 0) {
+          req.id = Number(v.id);
+        }
+        if (v.isCustomBOM) {
+          req.custom_bom = req.bom;
+        }
+
+        return req;
+      });
+
+      // Format modifierGroupIds for API (numbers)
+      const apiModifierGroupIds = (modifierGroupIds || [])
+        .map(id => {
+          const num = Number(String(id).replace(/^pmg-/, ''));
+          return !isNaN(num) && num > 0 ? num : undefined;
+        })
+        .filter((id): id is number => id !== undefined);
+
+      // Ensure image_url only stores relative path starting with /products/...
+      let cleanImagePayloadUrl: string | undefined = undefined;
+      if (visualType === 'image' && image && !image.startsWith('data:image/')) {
+        const idx = image.indexOf('/products/');
+        if (idx !== -1) {
+          cleanImagePayloadUrl = image.slice(idx);
+        } else if (image.startsWith('http://') || image.startsWith('https://')) {
+          try {
+            cleanImagePayloadUrl = new URL(image).pathname;
+          } catch {
+            cleanImagePayloadUrl = image;
+          }
+        } else {
+          cleanImagePayloadUrl = image.startsWith('/') ? image : `/${image}`;
+        }
+      }
+
+      const apiPayload: CreateProductPayload = {
+        category_id: categoryId,
+        name: name.trim(),
+        description: description.trim(),
+        image_icon: imageIcon || 'Box',
+        image_url: cleanImagePayloadUrl,
+        default_routing_id: finalDefaultRoutingId && !isNaN(Number(finalDefaultRoutingId)) ? Number(finalDefaultRoutingId) : undefined,
+        default_estimated_hours: finalDefaultEstimatedHours || 0,
+        has_variants: hasVariants,
+        variant_types_json: JSON.stringify(finalVariantTypes),
+        modifier_group_ids: apiModifierGroupIds,
+        variants: apiVariants,
+      };
+
+      // Prepare image file if image was selected/cropped as dataURL
+      let imageFile: File | undefined;
+      if (visualType === 'image' && image && image.startsWith('data:image/')) {
+        imageFile = dataURLtoFile(image, `${name.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'product'}.jpg`);
+      }
+
       if (isEditMode && initialProduct) {
-        updateProduct(initialProduct.id, productPayload);
+        const prodId = initialProduct.id;
+        const res = await productService.updateProduct(prodId, apiPayload, imageFile);
+        if (!res.success) {
+          throw new Error(res.message || 'Gagal memperbarui produk di server.');
+        }
+        updateProduct(initialProduct.id, {
+          ...productPayload,
+          image: res.data?.image_url ? resolveProductImageUrl(res.data.image_url) : productPayload.image,
+        });
         toast.success('Produk Diperbarui', `Produk "${productPayload.name}" berhasil diperbarui.`);
       } else {
-        addProduct(productPayload);
+        const res = await productService.createProduct(apiPayload, imageFile);
+        if (!res.success) {
+          throw new Error(res.message || 'Gagal membuat produk di server.');
+        }
+        addProduct({
+          ...productPayload,
+          image: res.data?.image_url ? resolveProductImageUrl(res.data.image_url) : productPayload.image,
+        });
         toast.success('Produk Ditambahkan', `Produk "${productPayload.name}" berhasil ditambahkan.`);
       }
 
@@ -984,7 +1252,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     className="w-full"
                   >
                     <option value="">-- Pilih Kategori --</option>
-                    {(productCategories || []).map((c: string) => (
+                    {(categoriesList.length > 0 ? categoriesList.map(c => c.name) : (productCategories || [])).map((c: string) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </Select>
@@ -1286,7 +1554,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     <Plus className="h-3.5 w-3.5 mr-1.5" /> Tambah Atribut Baru
                   </Button>
 
-                  {attributes && attributes.length > 0 && (
+                  {availableAttributes && availableAttributes.length > 0 && (
                     <div className="flex-1">
                       <Select
                         onChange={e => {
@@ -1299,7 +1567,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         inputSize="sm"
                       >
                         <option value="" disabled>+ Impor dari Master Atribut...</option>
-                        {attributes.map(a => (
+                        {availableAttributes.map(a => (
                           <option key={a.id} value={a.id}>
                             {a.name}
                           </option>
@@ -1437,7 +1705,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         const newPresetId = e.target.value;
                         setSinglePresetId(newPresetId);
                         if (newPresetId) {
-                          const tplItems = bomTemplateItems.filter(item => item.templateId === newPresetId);
+                          const tplItems = allTemplateItems.filter(item => String(item.templateId) === String(newPresetId));
                           const cloned = tplItems.map(item => ({ materialId: item.materialId, qty: Number(item.defaultQty) || 1 }));
                           setSingleBom(cloned);
                         } else if (!isSingleCustomBOM) {
@@ -1448,7 +1716,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                       containerClassName="w-full"
                     >
                       <option value="">-- Tanpa Preset (Manual / Kosong) --</option>
-                      {bomTemplates.map(tpl => (
+                      {availablePresets.map(tpl => (
                         <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
                       ))}
                     </Select>
@@ -1481,7 +1749,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                   <table className="w-full text-left text-xs">
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {effectiveSingleBom.map((item, idx) => {
-                        const mat = materials.find(m => m.id === item.materialId);
+                        const mat = combinedMaterials.find(m => String(m.id) === String(item.materialId) || m.code === item.materialId);
                         const unitCost = mat?.unitCost || 0;
                         const subtotal = unitCost * item.qty;
                         const isExpanded = Boolean(expandedSubAssemblies[`single-${item.materialId}`]);
@@ -1574,7 +1842,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
                                           {(mat.childBom || []).map((child, cIdx) => {
-                                            const cMat = materials.find(m => m.id === child.materialId);
+                                            const cMat = combinedMaterials.find(m => String(m.id) === String(child.materialId) || m.code === child.materialId);
                                             const cUnitCost = cMat?.unitCost || 0;
                                             const totalQty = child.qty * item.qty;
                                             const cSubtotal = cUnitCost * totalQty;
@@ -1838,7 +2106,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         containerClassName="w-auto min-w-[170px]"
                       >
                         <option value="">-- Tanpa Preset --</option>
-                        {bomTemplates.map(tpl => (
+                        {availablePresets.map(tpl => (
                           <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
                         ))}
                       </Select>
@@ -1962,7 +2230,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                       ) : (
                         filteredVariants.map(variant => {
                           const comboEntries = Object.entries(variant.combination);
-                          const effectiveBom = getEffectiveVariantBOM(variant, bomTemplateItems);
+                          const effectiveBom = getEffectiveVariantBOM(variant, allTemplateItems);
                           const bomCost = calculateBOMCost(effectiveBom);
                           const hasBom = effectiveBom.length > 0;
                           const isSelected = selectedVariantIds.includes(variant.id);
@@ -2232,14 +2500,14 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
       {/* ── MODAL: Kelola BOM Varian Fisik ── */}
       {activeEditingVariant && (() => {
         const isModalCustomBOM = Boolean(activeEditingVariant.isCustomBOM);
-        const effectiveModalBom = getEffectiveVariantBOM(activeEditingVariant, bomTemplateItems);
+        const effectiveModalBom = getEffectiveVariantBOM(activeEditingVariant, allTemplateItems);
         const modalBomCost = calculateBOMCost(effectiveModalBom);
 
         const handleModalToggleCustomBOM = () => {
           setVariants(prev => prev.map(v => {
             if (v.id !== activeEditingVariant.id) return v;
             if (!v.isCustomBOM) {
-              const currentEff = getEffectiveVariantBOM(v, bomTemplateItems);
+              const currentEff = getEffectiveVariantBOM(v, allTemplateItems);
               return {
                 ...v,
                 isCustomBOM: true,
@@ -2259,7 +2527,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
             if (v.id !== activeEditingVariant.id) return v;
             let clonedBom = v.bom;
             if (newPresetId) {
-              const tplItems = bomTemplateItems.filter(item => item.templateId === newPresetId);
+              const tplItems = allTemplateItems.filter(item => String(item.templateId) === String(newPresetId));
               clonedBom = tplItems.map(item => ({ materialId: item.materialId, qty: Number(item.defaultQty) || 1 }));
             }
             return {
@@ -2348,7 +2616,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     containerClassName="w-full"
                   >
                     <option value="">-- Pilih Preset BOM (Kosong) --</option>
-                    {bomTemplates.map(tpl => (
+                    {availablePresets.map(tpl => (
                       <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
                     ))}
                   </Select>
@@ -2413,7 +2681,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     <table className="w-full text-left text-xs">
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
                         {effectiveModalBom.map((item, idx) => {
-                          const mat = materials.find(m => m.id === item.materialId);
+                          const mat = combinedMaterials.find(m => String(m.id) === String(item.materialId) || m.code === item.materialId);
                           const unitCost = mat?.unitCost || 0;
                           const subtotal = unitCost * item.qty;
                           const isExpanded = Boolean(expandedSubAssemblies[`var-${activeEditingVariant.id}-${item.materialId}`]);
@@ -2514,7 +2782,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                           </thead>
                                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
                                             {(mat.childBom || []).map((child, cIdx) => {
-                                              const cMat = materials.find(m => m.id === child.materialId);
+                                              const cMat = combinedMaterials.find(m => String(m.id) === String(child.materialId) || m.code === child.materialId);
                                               const cUnitCost = cMat?.unitCost || 0;
                                               const totalQty = child.qty * item.qty;
                                               const cSubtotal = cUnitCost * totalQty;
