@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppProvider } from "@/context/AppContext";
 import { ToastProvider } from "@/context/ToastContext";
+import { LoadingBarProvider } from "@/context/LoadingBarContext";
+import { TopProgressBar } from "@/components/ui/TopProgressBar";
 import { AppLayout } from "@/components/layout/AppLayout";
 
 export const metadata: Metadata = {
@@ -27,13 +29,16 @@ export default function RootLayout({
   return (
     <html lang="id" className="dark" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <ToastProvider>
-          <AppProvider>
-            <AppLayout>
-              {children}
-            </AppLayout>
-          </AppProvider>
-        </ToastProvider>
+        <LoadingBarProvider>
+          <TopProgressBar />
+          <ToastProvider>
+            <AppProvider>
+              <AppLayout>
+                {children}
+              </AppLayout>
+            </AppProvider>
+          </ToastProvider>
+        </LoadingBarProvider>
       </body>
     </html>
   );

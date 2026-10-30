@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { deleteCookie, getCookie } from "cookies-next";
 import { toast } from "sonner";
+import { loadingBarManager } from "@/context/LoadingBarContext";
 
 axios.defaults.withCredentials = false;
 
@@ -98,12 +99,23 @@ axiosInstance.interceptors.request.use((reqConfig) => {
       reqConfig.headers["Content-Type"] = "multipart/form-data";
     }
   }
+  if (typeof window !== "undefined" && !(reqConfig as any)?.skipLoadingBar) {
+    loadingBarManager.start();
+  }
   return reqConfig;
 });
 
 axiosInstance.interceptors.response.use(
-  (response: AxiosResponse) => response,
+  (response: AxiosResponse) => {
+    if (typeof window !== "undefined" && !(response.config as any)?.skipLoadingBar) {
+      loadingBarManager.finish();
+    }
+    return response;
+  },
   (error: AxiosError) => {
+    if (typeof window !== "undefined" && !(error?.config as any)?.skipLoadingBar) {
+      loadingBarManager.finish();
+    }
     const isTokenExpired = error?.response?.status === 401;
     const isAuthRequest =
       error?.config?.url?.includes("auth/login") ||
