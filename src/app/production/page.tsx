@@ -106,6 +106,27 @@ function ProductionContent() {
   // Tab counters from API
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
+  const fetchStatusCounts = useCallback(() => {
+    workOrderService
+      .getStatusCounts()
+      .then((res) => {
+        if (res.success && res.data) {
+          setStatusCounts({
+            active: res.data.active,
+            completed: res.data.completed,
+            canceled: res.data.canceled,
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat status counts SPK:', err);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetchStatusCounts();
+  }, [fetchStatusCounts]);
+
   // Infinite list state & cancellation refs
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [allActiveWOs, setAllActiveWOs] = useState<WorkOrder[]>([]);
@@ -230,7 +251,8 @@ function ProductionContent() {
     setPage(1);
     currentPageRef.current = 1;
     fetchWorkOrders(1, true);
-  }, [fetchWorkOrders]);
+    fetchStatusCounts();
+  }, [fetchWorkOrders, fetchStatusCounts]);
 
   // Job card execution handlers
   const handleStartJobCard = async (woId: string, jcId: string, e?: React.MouseEvent) => {
@@ -382,7 +404,19 @@ function ProductionContent() {
       <AssignOperatorModal
         isOpen={!!assignTarget}
         onClose={() => setAssignTarget(null)}
-        onSuccess={handleRefresh}
+        onSuccess={() => {
+          handleRefresh();
+          if (selectedWO) {
+            workOrderService
+              .getWorkOrderById(selectedWO.id)
+              .then((res) => {
+                if (res.success && res.data) {
+                  setSelectedWO(mapWorkOrderResponseToWorkOrder(res.data));
+                }
+              })
+              .catch(() => {});
+          }
+        }}
         target={assignTarget}
         operators={operators}
       />
@@ -394,7 +428,6 @@ function ProductionContent() {
         products={products}
         operations={operations}
         onOpenEditOperator={(woId, jc) => {
-          setSelectedWO(null);
           setAssignTarget({ woId, jc });
         }}
       />

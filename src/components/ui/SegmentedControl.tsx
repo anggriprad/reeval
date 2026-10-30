@@ -291,11 +291,11 @@ export function SegmentedControl<T extends string = string>({
                       {f.placeholder || `Filter ${idx + 1}`}
                     </div>
                   )}
-                  {resolvedOptions.map((opt) => {
+                  {resolvedOptions.map((opt, optIdx) => {
                     const isSelected = String(f.value) === String(opt.value);
                     return (
                       <button
-                        key={String(opt.value) || 'all'}
+                        key={`${String(opt.value ?? '')}-${optIdx}`}
                         type="button"
                         onClick={() => {
                           f.onChange(String(opt.value));

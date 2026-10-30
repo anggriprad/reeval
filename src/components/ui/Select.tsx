@@ -200,13 +200,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
   const parsedOptions: SelectOption[] = useMemo(() => {
     let res: SelectOption[] = [];
     if (options && options.length > 0) {
-      res = [...options];
+      res = options.map((opt) => ({
+        ...opt,
+        value: typeof opt.value === 'number' && isNaN(opt.value) ? '' : opt.value,
+      }));
     } else {
       const extractOptions = (nodes: React.ReactNode) => {
         React.Children.forEach(nodes, (child) => {
           if (!React.isValidElement(child)) return;
           if (child.type === 'option') {
-            const val = (child.props as any).value ?? '';
+            const rawVal = (child.props as any).value ?? '';
+            const val = typeof rawVal === 'number' && isNaN(rawVal) ? '' : rawVal;
             const rawChildren = (child.props as any).children;
             const lbl = rawChildren !== undefined ? extractText(rawChildren) : String(val);
             const dis = (child.props as any).disabled;
@@ -396,8 +400,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
           tabIndex={-1}
           {...props}
         >
-          {parsedOptions.map(opt => (
-            <option key={String(opt.value)} value={opt.value} disabled={opt.disabled}>
+          {parsedOptions.map((opt, idx) => (
+            <option key={`${String(opt.value ?? '')}-${idx}`} value={opt.value} disabled={opt.disabled}>
               {opt.label}
             </option>
           ))}
@@ -518,7 +522,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
                     const isFocused = index === focusedIndex;
                     return (
                       <button
-                        key={String(opt.value)}
+                        key={`${String(opt.value ?? '')}-${index}`}
                         ref={el => { optionRefs.current[index] = el; }}
                         type="button"
                         disabled={opt.disabled}

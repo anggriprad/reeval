@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -8,6 +8,7 @@ import { OptionList } from '@/components/ui/OptionList';
 import { useToast } from '@/context/ToastContext';
 import { Search, Loader2 } from 'lucide-react';
 import { workOrderService } from '@/services/work-order.service';
+import { productionOperatorService, type ProductionOperatorOption } from '@/services/production-operator.service';
 import type { JobCard, ProductionOperator } from '@/lib/types';
 
 interface CompleteJobCardModalProps {
@@ -15,7 +16,7 @@ interface CompleteJobCardModalProps {
   onClose: () => void;
   onSuccess: () => void;
   target: { woId: string; jc: JobCard } | null;
-  operators: ProductionOperator[];
+  operators?: ProductionOperator[];
 }
 
 export function CompleteJobCardModal({
@@ -23,24 +24,53 @@ export function CompleteJobCardModal({
   onClose,
   onSuccess,
   target,
-  operators,
+  operators = [],
 }: CompleteJobCardModalProps) {
   const { toast } = useToast();
   const [selectedOperatorName, setSelectedOperatorName] = useState('');
   const [operatorSearch, setOperatorSearch] = useState('');
   const [completeError, setCompleteError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiOperators, setApiOperators] = useState<ProductionOperatorOption[]>([]);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
 
-  const activeOperators = useMemo(
-    () => operators.filter((o) => o.status === 'ACTIVE'),
-    [operators]
-  );
+  useEffect(() => {
+    if (isOpen) {
+      setIsLoadingOptions(true);
+      productionOperatorService
+        .getOperatorOptions()
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setApiOperators(res.data);
+          }
+        })
+        .catch((err) => {
+          console.warn('Gagal memuat opsi operator dari API:', err);
+        })
+        .finally(() => {
+          setIsLoadingOptions(false);
+        });
+    }
+  }, [isOpen]);
+
+  const effectiveOperators = useMemo(() => {
+    if (apiOperators.length > 0) {
+      return apiOperators.map((o) => ({
+        id: String(o.id),
+        name: o.name,
+      }));
+    }
+    return operators.filter((o) => o.status === 'ACTIVE').map((o) => ({
+      id: String(o.id),
+      name: o.name,
+    }));
+  }, [apiOperators, operators]);
 
   const filteredOperators = useMemo(() => {
-    if (!operatorSearch.trim()) return activeOperators;
+    if (!operatorSearch.trim()) return effectiveOperators;
     const q = operatorSearch.toLowerCase();
-    return activeOperators.filter((o) => o.name.toLowerCase().includes(q));
-  }, [activeOperators, operatorSearch]);
+    return effectiveOperators.filter((o) => o.name.toLowerCase().includes(q));
+  }, [effectiveOperators, operatorSearch]);
 
   const handleClose = () => {
     setSelectedOperatorName('');
@@ -57,7 +87,7 @@ export function CompleteJobCardModal({
       return;
     }
 
-    const foundOp = operators.find((o) => o.name === picName);
+    const foundOp = effectiveOperators.find((o) => o.name === picName);
     setIsSubmitting(true);
     try {
       const res = await workOrderService.completeJobCard(
@@ -86,6 +116,8 @@ export function CompleteJobCardModal({
       setIsSubmitting(false);
     }
   };
+
+  if (!isOpen || !target) return null;
 
   return (
     <Modal

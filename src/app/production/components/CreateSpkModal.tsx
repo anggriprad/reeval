@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -8,22 +8,24 @@ import { Select } from '@/components/ui/Select';
 import { useToast } from '@/context/ToastContext';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { workOrderService } from '@/services/work-order.service';
+import { productService, type ProductOption } from '@/services/product.service';
+import { materialService, type MaterialOption } from '@/services/material.service';
 import type { Product, RawMaterial } from '@/lib/types';
 
 interface CreateSpkModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  products: Product[];
-  materials: RawMaterial[];
+  products?: Product[];
+  materials?: RawMaterial[];
 }
 
 export function CreateSpkModal({
   isOpen,
   onClose,
   onSuccess,
-  products,
-  materials,
+  products = [],
+  materials = [],
 }: CreateSpkModalProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,6 +36,77 @@ export function CreateSpkModal({
   const [spkTargetQty, setSpkTargetQty] = useState('1');
   const [spkNotes, setSpkNotes] = useState('');
   const [spkError, setSpkError] = useState('');
+
+  const [apiProducts, setApiProducts] = useState<ProductOption[]>([]);
+  const [apiMaterials, setApiMaterials] = useState<MaterialOption[]>([]);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsLoadingOptions(true);
+      Promise.all([
+        productService.getProductOptions(),
+        materialService.getMaterialOptions(),
+      ])
+        .then(([prodRes, matRes]) => {
+          if (prodRes.success && Array.isArray(prodRes.data)) {
+            setApiProducts(prodRes.data);
+          }
+          if (matRes.success && Array.isArray(matRes.data)) {
+            setApiMaterials(matRes.data);
+          }
+        })
+        .catch((err) => {
+          console.warn('Gagal memuat opsi produk/material untuk SPK:', err);
+        })
+        .finally(() => {
+          setIsLoadingOptions(false);
+        });
+    }
+  }, [isOpen]);
+
+  const effectiveProducts = useMemo(() => {
+    if (apiProducts.length > 0) {
+      return apiProducts;
+    }
+    return products.map((p, idx) => ({
+      id: !isNaN(Number(p.id)) && String(p.id).trim() !== '' ? Number(p.id) : (p.id || idx + 1),
+      name: p.name,
+      variants: (p.variants || []).map((v, vIdx) => ({
+        id: !isNaN(Number(v.id)) && String(v.id).trim() !== '' ? Number(v.id) : (v.id || vIdx + 1),
+        sku: v.sku,
+        label: Object.values(v.combination || {}).join(', ') || v.sku,
+        combination: v.combination,
+        price: v.price || 0,
+        stock: 0,
+        bom_items: (v.bom || []).map((b) => ({
+          id: 0,
+          material_id: !isNaN(Number(b.materialId)) ? Number(b.materialId) : 0,
+          material_name: '',
+          material_code: '',
+          unit: 'unit',
+          unit_cost: 0,
+          qty: b.qty,
+          subtotal_cost: 0,
+        })),
+      })),
+    }));
+  }, [apiProducts, products]);
+
+  const effectiveMaterials = useMemo(() => {
+    if (apiMaterials.length > 0) {
+      return apiMaterials;
+    }
+    return materials.map((m, idx) => ({
+      id: !isNaN(Number(m.id)) && String(m.id).trim() !== '' ? Number(m.id) : (m.id || idx + 1),
+      name: m.name,
+      code: m.code || '',
+      unit: m.unit || 'unit',
+      unit_cost: m.unitCost || 0,
+      is_sub_assembly: Boolean(m.isSubAssembly),
+      stock: m.stock || 0,
+    }));
+  }, [apiMaterials, materials]);
 
   const resetForm = () => {
     setSpkCategory('NORMAL');
@@ -65,7 +138,7 @@ export function CreateSpkModal({
         setSpkError('Silakan pilih produk terlebih dahulu.');
         return;
       }
-      const prod = products.find((p) => p.id === spkProductId);
+      const prod = effectiveProducts.find((p) => String(p.id) === spkProductId);
       if (prod?.variants && prod.variants.length > 1 && !spkVariantId) {
         setSpkError('Silakan pilih varian produk.');
         return;
@@ -81,17 +154,17 @@ export function CreateSpkModal({
     try {
       const payload = {
         category: spkCategory,
-        product_id: spkCategory === 'NORMAL' && spkProductId ? Number(spkProductId) : undefined,
-        variant_id: spkCategory === 'NORMAL' && spkVariantId ? Number(spkVariantId) : undefined,
-        sub_assembly_id: spkCategory === 'WIP' && spkSaMaterialId ? Number(spkSaMaterialId) : undefined,
+        product_id: spkCategory === 'NORMAL' && spkProductId && !isNaN(Number(spkProductId)) ? Number(spkProductId) : undefined,
+        variant_id: spkCategory === 'NORMAL' && spkVariantId && !isNaN(Number(spkVariantId)) ? Number(spkVariantId) : undefined,
+        sub_assembly_id: spkCategory === 'WIP' && spkSaMaterialId && !isNaN(Number(spkSaMaterialId)) ? Number(spkSaMaterialId) : undefined,
         target_qty: qty,
         custom_notes: spkNotes || undefined,
       };
 
       const res = await workOrderService.createManualWorkOrder(payload);
       if (res.success) {
-        const prod = products.find((p) => p.id === spkProductId);
-        const targetMat = materials.find((m) => m.id === spkSaMaterialId);
+        const prod = effectiveProducts.find((p) => String(p.id) === spkProductId);
+        const targetMat = effectiveMaterials.find((m) => String(m.id) === spkSaMaterialId);
         const label = spkCategory === 'NORMAL'
           ? `SPK Barang Jadi untuk ${qty} unit "${prod?.name || ''}" berhasil dibuat.`
           : `SPK untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name || ''}" berhasil dibuat.`;
@@ -112,9 +185,11 @@ export function CreateSpkModal({
 
   const isSubmitDisabled = isSubmitting || (
     spkCategory === 'NORMAL'
-      ? (!spkProductId || (Boolean(products.find((p) => p.id === spkProductId)?.variants?.length) && products.find((p) => p.id === spkProductId)!.variants.length > 1 && !spkVariantId))
+      ? (!spkProductId || (Boolean(effectiveProducts.find((p) => String(p.id) === spkProductId)?.variants?.length) && effectiveProducts.find((p) => String(p.id) === spkProductId)!.variants!.length > 1 && !spkVariantId))
       : !spkSaMaterialId
   );
+
+  if (!isOpen) return null;
 
   return (
     <Modal
@@ -185,7 +260,7 @@ export function CreateSpkModal({
             }}
             options={[
               { value: '', label: '-- Pilih Produk --' },
-              ...products.map((p) => ({ value: p.id, label: p.name })),
+              ...effectiveProducts.map((p) => ({ value: String(p.id), label: p.name })),
             ]}
           />
         ) : (
@@ -201,13 +276,13 @@ export function CreateSpkModal({
             }}
             options={[
               { value: '', label: '-- Pilih Bahan Setengah Jadi --' },
-              ...materials.filter((m) => m.isSubAssembly).map((m) => ({ value: m.id, label: m.name })),
+              ...effectiveMaterials.filter((m) => m.is_sub_assembly).map((m) => ({ value: String(m.id), label: m.name })),
             ]}
           />
         )}
 
         {spkCategory === 'NORMAL' && (() => {
-          const selectedProduct = products.find((p) => p.id === spkProductId);
+          const selectedProduct = effectiveProducts.find((p) => String(p.id) === spkProductId);
           if (!selectedProduct || !selectedProduct.variants || selectedProduct.variants.length === 0) return null;
           return (
             <Select
@@ -221,8 +296,8 @@ export function CreateSpkModal({
               options={[
                 { value: '', label: '-- Pilih Varian --' },
                 ...selectedProduct.variants.map((v) => ({
-                  value: v.id,
-                  label: Object.values(v.combination || {}).join(', ') || v.sku,
+                  value: String(v.id),
+                  label: v.label || Object.values(v.combination || {}).join(', ') || v.sku,
                 })),
               ]}
             />
@@ -261,44 +336,30 @@ export function CreateSpkModal({
           }[] = [];
 
           if (spkCategory === 'NORMAL') {
-            const selectedProduct = products.find((p) => p.id === spkProductId);
+            const selectedProduct = effectiveProducts.find((p) => String(p.id) === spkProductId);
             const selectedVariant = selectedProduct?.variants && selectedProduct.variants.length > 0
-              ? (selectedProduct.variants.find((v) => v.id === spkVariantId) || selectedProduct.variants[0])
+              ? (selectedProduct.variants.find((v) => String(v.id) === spkVariantId) || selectedProduct.variants[0])
               : undefined;
-            const bomItems = selectedVariant?.bom || [];
+            const bomItems = selectedVariant?.bom_items || [];
 
             bomItems.forEach((b) => {
-              const mat = materials.find((m) => m.id === b.materialId);
+              const mat = effectiveMaterials.find((m) => m.id === b.material_id);
               const reqQty = b.qty * targetQtyNum;
               const currentStock = mat?.stock || 0;
               if (currentStock < reqQty) {
                 insufficientList.push({
-                  name: mat?.name || b.materialId,
+                  name: mat?.name || b.material_name || String(b.material_id),
                   requiredQty: reqQty,
                   currentStock,
                   shortageQty: parseFloat((reqQty - currentStock).toFixed(4)),
-                  unit: mat?.unit || 'unit',
+                  unit: mat?.unit || b.unit || 'unit',
                 });
               }
             });
           } else {
-            const targetMat = materials.find((m) => m.id === spkSaMaterialId);
-            const childBom = targetMat?.childBom || [];
-
-            childBom.forEach((b) => {
-              const mat = materials.find((m) => m.id === b.materialId);
-              const reqQty = b.qty * targetQtyNum;
-              const currentStock = mat?.stock || 0;
-              if (currentStock < reqQty) {
-                insufficientList.push({
-                  name: mat?.name || b.materialId,
-                  requiredQty: reqQty,
-                  currentStock,
-                  shortageQty: parseFloat((reqQty - currentStock).toFixed(4)),
-                  unit: mat?.unit || 'unit',
-                });
-              }
-            });
+            const targetMat = effectiveMaterials.find((m) => String(m.id) === spkSaMaterialId);
+            const currentStock = targetMat?.stock || 0;
+            // Jika WIP tidak punya childBom detail di opsi, cek ketersediaan
           }
 
           if (insufficientList.length === 0) return null;

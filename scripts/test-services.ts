@@ -389,9 +389,11 @@ async function runTests() {
   // 4s. Verify workOrderService structure, mappers & PBAC mapping
   console.log('4s. Checking workOrderService contract & PBAC mapping...');
   assert(typeof workOrderService.getWorkOrders === 'function', 'workOrderService.getWorkOrders must be a function');
+  assert(typeof workOrderService.getStatusCounts === 'function', 'workOrderService.getStatusCounts must be a function');
   assert(typeof workOrderService.getWorkOrderById === 'function', 'workOrderService.getWorkOrderById must be a function');
   assert(typeof workOrderService.getWorkOrderKPI === 'function', 'workOrderService.getWorkOrderKPI must be a function');
   assert(typeof workOrderService.createManualWorkOrder === 'function', 'workOrderService.createManualWorkOrder must be a function');
+  assert(typeof workOrderService.updateWorkOrder === 'function', 'workOrderService.updateWorkOrder must be a function');
   assert(typeof workOrderService.cancelWorkOrder === 'function', 'workOrderService.cancelWorkOrder must be a function');
   assert(typeof workOrderService.startJobCard === 'function', 'workOrderService.startJobCard must be a function');
   assert(typeof workOrderService.pauseJobCard === 'function', 'workOrderService.pauseJobCard must be a function');

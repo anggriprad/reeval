@@ -135,8 +135,33 @@ export interface ProductionAnalyticsResponse {
   total_work_orders: number;
   completed_work_orders: number;
   active_work_orders: number;
-  operations: ProductionAnalyticsOperationItem[];
-  operators: ProductionAnalyticsOperatorItem[];
+  operations?: ProductionAnalyticsOperationItem[];
+  operators?: ProductionAnalyticsOperatorItem[];
+  operation_analytics?: ProductionAnalyticsOperationItem[];
+  operator_analytics?: ProductionAnalyticsOperatorItem[];
+}
+
+export interface WorkOrderStatusCountsResponse {
+  active: number;
+  completed: number;
+  canceled: number;
+}
+
+export interface UpdateWorkOrderJobCardPayload {
+  job_card_id: number;
+  operator_id?: number;
+  pic_name: string;
+  actual_minutes?: number;
+  notes?: string;
+}
+
+export interface UpdateWorkOrderPayload {
+  custom_notes?: string;
+  job_cards?: UpdateWorkOrderJobCardPayload[];
+  job_card_id?: number;
+  operator_id?: number;
+  pic_name?: string;
+  notes?: string;
 }
 
 export interface GetWorkOrdersParams {
@@ -265,6 +290,17 @@ export const workOrderService = {
   },
 
   /**
+   * Get real-time counter for each status tab (active, completed, canceled).
+   */
+  async getStatusCounts(): Promise<ApiResponse<WorkOrderStatusCountsResponse>> {
+    const response = await httpGet<WorkOrderStatusCountsResponse>(
+      endpointUrl("production/work-orders/counts"),
+      true
+    );
+    return response.data;
+  },
+
+  /**
    * Get single work order detail.
    */
   async getWorkOrderById(id: number | string): Promise<ApiResponse<WorkOrderResponse>> {
@@ -292,6 +328,21 @@ export const workOrderService = {
   async createManualWorkOrder(payload: CreateManualWorkOrderPayload): Promise<ApiResponse<WorkOrderResponse>> {
     const response = await httpPost<WorkOrderResponse>(
       endpointUrl("production/work-orders"),
+      payload,
+      true
+    );
+    return response.data;
+  },
+
+  /**
+   * Update work order details or revise assigned job card operators.
+   */
+  async updateWorkOrder(
+    id: number | string,
+    payload: UpdateWorkOrderPayload
+  ): Promise<ApiResponse<WorkOrderResponse>> {
+    const response = await httpPut<WorkOrderResponse>(
+      endpointUrl(`production/work-orders/${id}`),
       payload,
       true
     );
