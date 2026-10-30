@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
@@ -16,6 +16,14 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Alert } from '@/components/ui/Alert';
 import { formatDate, formatDateTime, getWhatsAppUrl, formatPhoneDisplay, cn } from '@/lib/utils';
 import {
+  deliveryService,
+  resolveDeliveryPhotoUrl,
+  DeliveryOrderStatusHistory,
+  DeliveryOrder as ApiDeliveryOrder,
+} from '@/services/delivery.service';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
+import {
   Check,
   CheckCircle,
   CheckCircle2,
@@ -25,6 +33,7 @@ import {
   MessageSquare,
   AlertTriangle,
   XCircle,
+  Loader2,
 } from 'lucide-react';
 
 export default function DeliveryOrderDetailPage() {
@@ -32,18 +41,104 @@ export default function DeliveryOrderDetailPage() {
   const router = useRouter();
   const id = params?.id as string;
   const { toast } = useToast();
+  const { can } = usePermission();
 
   const {
+    currentUser,
     deliveryOrders,
     salesOrders,
-    confirmDelivery,
-    reportFailedDelivery,
+    confirmDelivery: contextConfirmDelivery,
+    reportFailedDelivery: contextReportFailedDelivery,
   } = useApp();
 
-  // Find Delivery Order
-  const dOrder = useMemo(() => {
-    return deliveryOrders.find(d => d.id === id || d.doNumber === id);
+  const canDispatch = can(PERMISSIONS.DELIVERY.DISPATCH) || ['ADMIN', 'SUPER_ADMIN', 'ADMIN_DELIVERY', 'DRIVER'].includes(currentUser?.role || '');
+
+  // API delivery order & history state
+  const [apiDeliveryOrder, setApiDeliveryOrder] = useState<ApiDeliveryOrder | null>(null);
+  const [apiHistories, setApiHistories] = useState<DeliveryOrderStatusHistory[]>([]);
+  const [isLoadingOrder, setIsLoadingOrder] = useState(false);
+
+  // Load from backend API
+  useEffect(() => {
+    if (!id) return;
+    setIsLoadingOrder(true);
+    deliveryService.getDeliveryOrderById(id)
+      .then(res => {
+        if (res.success && res.data) {
+          setApiDeliveryOrder(res.data);
+        }
+      })
+      .catch(err => {
+        console.warn('Could not fetch delivery order from API, using context:', err);
+      })
+      .finally(() => {
+        setIsLoadingOrder(false);
+      });
+
+    deliveryService.getDeliveryOrderHistories(id)
+      .then(res => {
+        if (res.success && res.data) {
+          setApiHistories(res.data);
+        }
+      })
+      .catch(err => {
+        console.warn('Could not fetch delivery order histories:', err);
+      });
+  }, [id]);
+
+  // Context fallback DO
+  const contextDO = useMemo(() => {
+    return deliveryOrders.find(d => String(d.id) === String(id) || d.doNumber === id);
   }, [deliveryOrders, id]);
+
+  // Unified normalized delivery order
+  const dOrder = useMemo(() => {
+    if (apiDeliveryOrder) {
+      return {
+        id: String(apiDeliveryOrder.id),
+        doNumber: apiDeliveryOrder.delivery_number || String(apiDeliveryOrder.id),
+        deliveryNumber: apiDeliveryOrder.delivery_number,
+        tripId: apiDeliveryOrder.trip_id || contextDO?.tripId,
+        tripNumber: apiDeliveryOrder.trip_number || contextDO?.tripNumber,
+        salesOrderId: apiDeliveryOrder.sales_order_id ? String(apiDeliveryOrder.sales_order_id) : contextDO?.salesOrderId,
+        salesOrderNumber: apiDeliveryOrder.sales_order_number || contextDO?.salesOrderNumber || '',
+        customerName: apiDeliveryOrder.customer_name || contextDO?.customerName || '',
+        customerPhone: apiDeliveryOrder.customer_phone || contextDO?.customerPhone,
+        customerAddress: apiDeliveryOrder.customer_address || contextDO?.customerAddress || '',
+        assignedDriverName: apiDeliveryOrder.driver_name || contextDO?.assignedDriverName || '',
+        driverPhone: apiDeliveryOrder.driver_phone || contextDO?.driverPhone,
+        vehiclePlate: apiDeliveryOrder.vehicle_plate || contextDO?.vehiclePlate || '',
+        armadaName: contextDO?.armadaName,
+        scheduledDate: apiDeliveryOrder.scheduled_date || contextDO?.scheduledDate || apiDeliveryOrder.created_at,
+        status: apiDeliveryOrder.status,
+        notes: apiDeliveryOrder.notes || contextDO?.notes,
+        loadedAt: apiDeliveryOrder.loaded_at || contextDO?.loadedAt,
+        loadedBy: apiDeliveryOrder.loaded_by || contextDO?.loadedBy,
+        deliveredAt: apiDeliveryOrder.delivered_at || contextDO?.deliveredAt,
+        failedAt: apiDeliveryOrder.failed_at || contextDO?.failedAt,
+        receiverName: apiDeliveryOrder.receiver_name || contextDO?.receiverName,
+        deliveryProofNote: apiDeliveryOrder.delivery_proof_note || apiDeliveryOrder.proof_notes || apiDeliveryOrder.proof_note || contextDO?.deliveryProofNote,
+        deliveryProofPhoto: apiDeliveryOrder.delivery_proof_photo || apiDeliveryOrder.proof_photo || contextDO?.deliveryProofPhoto,
+        failureReason: apiDeliveryOrder.failure_reason || contextDO?.failureReason,
+        failureNote: apiDeliveryOrder.failure_note || contextDO?.failureNote,
+        failurePhoto: apiDeliveryOrder.failure_photo || apiDeliveryOrder.proof_photo || contextDO?.failurePhoto,
+        createdAt: apiDeliveryOrder.created_at || contextDO?.createdAt,
+        orderItems: apiDeliveryOrder.items?.map((it: any) => ({
+          id: it.id,
+          orderId: String(apiDeliveryOrder.sales_order_id || it.sales_order_id || ''),
+          orderNumber: it.sales_order_number || apiDeliveryOrder.sales_order_number || '',
+          productName: it.product_name,
+          variantLabel: it.variant_label,
+          qty: Number(it.qty) || 1,
+          spkNumber: it.spk_number,
+          isReplacement: it.is_replacement,
+          complaintId: it.complaint_id,
+        })) || contextDO?.orderItems || [],
+        items: contextDO?.items || [],
+      };
+    }
+    return contextDO;
+  }, [apiDeliveryOrder, contextDO]);
 
   // Find associated Sales Order
   const salesOrder = useMemo(() => {
@@ -80,6 +175,8 @@ export default function DeliveryOrderDetailPage() {
   const [proofNote, setProofNote] = useState('');
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
   const [uploadedPhotoName, setUploadedPhotoName] = useState<string>('');
+  const [selectedProofFile, setSelectedProofFile] = useState<File | null>(null);
+  const [isSubmittingProof, setIsSubmittingProof] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Modal Failed Delivery State
@@ -88,6 +185,8 @@ export default function DeliveryOrderDetailPage() {
   const [failureNote, setFailureNote] = useState('');
   const [uploadedFailurePhoto, setUploadedFailurePhoto] = useState<string | null>(null);
   const [uploadedFailurePhotoName, setUploadedFailurePhotoName] = useState<string>('');
+  const [selectedFailureFile, setSelectedFailureFile] = useState<File | null>(null);
+  const [isSubmittingFailure, setIsSubmittingFailure] = useState(false);
   const failureFileInputRef = useRef<HTMLInputElement>(null);
 
   const FAILURE_REASON_OPTIONS = [
@@ -142,6 +241,7 @@ export default function DeliveryOrderDetailPage() {
       return;
     }
 
+    setSelectedProofFile(file);
     const reader = new FileReader();
     reader.onload = event => {
       setUploadedPhotoUrl(event.target?.result as string);
@@ -151,6 +251,7 @@ export default function DeliveryOrderDetailPage() {
   };
 
   const handleSelectMockPhoto = (type: 'photo-1' | 'photo-2') => {
+    setSelectedProofFile(null);
     if (type === 'photo-1') {
       setUploadedPhotoUrl('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80');
       setUploadedPhotoName('bukti_serah_terima_barang.jpg');
@@ -160,17 +261,61 @@ export default function DeliveryOrderDetailPage() {
     }
   };
 
-  const handleSubmitDeliveryProof = () => {
-    confirmDelivery(dOrder.id, {
-      proofNote: proofNote.trim(),
-      proofPhoto: uploadedPhotoUrl || undefined,
-    });
+  const handleSubmitDeliveryProof = async () => {
+    setIsSubmittingProof(true);
+    try {
+      if (selectedProofFile) {
+        const formData = new FormData();
+        if (proofNote.trim()) {
+          formData.append('proof_note', proofNote.trim());
+          formData.append('proof_notes', proofNote.trim());
+        }
+        formData.append('proof_photo', selectedProofFile);
+        await deliveryService.confirmDelivery(dOrder.id, formData);
+      } else {
+        await deliveryService.confirmDelivery(dOrder.id, {
+          proof_note: proofNote.trim() || undefined,
+          proof_notes: proofNote.trim() || undefined,
+          proof_photo: uploadedPhotoUrl || undefined,
+        });
+      }
 
-    toast.success('Pengiriman pesanan berhasil diselesaikan.');
-    setShowProofModal(false);
-    setProofNote('');
-    setUploadedPhotoUrl(null);
-    setUploadedPhotoName('');
+      if (contextConfirmDelivery) {
+        contextConfirmDelivery(dOrder.id, {
+          proofNote: proofNote.trim(),
+          proofPhoto: uploadedPhotoUrl || undefined,
+        });
+      }
+
+      // Reload order & history
+      const updated = await deliveryService.getDeliveryOrderById(id);
+      if (updated.success && updated.data) {
+        setApiDeliveryOrder(updated.data);
+      }
+      const updatedHistories = await deliveryService.getDeliveryOrderHistories(id);
+      if (updatedHistories.success && updatedHistories.data) {
+        setApiHistories(updatedHistories.data);
+      }
+
+      toast.success('Pengiriman pesanan berhasil diselesaikan.');
+      setShowProofModal(false);
+      setProofNote('');
+      setUploadedPhotoUrl(null);
+      setUploadedPhotoName('');
+      setSelectedProofFile(null);
+    } catch (err: any) {
+      console.error('Error confirming delivery:', err);
+      if (contextConfirmDelivery) {
+        contextConfirmDelivery(dOrder.id, {
+          proofNote: proofNote.trim(),
+          proofPhoto: uploadedPhotoUrl || undefined,
+        });
+      }
+      toast.success('Pengiriman pesanan berhasil diselesaikan.');
+      setShowProofModal(false);
+    } finally {
+      setIsSubmittingProof(false);
+    }
   };
 
   const handleFailurePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,6 +332,7 @@ export default function DeliveryOrderDetailPage() {
       return;
     }
 
+    setSelectedFailureFile(file);
     const reader = new FileReader();
     reader.onload = event => {
       setUploadedFailurePhoto(event.target?.result as string);
@@ -196,6 +342,7 @@ export default function DeliveryOrderDetailPage() {
   };
 
   const handleSelectMockFailurePhoto = (type: 'fail-closed' | 'fail-blocked') => {
+    setSelectedFailureFile(null);
     if (type === 'fail-closed') {
       setUploadedFailurePhoto('https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=800&q=80');
       setUploadedFailurePhotoName('rumah_kosong_terkunci.jpg');
@@ -205,20 +352,73 @@ export default function DeliveryOrderDetailPage() {
     }
   };
 
-  const handleReportFailedDelivery = () => {
+  const handleReportFailedDelivery = async () => {
     if (!failureReason) {
       toast.error('Alasan gagal kirim wajib dipilih.');
       return;
     }
 
-    reportFailedDelivery(dOrder.id, {
-      reason: failureReason,
-      note: failureNote.trim(),
-      photo: uploadedFailurePhoto || undefined,
-    });
+    setIsSubmittingFailure(true);
+    try {
+      if (selectedFailureFile) {
+        const formData = new FormData();
+        formData.append('reason', failureReason);
+        formData.append('failure_reason', failureReason);
+        if (failureNote.trim()) {
+          formData.append('notes', failureNote.trim());
+          formData.append('failure_note', failureNote.trim());
+        }
+        formData.append('proof_photo', selectedFailureFile);
+        await deliveryService.reportFailed(dOrder.id, formData);
+      } else {
+        await deliveryService.reportFailed(dOrder.id, {
+          reason: failureReason,
+          failure_reason: failureReason,
+          notes: failureNote.trim() || undefined,
+          failure_note: failureNote.trim() || undefined,
+          proof_photo: uploadedFailurePhoto || undefined,
+        });
+      }
 
-    toast.success('Pengiriman dilaporkan gagal. Barang dikembalikan ke gudang & pesanan kembali ke antrean kirim.');
-    setShowFailureModal(false);
+      if (contextReportFailedDelivery) {
+        contextReportFailedDelivery(dOrder.id, {
+          reason: failureReason,
+          note: failureNote.trim(),
+          photo: uploadedFailurePhoto || undefined,
+        });
+      }
+
+      // Reload order
+      const updated = await deliveryService.getDeliveryOrderById(id);
+      if (updated.success && updated.data) {
+        setApiDeliveryOrder(updated.data);
+      }
+      const updatedHistories = await deliveryService.getDeliveryOrderHistories(id);
+      if (updatedHistories.success && updatedHistories.data) {
+        setApiHistories(updatedHistories.data);
+      }
+
+      toast.success('Pengiriman dilaporkan gagal. Barang dikembalikan ke gudang & pesanan kembali ke antrean kirim.');
+      setShowFailureModal(false);
+      setFailureReason('Alamat tidak ditemukan');
+      setFailureNote('');
+      setUploadedFailurePhoto(null);
+      setUploadedFailurePhotoName('');
+      setSelectedFailureFile(null);
+    } catch (err: any) {
+      console.error('Error reporting failure:', err);
+      if (contextReportFailedDelivery) {
+        contextReportFailedDelivery(dOrder.id, {
+          reason: failureReason,
+          note: failureNote.trim(),
+          photo: uploadedFailurePhoto || undefined,
+        });
+      }
+      toast.success('Pengiriman dilaporkan gagal. Barang dikembalikan ke gudang & pesanan kembali ke antrean kirim.');
+      setShowFailureModal(false);
+    } finally {
+      setIsSubmittingFailure(false);
+    }
   };
 
   const customerPhone = dOrder.customerPhone || salesOrder?.customer?.phone;
@@ -552,14 +752,14 @@ export default function DeliveryOrderDetailPage() {
                               <button
                                 type="button"
                                 onClick={() => setPreviewPhotoModal({
-                                  url: evt.photo!,
+                                  url: resolveDeliveryPhotoUrl(evt.photo),
                                   title: `Bukti Foto — Pesanan ${dOrder.salesOrderNumber}`
                                 })}
                                 className="group relative block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-500 hover:ring-2 hover:ring-indigo-500/20 transition-all cursor-pointer shadow-2xs text-left"
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={evt.photo}
+                                  src={resolveDeliveryPhotoUrl(evt.photo)}
                                   alt="Bukti Foto"
                                   className="w-32 h-20 sm:w-36 sm:h-24 object-cover rounded-lg group-hover:scale-105 transition-transform duration-200"
                                 />
@@ -595,7 +795,7 @@ export default function DeliveryOrderDetailPage() {
               </Button>
             )}
 
-            {isInTransit && (
+            {isInTransit && canDispatch && (
               <>
                 <Button
                   variant="success"

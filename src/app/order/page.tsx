@@ -148,7 +148,7 @@ export function OrderListContent() {
         if (activeStatus === 'komplain') {
           const res = await orderService.getComplaints({
             page: pageToFetch,
-            per_page: 15,
+            per_page: 20,
             search: filters.search || undefined,
           });
 
@@ -183,7 +183,7 @@ export function OrderListContent() {
             }
 
             const total = res.meta?.total ?? mappedComplaints.length;
-            const perPage = res.meta?.per_page ?? 15;
+            const perPage = res.meta?.per_page ?? 20;
             const totalPages = res.meta?.total_pages ?? Math.max(1, Math.ceil(total / perPage));
             setHasMore(pageToFetch < totalPages && mappedComplaints.length > 0);
 
@@ -200,7 +200,7 @@ export function OrderListContent() {
           const salesIdParam = filters.sales_id ? Number(filters.sales_id) : undefined;
           const res = await orderService.getOrders({
             page: pageToFetch,
-            per_page: 15,
+            per_page: 20,
             status: statusParam,
             search: filters.search || undefined,
             sales_id: salesIdParam,
@@ -222,7 +222,7 @@ export function OrderListContent() {
             }
 
             const total = res.meta?.total ?? mappedOrders.length;
-            const perPage = res.meta?.per_page ?? 15;
+            const perPage = res.meta?.per_page ?? 20;
             const totalPages = res.meta?.total_pages ?? Math.max(1, Math.ceil(total / perPage));
             setHasMore(pageToFetch < totalPages && mappedOrders.length > 0);
 

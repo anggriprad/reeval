@@ -218,11 +218,11 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                   </div>
                 </div>
 
-                <div className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                {/* <div className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                   <div>Password default: <strong className="text-slate-700 dark:text-slate-200 font-mono">123456</strong></div>
-                </div>
+                </div> */}
 
-                <div className="pt-1 border-t border-slate-100 dark:border-slate-700/80">
+                <div className="pt-1 border-slate-100 dark:border-slate-700/80">
                   <button
                     type="button"
                     onClick={handleLogout}
