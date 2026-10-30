@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
@@ -10,6 +10,11 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate, formatDateTime, getWhatsAppUrl, formatPhoneDisplay, cn } from '@/lib/utils';
+import {
+  deliveryService,
+  resolveDeliveryPhotoUrl,
+  DeliveryOrder as ApiDeliveryOrder,
+} from '@/services/delivery.service';
 import {
   Truck,
   Clock,
@@ -31,8 +36,110 @@ export default function TripDetailPage() {
     salesOrders,
   } = useApp();
 
+  // API trip detail state
+  const [apiDOs, setApiDOs] = useState<ApiDeliveryOrder[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    setIsLoading(true);
+    deliveryService.getTripDetail(id)
+      .then(res => {
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+          setApiDOs(res.data);
+        }
+      })
+      .catch(err => {
+        console.warn('Could not fetch trip detail from API, using context:', err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [id]);
+
   // Find all delivery orders belonging to this Trip
   const { targetTripDOs, tripInfo } = useMemo(() => {
+    // If API returned data, map and use it
+    if (apiDOs.length > 0) {
+      const mappedDOs = apiDOs.map(d => ({
+        id: String(d.id),
+        doNumber: d.delivery_number || String(d.id),
+        deliveryNumber: d.delivery_number,
+        tripId: d.trip_id || id,
+        tripNumber: d.trip_number || `TRIP-${d.delivery_number || d.id}`,
+        salesOrderId: d.sales_order_id ? String(d.sales_order_id) : '',
+        salesOrderNumber: d.sales_order_number || '',
+        customerName: d.customer_name || '',
+        customerPhone: d.customer_phone,
+        customerAddress: d.customer_address || '',
+        assignedDriverName: d.driver_name || 'Driver Belum Ditentukan',
+        driverPhone: d.driver_phone || '',
+        armadaName: '',
+        vehiclePlate: d.vehicle_plate || '-',
+        scheduledDate: d.scheduled_date || d.created_at,
+        status: d.status,
+        notes: d.notes,
+        loadedAt: d.loaded_at,
+        loadedBy: d.loaded_by,
+        deliveredAt: d.delivered_at,
+        failedAt: d.failed_at,
+        receiverName: d.receiver_name,
+        deliveryProofNote: d.delivery_proof_note || d.proof_notes || d.proof_note,
+        deliveryProofPhoto: d.delivery_proof_photo || d.proof_photo,
+        failureReason: d.failure_reason,
+        failureNote: d.failure_note,
+        createdAt: d.created_at,
+        orderItems: d.items?.map((it: any) => ({
+          id: it.id,
+          orderId: String(d.sales_order_id || it.sales_order_id || ''),
+          orderNumber: it.sales_order_number || d.sales_order_number || '',
+          productName: it.product_name,
+          variantLabel: it.variant_label,
+          qty: Number(it.qty) || 1,
+          spkNumber: it.spk_number,
+          isReplacement: it.is_replacement,
+          complaintId: it.complaint_id,
+        })) || [],
+        items: [],
+      }));
+
+      const firstDO = mappedDOs[0];
+      const isAllCompleted = mappedDOs.every(d => d.status === 'DELIVERED' || d.status === 'FAILED');
+      const isAnyInTransit = mappedDOs.some(d => d.status === 'IN_TRANSIT');
+      const deliveredCount = mappedDOs.filter(d => d.status === 'DELIVERED').length;
+      const failedCount = mappedDOs.filter(d => d.status === 'FAILED').length;
+
+      const totalUnitsCount = mappedDOs.reduce((sum, d) => {
+        if (d.orderItems && d.orderItems.length > 0) {
+          return sum + d.orderItems.reduce((acc, it) => acc + (it.qty || 1), 0);
+        }
+        return sum + 1;
+      }, 0);
+
+      return {
+        targetTripDOs: mappedDOs,
+        tripInfo: {
+          tripId: firstDO.tripId,
+          tripNumber: firstDO.tripNumber,
+          driverName: firstDO.assignedDriverName,
+          driverPhone: firstDO.driverPhone,
+          armadaName: 'Armada Standar',
+          vehiclePlate: firstDO.vehiclePlate,
+          scheduledDate: firstDO.scheduledDate,
+          status: isAllCompleted ? 'DELIVERED' : isAnyInTransit ? 'IN_TRANSIT' : 'READY_TO_SHIP',
+          isAllDelivered: isAllCompleted,
+          isInTransit: isAnyInTransit,
+          deliveredCount,
+          failedCount,
+          totalDestinationsCount: mappedDOs.length,
+          totalUnitsCount,
+          loadedAt: firstDO.loadedAt,
+          loadedBy: firstDO.loadedBy,
+          createdAt: firstDO.createdAt,
+        },
+      };
+    }
+
     if (!id || deliveryOrders.length === 0) {
       return { targetTripDOs: [], tripInfo: null };
     }
@@ -91,7 +198,7 @@ export default function TripDetailPage() {
         createdAt: firstDO.createdAt,
       },
     };
-  }, [id, deliveryOrders]);
+  }, [id, apiDOs, deliveryOrders]);
 
   const [previewPhotoModal, setPreviewPhotoModal] = useState<{ url: string; title: string } | null>(null);
 
@@ -423,14 +530,14 @@ export default function TripDetailPage() {
                               <button
                                 type="button"
                                 onClick={() => setPreviewPhotoModal({
-                                  url: evt.photo!,
+                                  url: resolveDeliveryPhotoUrl(evt.photo),
                                   title: `Bukti Serah Terima — Pesanan ${evt.salesOrderNumber || ''}`
                                 })}
                                 className="group relative block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-500 hover:ring-2 hover:ring-indigo-500/20 transition-all cursor-pointer shadow-2xs text-left"
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={evt.photo}
+                                  src={resolveDeliveryPhotoUrl(evt.photo)}
                                   alt="Bukti Serah Terima"
                                   className="w-32 h-20 sm:w-36 sm:h-24 object-cover rounded-lg group-hover:scale-105 transition-transform duration-200"
                                 />

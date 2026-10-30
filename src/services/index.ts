@@ -20,4 +20,4 @@ export * from "./product-modifier.service";
 export * from "./product.service";
 export * from "./order.service";
 export * from "./work-order.service";
-
+export * from "./delivery.service";

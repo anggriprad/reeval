@@ -196,7 +196,7 @@ function ProductionContent() {
       try {
         const res = await workOrderService.getWorkOrders({
           page: pageToFetch,
-          per_page: 15,
+          per_page: 20,
           status: activeTab,
           spk_type: filters.spk_type || undefined,
           search: filters.search || undefined,

@@ -20,6 +20,8 @@ import { productModifierService } from '../src/services/product-modifier.service
 import { productService, resolveProductImageUrl } from '../src/services/product.service';
 import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '../src/services/order.service';
 import { workOrderService, mapWorkOrderResponseToWorkOrder, mapJobCardResponseToJobCard } from '../src/services/work-order.service';
+import { deliveryService, resolveDeliveryPhotoUrl } from '../src/services/delivery.service';
+import { mapQueueResponseToOrderGroup, buildTripGroups } from '../src/app/delivery/components/types';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
 import { NextRequest } from 'next/server';
@@ -471,6 +473,120 @@ async function runTests() {
   assert(PERMISSIONS.PRODUCTION.DELETE === 'production:delete', 'PRODUCTION.DELETE must be production:delete');
   assert(PERMISSIONS.PRODUCTION.COMPLETE === 'production:complete', 'PRODUCTION.COMPLETE must be production:complete');
   console.log('✓ workOrderService contract, mappers & PBAC verified');
+
+  // 4t. Verify deliveryService structure & PBAC mapping
+  console.log('4t. Checking deliveryService contract & PBAC mapping...');
+  assert(typeof deliveryService.getQueue === 'function', 'deliveryService.getQueue must be a function');
+  assert(typeof deliveryService.getCounts === 'function', 'deliveryService.getCounts must be a function');
+  assert(typeof deliveryService.getDeliveryOrders === 'function', 'deliveryService.getDeliveryOrders must be a function');
+  assert(typeof deliveryService.getDeliveryOrderById === 'function', 'deliveryService.getDeliveryOrderById must be a function');
+  assert(typeof deliveryService.getDeliveryOrderHistories === 'function', 'deliveryService.getDeliveryOrderHistories must be a function');
+  assert(typeof deliveryService.getTripDetail === 'function', 'deliveryService.getTripDetail must be a function');
+  assert(typeof deliveryService.createDeliveryOrder === 'function', 'deliveryService.createDeliveryOrder must be a function');
+  assert(typeof deliveryService.confirmLoading === 'function', 'deliveryService.confirmLoading must be a function');
+  assert(typeof deliveryService.confirmTripLoading === 'function', 'deliveryService.confirmTripLoading must be a function');
+  assert(typeof deliveryService.confirmDelivery === 'function', 'deliveryService.confirmDelivery must be a function');
+  assert(typeof deliveryService.reportFailed === 'function', 'deliveryService.reportFailed must be a function');
+  assert(typeof deliveryService.reschedule === 'function', 'deliveryService.reschedule must be a function');
+  assert(typeof deliveryService.cancel === 'function', 'deliveryService.cancel must be a function');
+
+  // Verify Mappers & Normalizers
+  assert(typeof mapQueueResponseToOrderGroup === 'function', 'mapQueueResponseToOrderGroup must be a function');
+  assert(typeof buildTripGroups === 'function', 'buildTripGroups must be a function');
+
+  // Test mapQueueResponseToOrderGroup
+  const mockQueueRaw = {
+    order_id: 88,
+    order_number: 'SO-20261030-0088',
+    customer_name: 'Budi Santoso',
+    customer_phone: '08123456789',
+    customer_address: 'Jl. Merdeka No. 10',
+    order_created_at: '2026-10-30T08:00:00Z',
+    total_order_units_count: 2,
+    total_ready_units_count: 1,
+    status: 'PROCESSING',
+    child_units: [
+      {
+        order_id: 88,
+        order_number: 'SO-20261030-0088',
+        customer_name: 'Budi Santoso',
+        customer_address: 'Jl. Merdeka No. 10',
+        product_name: 'Meja Makan',
+        variant_label: 'Jati Natural',
+        item_index: 0,
+        unit_number: 1,
+        total_ordered_qty: 1,
+        spk_number: 'SPK-001',
+        unit_status: 'READY',
+      },
+      {
+        order_id: 88,
+        order_number: 'SO-20261030-0088',
+        customer_name: 'Budi Santoso',
+        customer_address: 'Jl. Merdeka No. 10',
+        product_name: 'Kursi Makan',
+        item_index: 1,
+        unit_number: 1,
+        total_ordered_qty: 1,
+        unit_status: 'IN_PRODUCTION',
+      },
+    ],
+  };
+  const mappedQueue = mapQueueResponseToOrderGroup(mockQueueRaw);
+  assert(mappedQueue.orderId === '88', 'mappedQueue.orderId must be string "88"');
+  assert(mappedQueue.orderNumber === 'SO-20261030-0088', 'mappedQueue.orderNumber must match');
+  assert(mappedQueue.childUnits.length === 2, 'mappedQueue.childUnits must have 2 items');
+  assert(mappedQueue.childUnits[0].unitStatus === 'READY', 'childUnit[0] must be READY');
+  assert(mappedQueue.childUnits[1].unitStatus === 'IN_PRODUCTION', 'childUnit[1] must be IN_PRODUCTION');
+
+  // Test buildTripGroups
+  const mockDOs = [
+    {
+      id: 1,
+      delivery_number: 'DO-001',
+      trip_id: 'TRIP-ALPHA',
+      trip_number: 'KLT-001',
+      driver_name: 'Pak Slamet',
+      vehicle_plate: 'B 1234 CD',
+      status: 'DELIVERED',
+      sales_order_number: 'SO-001',
+      customer_name: 'Cust A',
+      items: [{ qty: 2 }],
+    },
+    {
+      id: 2,
+      delivery_number: 'DO-002',
+      trip_id: 'TRIP-ALPHA',
+      trip_number: 'KLT-001',
+      driver_name: 'Pak Slamet',
+      vehicle_plate: 'B 1234 CD',
+      status: 'FAILED',
+      sales_order_number: 'SO-002',
+      customer_name: 'Cust B',
+      items: [{ qty: 1 }],
+    },
+  ];
+  const trips = buildTripGroups(mockDOs);
+  assert(trips.length === 1, 'buildTripGroups must group both DOs into 1 trip');
+  assert(trips[0].tripId === 'TRIP-ALPHA', 'tripId must be TRIP-ALPHA');
+  assert(trips[0].totalDestinationsCount === 2, 'totalDestinationsCount must be 2');
+  assert(trips[0].totalUnitsCount === 3, 'totalUnitsCount must be 3 (2 + 1)');
+  assert(trips[0].completedCount === 2, 'completedCount must be 2 (1 DELIVERED + 1 FAILED)');
+  assert(trips[0].isAllDelivered === true, 'isAllDelivered must be true for completed trip');
+  assert(trips[0].isInTransit === false, 'isInTransit must be false when all are completed');
+
+  // Verify resolveDeliveryPhotoUrl
+  assert(typeof resolveDeliveryPhotoUrl === 'function', 'resolveDeliveryPhotoUrl must be a function');
+  assert(resolveDeliveryPhotoUrl('delivery/1/photo.jpg').includes('s3.reeval.tech/delivery/1/photo.jpg'), 'resolveDeliveryPhotoUrl must resolve S3 URL');
+  assert(resolveDeliveryPhotoUrl('https://example.com/photo.jpg') === 'https://example.com/photo.jpg', 'resolveDeliveryPhotoUrl must leave full URL unchanged');
+  assert(resolveDeliveryPhotoUrl(undefined) === '', 'resolveDeliveryPhotoUrl must return empty string for undefined');
+
+  // Verify PBAC
+  assert(PERMISSIONS.DELIVERY.READ === 'delivery:read', 'DELIVERY.READ must be delivery:read');
+  assert(PERMISSIONS.DELIVERY.CREATE === 'delivery:create', 'DELIVERY.CREATE must be delivery:create');
+  assert(PERMISSIONS.DELIVERY.UPDATE === 'delivery:update', 'DELIVERY.UPDATE must be delivery:update');
+  assert(PERMISSIONS.DELIVERY.DISPATCH === 'delivery:dispatch', 'DELIVERY.DISPATCH must be delivery:dispatch');
+  console.log('✓ deliveryService contract, photo resolver & PBAC verified');
 
   // 5. Test Proxy logic for mustChangePassword
   console.log('5. Testing Proxy middleware mustChangePassword logic...');
