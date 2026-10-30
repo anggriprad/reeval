@@ -14,7 +14,7 @@ export function useTableFilters<T extends Record<string, any>>(defaultFilters: T
     const parsed = { ...defaultFiltersRef.current };
 
     Object.keys(defaultFiltersRef.current).forEach((key) => {
-      const paramValue = params.get(key) ?? (key === 'status' ? params.get('tab') : null);
+      const paramValue = params.get(key);
       if (paramValue !== null) {
         const defVal = defaultFiltersRef.current[key];
         if (typeof defVal === 'number') {
@@ -65,14 +65,8 @@ export function useTableFilters<T extends Record<string, any>>(defaultFilters: T
         const defaultVal = defaultFiltersRef.current[key];
         if (val !== defaultVal && val !== '' && val !== null && val !== undefined) {
           params.set(key, String(val));
-          if (key === 'status' && params.has('tab')) {
-            params.delete('tab');
-          }
         } else {
           params.delete(key);
-          if (key === 'status' && params.has('tab')) {
-            params.delete('tab');
-          }
         }
       });
 

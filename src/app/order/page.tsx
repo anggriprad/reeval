@@ -382,7 +382,6 @@ export function OrderListContent() {
     {
       key: 'sent',
       label: 'Terkirim',
-      count: statusCounts['sent'],
       icon: CheckCircle,
     },
     {
