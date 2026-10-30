@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -8,6 +8,7 @@ import { OptionList } from '@/components/ui/OptionList';
 import { useToast } from '@/context/ToastContext';
 import { Search, Loader2 } from 'lucide-react';
 import { workOrderService } from '@/services/work-order.service';
+import { productionOperatorService } from '@/services/production-operator.service';
 import type { JobCard, ProductionOperator } from '@/lib/types';
 
 interface CompleteJobCardModalProps {
@@ -30,10 +31,38 @@ export function CompleteJobCardModal({
   const [operatorSearch, setOperatorSearch] = useState('');
   const [completeError, setCompleteError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiOperators, setApiOperators] = useState<ProductionOperator[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      productionOperatorService
+        .getOperators({ per_page: 100 })
+        .then((res) => {
+          if (res?.data && Array.isArray(res.data)) {
+            const mapped: ProductionOperator[] = res.data.map((op) => ({
+              id: String(op.id),
+              name: op.user_name || op.user_email || `Operator #${op.id}`,
+              skills: [],
+              status: op.is_active ? 'ACTIVE' : 'INACTIVE',
+            }));
+            setApiOperators(mapped);
+          }
+        })
+        .catch((err) => {
+          console.warn('Gagal memuat operator dari API:', err);
+        });
+    }
+  }, [isOpen]);
+
+  const effectiveOperators = useMemo(() => {
+    if (apiOperators.length > 0) return apiOperators;
+    const clean = operators.filter((o) => !o.id.startsWith('op-'));
+    return clean.length > 0 ? clean : operators;
+  }, [apiOperators, operators]);
 
   const activeOperators = useMemo(
-    () => operators.filter((o) => o.status === 'ACTIVE'),
-    [operators]
+    () => effectiveOperators.filter((o) => o.status === 'ACTIVE'),
+    [effectiveOperators]
   );
 
   const filteredOperators = useMemo(() => {
@@ -57,7 +86,7 @@ export function CompleteJobCardModal({
       return;
     }
 
-    const foundOp = operators.find((o) => o.name === picName);
+    const foundOp = effectiveOperators.find((o) => o.name === picName);
     setIsSubmitting(true);
     try {
       const res = await workOrderService.completeJobCard(

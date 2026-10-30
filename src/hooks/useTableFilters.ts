@@ -9,25 +9,53 @@ export function useTableFilters<T extends Record<string, any>>(defaultFilters: T
   const searchParams = useSearchParams();
   const defaultFiltersRef = useRef<T>(defaultFilters);
 
-  const [filters, setFilters] = useState<T>(() => {
-    const initialState = { ...defaultFilters };
+  // Helper to extract filters from current URL search params
+  const parseParams = useCallback((params: URLSearchParams): T => {
+    const parsed = { ...defaultFiltersRef.current };
 
-    Object.keys(defaultFilters).forEach((key) => {
-      const paramValue = searchParams.get(key);
+    Object.keys(defaultFiltersRef.current).forEach((key) => {
+      const paramValue = params.get(key) ?? (key === 'status' ? params.get('tab') : null);
       if (paramValue !== null) {
-        if (typeof defaultFilters[key] === 'number') {
-          (initialState as any)[key] = Number(paramValue);
-        } else if (typeof defaultFilters[key] === 'boolean') {
-          (initialState as any)[key] = paramValue === 'true';
+        const defVal = defaultFiltersRef.current[key];
+        if (typeof defVal === 'number') {
+          (parsed as any)[key] = Number(paramValue);
+        } else if (typeof defVal === 'boolean') {
+          (parsed as any)[key] = paramValue === 'true';
         } else {
-          (initialState as any)[key] = paramValue;
+          (parsed as any)[key] = paramValue;
         }
       }
     });
 
-    return initialState;
-  });
+    return parsed;
+  }, []);
 
+  const [filters, setFilters] = useState<T>(() => parseParams(searchParams));
+
+  // Flag to avoid infinite loops between searchParams listener and filter updates
+  const isInternalUrlUpdate = useRef(false);
+
+  // 1. Sync searchParams -> state (Handles browser Back / Forward buttons)
+  useEffect(() => {
+    if (isInternalUrlUpdate.current) {
+      isInternalUrlUpdate.current = false;
+      return;
+    }
+
+    const fromUrl = parseParams(searchParams);
+    setFilters((prev) => {
+      let isDifferent = false;
+      for (const key of Object.keys(defaultFiltersRef.current)) {
+        if (prev[key] !== fromUrl[key]) {
+          isDifferent = true;
+          break;
+        }
+      }
+      return isDifferent ? fromUrl : prev;
+    });
+  }, [searchParams, parseParams]);
+
+  // 2. Sync state -> searchParams (Handles user actions like selecting a tab or typing search)
   useEffect(() => {
     const timer = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString());
@@ -37,8 +65,14 @@ export function useTableFilters<T extends Record<string, any>>(defaultFilters: T
         const defaultVal = defaultFiltersRef.current[key];
         if (val !== defaultVal && val !== '' && val !== null && val !== undefined) {
           params.set(key, String(val));
+          if (key === 'status' && params.has('tab')) {
+            params.delete('tab');
+          }
         } else {
           params.delete(key);
+          if (key === 'status' && params.has('tab')) {
+            params.delete('tab');
+          }
         }
       });
 
@@ -46,6 +80,7 @@ export function useTableFilters<T extends Record<string, any>>(defaultFilters: T
       const currentQuery = searchParams.toString();
 
       if (newQuery !== currentQuery) {
+        isInternalUrlUpdate.current = true;
         const newUrl = newQuery ? `${pathname}?${newQuery}` : pathname;
         router.replace(newUrl, { scroll: false });
       }

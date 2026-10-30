@@ -355,6 +355,7 @@ export interface SalesOrder {
   id: string;
   orderNumber: string;
   createdBy: string;        // Name of sales who created this order
+  createdById?: string;
   customer: Customer;
   items: SalesOrderItem[];
   status: OrderStatus;

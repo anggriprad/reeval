@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { ActionMenu } from '@/components/ui/ActionMenu';
 import { setMobileHeaderBackTrigger, MobileHeaderSyncDetail } from '@/components/layout/MobileHeader';
+import { navigateBack } from '@/lib/navigation';
 
 export interface PageHeaderActionMenuItem {
   label: string;
@@ -137,13 +138,21 @@ export function PageHeader({
     }
   }, [pathname]);
 
+  const handleBack = useCallback(() => {
+    if (onBack) {
+      onBack();
+    } else {
+      navigateBack(router, backHref);
+    }
+  }, [onBack, backHref, router]);
+
   // Sync title, back navigation, search, and filter with MobileHeader
   useEffect(() => {
-    setMobileHeaderBackTrigger(onBack || null);
+    setMobileHeaderBackTrigger(handleBack);
     const detail: MobileHeaderSyncDetail = {
       title,
       backHref,
-      hasCustomBack: Boolean(onBack),
+      hasCustomBack: true,
       search,
       filter,
     };
@@ -153,18 +162,7 @@ export function PageHeader({
       setMobileHeaderBackTrigger(null);
       window.dispatchEvent(new CustomEvent('mobile-header-sync', { detail: null }));
     };
-  }, [title, backHref, onBack, search?.value, search?.placeholder, filter?.isActive]);
-
-
-  const handleBack = () => {
-    if (onBack) {
-      onBack();
-    } else if (backHref) {
-      router.push(backHref);
-    } else {
-      router.back();
-    }
-  };
+  }, [title, backHref, handleBack, search?.value, search?.placeholder, filter?.isActive]);
 
   const renderBackButton = () => {
     if (!backHref && !onBack && !showBackButton) return null;

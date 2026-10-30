@@ -61,7 +61,7 @@ export function OrderListContent() {
 
   // 1. URL Table Filters integration
   const { filters, setFilter } = useTableFilters({
-    status: urlTab,
+    status: 'pending',
     search: '',
     sales_id: '',
   });
@@ -388,7 +388,6 @@ export function OrderListContent() {
     {
       key: 'canceled',
       label: 'Dibatalkan',
-      count: statusCounts['canceled'],
       icon: XCircle,
     },
     {

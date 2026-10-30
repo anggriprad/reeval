@@ -25,7 +25,8 @@ import {
   mapWorkOrderResponseToWorkOrder,
 } from '@/services/work-order.service';
 import { productionOperationService } from '@/services/production-operation.service';
-import type { WorkOrder, JobCard, ProductionOperation } from '@/lib/types';
+import { productionOperatorService } from '@/services/production-operator.service';
+import type { WorkOrder, JobCard, ProductionOperation, ProductionOperator } from '@/lib/types';
 
 import { CreateSpkModal } from './components/CreateSpkModal';
 import { CancelSpkModal } from './components/CancelSpkModal';
@@ -48,13 +49,14 @@ function ProductionContent() {
     operators = [],
     operations = [],
     setOperationsList,
+    setOperatorsList,
   } = useApp();
 
   const searchParams = useSearchParams();
   const urlTab = searchParams.get('tab') || searchParams.get('status') || 'active';
 
   const { filters, setFilter } = useTableFilters({
-    status: urlTab,
+    status: 'active',
     spk_type: '',
     search: '',
     period: 'THIS_MONTH',
@@ -103,8 +105,49 @@ function ProductionContent() {
       });
   }, [setOperationsList]);
 
-  // Tab counters from API
-  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  // Synchronize master operators from API
+  useEffect(() => {
+    productionOperatorService
+      .getOperators({ per_page: 100 })
+      .then((res) => {
+        if (res && Array.isArray(res.data)) {
+          const mapped: ProductionOperator[] = res.data.map((op) => ({
+            id: String(op.id),
+            name: op.user_name || op.user_email || `Operator #${op.id}`,
+            skills: [],
+            status: op.is_active ? 'ACTIVE' : 'INACTIVE',
+          }));
+          setOperatorsList(mapped);
+        }
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat master operator dari API:', err);
+      });
+  }, [setOperatorsList]);
+
+  // Tab counter from API (only for active SPK)
+  const [activeCount, setActiveCount] = useState<number | undefined>(undefined);
+
+  const fetchActiveCount = useCallback(async () => {
+    try {
+      const spkType = filters.spk_type || undefined;
+      const search = filters.search || undefined;
+
+      const activeRes = await workOrderService.getWorkOrders(
+        { page: 1, per_page: 1, status: 'active', spk_type: spkType, search },
+        { skipLoadingBar: true }
+      );
+
+      const total = activeRes.meta?.total ?? (activeRes.data?.length || 0);
+      setActiveCount(total > 0 ? total : undefined);
+    } catch (err) {
+      console.warn('Gagal memuat counter SPK berjalan:', err);
+    }
+  }, [filters.spk_type, filters.search]);
+
+  useEffect(() => {
+    fetchActiveCount();
+  }, [fetchActiveCount]);
 
   // Infinite list state & cancellation refs
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -164,10 +207,9 @@ function ProductionContent() {
           const totalCount = res.meta?.total ?? mappedWOs.length;
           const lastPage = res.meta?.total_pages ?? 1;
 
-          setStatusCounts((prev) => ({
-            ...prev,
-            [activeTab]: totalCount,
-          }));
+          if (activeTab === 'active') {
+            setActiveCount(totalCount > 0 ? totalCount : undefined);
+          }
 
           if (isInitial) {
             setWorkOrders(mappedWOs);
@@ -230,7 +272,8 @@ function ProductionContent() {
     setPage(1);
     currentPageRef.current = 1;
     fetchWorkOrders(1, true);
-  }, [fetchWorkOrders]);
+    fetchActiveCount();
+  }, [fetchWorkOrders, fetchActiveCount]);
 
   // Job card execution handlers
   const handleStartJobCard = async (woId: string, jcId: string, e?: React.MouseEvent) => {
@@ -288,19 +331,17 @@ function ProductionContent() {
           {
             key: 'active',
             label: 'Berjalan',
-            count: statusCounts.active ?? (activeTab === 'active' ? workOrders.length : undefined),
+            count: activeCount,
             icon: Factory,
           },
           {
             key: 'completed',
             label: 'Selesai',
-            count: statusCounts.completed,
             icon: CheckCircle,
           },
           {
             key: 'canceled',
             label: 'Dibatalkan',
-            count: statusCounts.canceled,
             icon: XCircle,
           },
           {

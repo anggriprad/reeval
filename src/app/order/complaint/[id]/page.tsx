@@ -172,7 +172,7 @@ export default function ComplaintDetailPage() {
   if (!order || !complaint) {
     return (
       <div className="space-y-6 max-w-6xl mx-auto pb-12">
-        <PageHeader backHref="/order" title="Detail Komplain" />
+        <PageHeader backHref="/order?status=komplain" title="Detail Komplain" />
         <EmptyState
           icon={<AlertCircle className="h-7 w-7" />}
           title="Komplain Tidak Ditemukan"
@@ -336,7 +336,7 @@ export default function ComplaintDetailPage() {
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-24 lg:pb-12 text-slate-900 dark:text-slate-100">
       <PageHeader
-        backHref="/order"
+        backHref="/order?status=komplain"
         title="Detail Komplain"
       />
 

@@ -29,6 +29,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { isRouteAllowed } from '@/lib/roles';
 import { hasPermission, hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { navigateBack } from '@/lib/navigation';
 
 export interface MobileHeaderSyncDetail {
   title?: React.ReactNode;
@@ -408,14 +409,15 @@ export function MobileHeader() {
                     <ArrowLeft className="h-5 w-5" />
                   </button>
                 ) : (
-                  <Link
-                    href={targetBackHref}
+                  <button
+                    type="button"
+                    onClick={() => navigateBack(router, targetBackHref)}
                     className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl -ml-2 text-slate-700 hover:bg-slate-100 active:bg-slate-100/80 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-800/80 transition-colors touch-manipulation cursor-pointer"
                     title="Kembali"
                     aria-label="Kembali"
                   >
                     <ArrowLeft className="h-5 w-5" />
-                  </Link>
+                  </button>
                 )}
                 <h1 className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white truncate flex items-center gap-2 min-w-0 [&_span]:truncate">
                   {displayTitle}

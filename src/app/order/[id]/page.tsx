@@ -200,7 +200,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  const salesPhone = order!.salesPhone || USER_ACCOUNTS.find(u => u.name === order!.createdBy)?.phone || '';
+  const salesPhone = order!.salesPhone || (order as any)!.created_by_phone || (order as any)!.sales_phone || USER_ACCOUNTS.find(u => u.name === order!.createdBy)?.phone || '';
 
   const handleProcess = async () => {
     try {

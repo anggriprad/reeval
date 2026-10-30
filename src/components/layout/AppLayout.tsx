@@ -7,6 +7,7 @@ import { MobileHeader } from './MobileHeader';
 import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import { useApp } from '@/context/AppContext';
 import { cn } from '@/lib/utils';
+import { markAppNavigated } from '@/lib/navigation';
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -17,6 +18,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   const isAuthPage = pathname === '/login' || pathname === '/signin' || pathname === '/change-password';
+
+  const isFirstRender = React.useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    markAppNavigated();
+  }, [pathname]);
 
   useEffect(() => {
     setMounted(true);

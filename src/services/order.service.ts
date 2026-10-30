@@ -56,6 +56,8 @@ export interface SalesOrderResponse {
   status: string;
   created_by_id: number;
   created_by_name: string;
+  created_by_phone?: string;
+  sales_phone?: string;
   customer_name: string;
   customer_phone: string;
   customer_address: string;
@@ -448,6 +450,8 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
     id: String(dto.id),
     orderNumber: dto.order_number,
     createdBy: dto.created_by_name || "Sales",
+    createdById: dto.created_by_id ? String(dto.created_by_id) : undefined,
+    salesPhone: dto.created_by_phone || dto.sales_phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
     customer: {
       name: dto.customer_name || "",
       phone: dto.customer_phone || "",
