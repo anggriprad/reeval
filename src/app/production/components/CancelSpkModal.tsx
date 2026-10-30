@@ -54,6 +54,8 @@ export function CancelSpkModal({
     }
   };
 
+  if (!isOpen || !targetWO) return null;
+
   return (
     <Modal
       isOpen={isOpen}

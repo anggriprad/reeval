@@ -156,6 +156,23 @@ export function ProductionAnalyticsTab({
 
   // 5. Bottleneck Analysis per Master Operation
   const operationAnalytics = useMemo(() => {
+    const rawOps = backendAnalytics?.operation_analytics || backendAnalytics?.operations;
+    if (rawOps && Array.isArray(rawOps) && rawOps.length > 0) {
+      return rawOps
+        .map((op) => ({
+          id: String(op.id),
+          name: op.name,
+          targetMins: op.target_mins,
+          avgActualMins: op.avg_actual_mins,
+          diffMins: op.diff_mins,
+          completedCount: op.completed_count,
+          delayPercentage: op.delay_percentage,
+          isBottleneck: op.is_bottleneck,
+          costingMethod: op.costing_method,
+        }))
+        .sort((a, b) => b.diffMins - a.diffMins);
+    }
+
     return operations
       .map((op) => {
         const matchingJcs = periodCompletedJobCards.filter(
@@ -187,16 +204,32 @@ export function ProductionAnalyticsTab({
         };
       })
       .sort((a, b) => b.diffMins - a.diffMins);
-  }, [operations, periodCompletedJobCards]);
+  }, [backendAnalytics, operations, periodCompletedJobCards]);
 
   // 6. Operator Performance & Efficiency Leaderboard
   const operatorAnalytics = useMemo(() => {
+    const rawOps = backendAnalytics?.operator_analytics || backendAnalytics?.operators;
+    if (rawOps && Array.isArray(rawOps) && rawOps.length > 0) {
+      return rawOps
+        .map((op) => ({
+          id: String(op.id || op.name),
+          name: op.name,
+          role: op.role,
+          completedCount: op.completed_count,
+          totalHours: op.total_hours,
+          efficiencyScore: op.efficiency_score,
+          onTimeRatio: op.on_time_ratio,
+          totalEarnedCost: op.total_earned_cost,
+        }))
+        .sort((a, b) => b.efficiencyScore - a.efficiencyScore || b.completedCount - a.completedCount);
+    }
+
     return operators
       .map((op) => {
         const matchingJcs = periodCompletedJobCards.filter(
           (j) => j.operatorId === op.id || j.picName === op.name
         );
-        const completedCount = matchingJcs.length;
+        const count = matchingJcs.length;
         const totalPlannedMins = matchingJcs.reduce((acc, j) => acc + (j.plannedMinutes || 0), 0);
         const totalActualMins = matchingJcs.reduce(
           (acc, j) => acc + (j.actualMinutes || j.plannedMinutes || 0),
@@ -224,16 +257,16 @@ export function ProductionAnalyticsTab({
           id: op.id,
           name: op.name,
           role: op.roleSpecialization || 'Umum',
-          completedCount,
+          completedCount: count,
           totalHours: (totalActualMins / 60).toFixed(1),
           efficiencyScore,
-          onTimeRatio: completedCount > 0 ? `${onTimeCount}/${completedCount}` : '-',
+          onTimeRatio: count > 0 ? `${onTimeCount}/${count}` : '-',
           totalEarnedCost,
         };
       })
       .filter((op) => op.completedCount > 0)
       .sort((a, b) => b.efficiencyScore - a.efficiencyScore || b.completedCount - a.completedCount);
-  }, [operators, periodCompletedJobCards, operations]);
+  }, [backendAnalytics, operators, periodCompletedJobCards, operations]);
 
   const operatorColumns = useMemo<TableColumn<(typeof operatorAnalytics)[0]>[]>(
     () => [

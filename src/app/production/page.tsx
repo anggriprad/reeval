@@ -149,6 +149,8 @@ function ProductionContent() {
     fetchActiveCount();
   }, [fetchActiveCount]);
 
+
+
   // Infinite list state & cancellation refs
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [allActiveWOs, setAllActiveWOs] = useState<WorkOrder[]>([]);
@@ -423,7 +425,19 @@ function ProductionContent() {
       <AssignOperatorModal
         isOpen={!!assignTarget}
         onClose={() => setAssignTarget(null)}
-        onSuccess={handleRefresh}
+        onSuccess={() => {
+          handleRefresh();
+          if (selectedWO) {
+            workOrderService
+              .getWorkOrderById(selectedWO.id)
+              .then((res) => {
+                if (res.success && res.data) {
+                  setSelectedWO(mapWorkOrderResponseToWorkOrder(res.data));
+                }
+              })
+              .catch(() => {});
+          }
+        }}
         target={assignTarget}
         operators={operators}
       />
@@ -435,7 +449,6 @@ function ProductionContent() {
         products={products}
         operations={operations}
         onOpenEditOperator={(woId, jc) => {
-          setSelectedWO(null);
           setAssignTarget({ woId, jc });
         }}
       />

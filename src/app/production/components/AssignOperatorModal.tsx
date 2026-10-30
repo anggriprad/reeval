@@ -8,7 +8,7 @@ import { OptionList } from '@/components/ui/OptionList';
 import { useToast } from '@/context/ToastContext';
 import { Search, Loader2 } from 'lucide-react';
 import { workOrderService } from '@/services/work-order.service';
-import { productionOperatorService } from '@/services/production-operator.service';
+import { productionOperatorService, type ProductionOperatorOption } from '@/services/production-operator.service';
 import type { JobCard, ProductionOperator } from '@/lib/types';
 
 interface AssignOperatorModalProps {
@@ -16,7 +16,7 @@ interface AssignOperatorModalProps {
   onClose: () => void;
   onSuccess: () => void;
   target: { woId: string; jc: JobCard } | null;
-  operators: ProductionOperator[];
+  operators?: ProductionOperator[];
 }
 
 export function AssignOperatorModal({
@@ -24,13 +24,34 @@ export function AssignOperatorModal({
   onClose,
   onSuccess,
   target,
-  operators,
+  operators = [],
 }: AssignOperatorModalProps) {
   const { toast } = useToast();
   const [editingOperatorName, setEditingOperatorName] = useState('');
   const [editOperatorSearch, setEditOperatorSearch] = useState('');
   const [editOperatorError, setEditOperatorError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiOperators, setApiOperators] = useState<ProductionOperatorOption[]>([]);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsLoadingOptions(true);
+      productionOperatorService
+        .getOperatorOptions()
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setApiOperators(res.data);
+          }
+        })
+        .catch((err) => {
+          console.warn('Gagal memuat opsi operator dari API:', err);
+        })
+        .finally(() => {
+          setIsLoadingOptions(false);
+        });
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (target?.jc.picName) {
@@ -40,45 +61,24 @@ export function AssignOperatorModal({
     }
   }, [target]);
 
-  const [apiOperators, setApiOperators] = useState<ProductionOperator[]>([]);
-
-  useEffect(() => {
-    if (isOpen) {
-      productionOperatorService
-        .getOperators({ per_page: 100 })
-        .then((res) => {
-          if (res?.data && Array.isArray(res.data)) {
-            const mapped: ProductionOperator[] = res.data.map((op) => ({
-              id: String(op.id),
-              name: op.user_name || op.user_email || `Operator #${op.id}`,
-              skills: [],
-              status: op.is_active ? 'ACTIVE' : 'INACTIVE',
-            }));
-            setApiOperators(mapped);
-          }
-        })
-        .catch((err) => {
-          console.warn('Gagal memuat operator dari API:', err);
-        });
-    }
-  }, [isOpen]);
-
   const effectiveOperators = useMemo(() => {
-    if (apiOperators.length > 0) return apiOperators;
-    const clean = operators.filter((o) => !o.id.startsWith('op-'));
-    return clean.length > 0 ? clean : operators;
+    if (apiOperators.length > 0) {
+      return apiOperators.map((o) => ({
+        id: String(o.id),
+        name: o.name,
+      }));
+    }
+    return operators.filter((o) => o.status === 'ACTIVE').map((o) => ({
+      id: String(o.id),
+      name: o.name,
+    }));
   }, [apiOperators, operators]);
 
-  const activeOperators = useMemo(
-    () => effectiveOperators.filter((o) => o.status === 'ACTIVE'),
-    [effectiveOperators]
-  );
-
   const filteredOperators = useMemo(() => {
-    if (!editOperatorSearch.trim()) return activeOperators;
+    if (!editOperatorSearch.trim()) return effectiveOperators;
     const q = editOperatorSearch.toLowerCase();
-    return activeOperators.filter((o) => o.name.toLowerCase().includes(q));
-  }, [activeOperators, editOperatorSearch]);
+    return effectiveOperators.filter((o) => o.name.toLowerCase().includes(q));
+  }, [effectiveOperators, editOperatorSearch]);
 
   const handleClose = () => {
     setEditingOperatorName('');
@@ -96,20 +96,22 @@ export function AssignOperatorModal({
     }
 
     const foundOp = effectiveOperators.find((o) => o.name === picName);
+    const opId = foundOp?.id ? Number(foundOp.id) : undefined;
     setIsSubmitting(true);
     try {
-      const res = await workOrderService.assignJobCardOperator(
+      const res = await workOrderService.updateWorkOrder(
         Number(target.woId),
-        Number(target.jc.id),
         {
-          operator_id: foundOp?.id ? Number(foundOp.id) : undefined,
+          job_card_id: Number(target.jc.id),
+          operator_id: opId,
           pic_name: picName,
+          notes: 'Revisi operator dari Analisis Kinerja',
         }
       );
 
       if (res.success) {
         toast.success(
-          'Operator Diperbarui',
+          'Operator Berhasil Direvisi',
           `Operator untuk tahapan "${target.jc.operationName}" berhasil diubah menjadi ${picName}.`
         );
         handleClose();
@@ -123,6 +125,8 @@ export function AssignOperatorModal({
       setIsSubmitting(false);
     }
   };
+
+  if (!isOpen || !target) return null;
 
   return (
     <Modal

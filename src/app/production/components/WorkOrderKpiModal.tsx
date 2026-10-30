@@ -56,7 +56,7 @@ export function WorkOrderKpiModal({
     };
   }, [selectedWO, isOpen]);
 
-  if (!selectedWO) return null;
+  if (!isOpen || !selectedWO) return null;
 
   const prod = products.find(
     (p) => p.id === selectedWO.productId || p.name === selectedWO.productName
