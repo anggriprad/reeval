@@ -120,6 +120,16 @@ input, select, textarea {
   font-family: inherit;
 }
 
+/* Fix iOS Safari giant password dots bug caused by Inter web font */
+input[type="password"] {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  letter-spacing: normal;
+}
+
+input[type="password"]::placeholder {
+  font-family: var(--font-sans), inherit;
+}
+
 /* Print styles for Surat Jalan */
 @media print {
   .no-print {

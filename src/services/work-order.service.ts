@@ -280,11 +280,15 @@ export const workOrderService = {
   /**
    * List paginated work orders with server-side filters.
    */
-  async getWorkOrders(params?: GetWorkOrdersParams): Promise<ApiResponse<WorkOrderResponse[]>> {
+  async getWorkOrders(
+    params?: GetWorkOrdersParams,
+    configs?: Record<string, any>
+  ): Promise<ApiResponse<WorkOrderResponse[]>> {
     const response = await httpGet<WorkOrderResponse[]>(
       endpointUrl("production/work-orders"),
       true,
-      params
+      params,
+      configs
     );
     return response.data;
   },
