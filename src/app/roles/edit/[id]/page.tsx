@@ -1,3 +1,5 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-export { default } from '../../[id]/edit/page';
+export default function EditRolePageAlt() {
+  redirect('/settings');
+}

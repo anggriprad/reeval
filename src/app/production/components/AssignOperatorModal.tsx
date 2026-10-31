@@ -62,17 +62,11 @@ export function AssignOperatorModal({
   }, [target]);
 
   const effectiveOperators = useMemo(() => {
-    if (apiOperators.length > 0) {
-      return apiOperators.map((o) => ({
-        id: String(o.id),
-        name: o.name,
-      }));
-    }
-    return operators.filter((o) => o.status === 'ACTIVE').map((o) => ({
+    return apiOperators.map((o) => ({
       id: String(o.id),
       name: o.name,
     }));
-  }, [apiOperators, operators]);
+  }, [apiOperators]);
 
   const filteredOperators = useMemo(() => {
     if (!editOperatorSearch.trim()) return effectiveOperators;

@@ -73,23 +73,20 @@ export function proxy(request: NextRequest) {
       }
     }
 
-    const isSuperOrAdmin =
-      roles.some(r => {
-        const norm = normalizeRole(r);
-        return norm === 'ADMIN' || norm === 'SUPER_ADMIN';
-      }) ||
+    const isSuperAdmin =
+      roles.some(r => normalizeRole(r) === 'SUPER_ADMIN') ||
       userPerms.includes('*') ||
       userPerms.includes('system:*');
 
-    if (!isSuperOrAdmin) {
+    if (!isSuperAdmin) {
       const requiredPerm = getRequiredPermissionForPath(pathname);
       let isPermitted = false;
 
       if (userPerms.length > 0 && requiredPerm) {
         if (Array.isArray(requiredPerm)) {
-          isPermitted = hasAnyPermission(userPerms, requiredPerm, isSuperOrAdmin);
+          isPermitted = hasAnyPermission(userPerms, requiredPerm, isSuperAdmin);
         } else {
-          isPermitted = hasPermission(userPerms, requiredPerm, isSuperOrAdmin);
+          isPermitted = hasPermission(userPerms, requiredPerm, isSuperAdmin);
         }
       } else if (roles.length > 0) {
         isPermitted = isRouteAllowed(roles, pathname);

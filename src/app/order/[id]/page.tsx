@@ -169,7 +169,7 @@ export default function OrderDetailPage() {
     fetchLiveOrderDetail();
   }, [fetchLiveOrderDetail]);
 
-  const order = liveOrder || salesOrders.find(o => o.id === orderId);
+  const order = liveOrder;
 
   if (isLoadingOrder && !order) {
     return (

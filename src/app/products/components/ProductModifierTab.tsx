@@ -14,6 +14,8 @@ import {
   ProductModifierGroupResponse,
 } from '@/services/product-modifier.service';
 import { ProductModifierModal } from './ProductModifierModal';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Grip, Layers } from 'lucide-react';
 import {
   Pencil,
   Trash2,
@@ -205,6 +207,20 @@ export function ProductModifierTab({
     setGroupToEdit(null);
   };
 
+  if (groups.length === 0) {
+    return (
+      <EmptyState
+        title={searchTerm ? 'Tidak ada modifier yang cocok.' : 'Belum ada grup modifier terdaftar.'}
+        icon={<Grip className="h-7 w-7 text-slate-400" />}
+        description={
+          searchTerm
+            ? 'Coba gunakan kata kunci pencarian yang berbeda.'
+            : 'Tambahkan grup modifier baru untuk mulai mengelola opsi tambahan produk.'
+        }
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -284,11 +300,10 @@ export function ProductModifierTab({
                               <button
                                 onClick={() => handleDeleteModifier(group)}
                                 disabled={group.can_delete === false}
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  group.can_delete === false
+                                className={`p-1.5 rounded-lg transition-colors ${group.can_delete === false
                                     ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
                                     : 'text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40'
-                                }`}
+                                  }`}
                                 title={
                                   group.can_delete === false
                                     ? 'Modifier sedang aktif digunakan oleh produk'

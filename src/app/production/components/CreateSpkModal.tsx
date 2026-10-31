@@ -66,47 +66,12 @@ export function CreateSpkModal({
   }, [isOpen]);
 
   const effectiveProducts = useMemo(() => {
-    if (apiProducts.length > 0) {
-      return apiProducts;
-    }
-    return products.map((p, idx) => ({
-      id: !isNaN(Number(p.id)) && String(p.id).trim() !== '' ? Number(p.id) : (p.id || idx + 1),
-      name: p.name,
-      variants: (p.variants || []).map((v, vIdx) => ({
-        id: !isNaN(Number(v.id)) && String(v.id).trim() !== '' ? Number(v.id) : (v.id || vIdx + 1),
-        sku: v.sku,
-        label: Object.values(v.combination || {}).join(', ') || v.sku,
-        combination: v.combination,
-        price: v.price || 0,
-        stock: 0,
-        bom_items: (v.bom || []).map((b) => ({
-          id: 0,
-          material_id: !isNaN(Number(b.materialId)) ? Number(b.materialId) : 0,
-          material_name: '',
-          material_code: '',
-          unit: 'unit',
-          unit_cost: 0,
-          qty: b.qty,
-          subtotal_cost: 0,
-        })),
-      })),
-    }));
-  }, [apiProducts, products]);
+    return apiProducts;
+  }, [apiProducts]);
 
   const effectiveMaterials = useMemo(() => {
-    if (apiMaterials.length > 0) {
-      return apiMaterials;
-    }
-    return materials.map((m, idx) => ({
-      id: !isNaN(Number(m.id)) && String(m.id).trim() !== '' ? Number(m.id) : (m.id || idx + 1),
-      name: m.name,
-      code: m.code || '',
-      unit: m.unit || 'unit',
-      unit_cost: m.unitCost || 0,
-      is_sub_assembly: Boolean(m.isSubAssembly),
-      stock: m.stock || 0,
-    }));
-  }, [apiMaterials, materials]);
+    return apiMaterials;
+  }, [apiMaterials]);
 
   const resetForm = () => {
     setSpkCategory('NORMAL');

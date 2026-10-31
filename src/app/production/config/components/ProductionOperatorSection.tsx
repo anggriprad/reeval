@@ -229,7 +229,7 @@ export function ProductionOperatorSection() {
     }
   };
 
-  const countDisplay = operators.length > 0 ? operators.length : appOperators.length;
+  const countDisplay = operators.length;
 
   return (
     <ConfigSection

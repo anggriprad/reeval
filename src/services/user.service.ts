@@ -13,6 +13,12 @@ export interface PermissionOverride {
   is_granted: boolean;
 }
 
+export interface RoleSummaryItem {
+  id: number;
+  code: string;
+  name: string;
+}
+
 export interface UserDetail {
   id: number;
   email: string;
@@ -21,7 +27,7 @@ export interface UserDetail {
   is_superadmin: boolean;
   is_active: boolean;
   is_ready: boolean;
-  roles: RoleSummary[];
+  roles: RoleSummaryItem[] | number[];
   overrides: PermissionOverride[];
 }
 
@@ -31,6 +37,13 @@ export interface UserOption {
   email: string;
   phone?: string;
   is_ready: boolean;
+  roles?: RoleSummaryItem[];
+}
+
+export interface GetUserOptionsParams {
+  is_ready?: boolean;
+  role?: string;
+  role_id?: number;
 }
 
 export interface CreateUserPayload {
@@ -38,6 +51,7 @@ export interface CreateUserPayload {
   password?: string | null;
   full_name: string;
   phone?: string;
+  role_id?: number;
   role_ids?: number[];
 }
 
@@ -49,7 +63,8 @@ export interface UpdateUserPayload {
 }
 
 export interface AssignRolesPayload {
-  role_ids: number[];
+  role_id?: number;
+  role_ids?: number[];
   overrides?: PermissionOverride[];
 }
 
@@ -57,6 +72,8 @@ export interface GetUsersParams {
   page?: number;
   per_page?: number;
   search?: string;
+  status?: string;
+  role_id?: number;
 }
 
 export const userService = {
@@ -65,7 +82,7 @@ export const userService = {
     return response.data;
   },
 
-  async getUserOptions(params?: { is_ready?: boolean }): Promise<ApiResponse<UserOption[]>> {
+  async getUserOptions(params?: GetUserOptionsParams): Promise<ApiResponse<UserOption[]>> {
     const response = await httpGet<UserOption[]>(endpointUrl("users/options"), true, params);
     return response.data;
   },

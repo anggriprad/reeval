@@ -230,12 +230,10 @@ export function CreateOrderContent() {
   }, []);
 
   const effectiveShippingRateEnabled =
-    serverShippingRateEnabled !== null ? serverShippingRateEnabled : isShippingRateEnabled;
-  const effectiveShippingRates =
-    loadedShippingRates.length > 0 ? loadedShippingRates : shippingRates;
-  const availableProducts = apiProducts.length > 0 ? apiProducts : products;
-  const availableModifierGroups =
-    apiModifierGroups.length > 0 ? apiModifierGroups : masterModifierGroups;
+    serverShippingRateEnabled !== null ? serverShippingRateEnabled : false;
+  const effectiveShippingRates = loadedShippingRates;
+  const availableProducts = apiProducts;
+  const availableModifierGroups = apiModifierGroups;
 
   const availableCategories = React.useMemo(() => {
     const cats = new Set<string>();

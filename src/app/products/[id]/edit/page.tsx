@@ -10,13 +10,11 @@ import type { Product } from '@/lib/types';
 export default function EditProductPage() {
   const params = useParams();
   const router = useRouter();
-  const { products } = useApp();
 
   const productId = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
-  const localProduct = products.find(p => p.id === productId);
 
-  const [product, setProduct] = useState<Product | undefined>(localProduct);
-  const [isLoading, setIsLoading] = useState(!localProduct);
+  const [product, setProduct] = useState<Product | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -31,15 +29,13 @@ export default function EditProductPage() {
           const mapped = mapProductDetailToProduct(res.data);
           setProduct(mapped);
           setErrorMsg('');
-        } else if (!localProduct) {
+        } else {
           setErrorMsg(res.message || 'Produk tidak ditemukan.');
         }
       })
       .catch(err => {
         if (!isMounted) return;
-        if (!localProduct) {
-          setErrorMsg(err?.response?.data?.message || err?.message || 'Gagal memuat detail produk.');
-        }
+        setErrorMsg(err?.response?.data?.message || err?.message || 'Gagal memuat detail produk.');
       })
       .finally(() => {
         if (isMounted) {
@@ -50,7 +46,7 @@ export default function EditProductPage() {
     return () => {
       isMounted = false;
     };
-  }, [productId, localProduct]);
+  }, [productId]);
 
   if (isLoading) {
     return (

@@ -87,18 +87,6 @@ export default function SettingsHubPage() {
       actionLabel: 'Kelola Pengguna',
       permission: PERMISSIONS.USER.READ,
     },
-    {
-      id: 'roles',
-      href: '/roles',
-      title: 'Roles & Hak Akses',
-      description: 'Konfigurasi wewenang keamanan modular untuk modul sales, gudang, produksi, delivery, dan keuangan.',
-      icon: ShieldCheck,
-      badgeText: 'RBAC Granular',
-      statusText: 'Matriks Izin Modular',
-      colorClass: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-900/40',
-      actionLabel: 'Konfigurasi Roles',
-      permission: PERMISSIONS.ROLE.READ,
-    },
   ];
 
   // Action Guard: Filter cards according to user permissions (Opsi A: hidden if unauthorized)
@@ -204,7 +192,7 @@ export default function SettingsHubPage() {
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2S gap-5">
           {settingsCards.map((card) => {
             const Icon = card.icon;
             return (

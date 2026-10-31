@@ -366,7 +366,7 @@ export function ProductionRoutingSection() {
     }
   };
 
-  const countDisplay = routings.length > 0 ? routings.length : appRoutings.length;
+  const countDisplay = routings.length;
 
   return (
     <>

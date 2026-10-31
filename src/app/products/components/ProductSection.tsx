@@ -10,6 +10,7 @@ import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory, canSeeCosts } from '@/lib/roles';
 import { Badge } from '@/components/ui/Badge';
 import { formatCurrency } from '@/lib/utils';
+import { EmptyState } from '@/components/ui/EmptyState';
 import {
   productService,
   ProductListItem,
@@ -211,6 +212,20 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
 
   const currentPage = Number(filters.prod_page) || 1;
   const perPage = Number(filters.prod_per_page) || 20;
+
+  if (products.length === 0) {
+    return (
+      <EmptyState
+        title={searchTerm ? 'Tidak ada produk yang cocok.' : 'Belum ada produk terdaftar.'}
+        icon={<Layers className="h-7 w-7 text-slate-400" />}
+        description={
+          searchTerm
+            ? 'Coba gunakan kata kunci pencarian yang berbeda.'
+            : 'Tambahkan produk baru untuk mulai mengelola katalog produk Anda.'
+        }
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">

@@ -48,12 +48,24 @@ export const driverService = {
   },
 
   async getDriverOptions(onlyReady?: boolean): Promise<ApiResponse<DriverOption[]>> {
-    const response = await httpGet<DriverOption[]>(
-      endpointUrl("delivery/drivers/options"),
+    const params: Record<string, any> = { role: "DELIVERY" };
+    if (onlyReady) params.is_ready = true;
+    const response = await httpGet<any[]>(
+      endpointUrl("users/options"),
       true,
-      onlyReady ? { is_ready: true } : undefined
+      params
     );
-    return response.data;
+    const mapped: DriverOption[] = (response.data?.data || []).map((u: any) => ({
+      id: u.id,
+      name: u.full_name || u.email,
+      phone: u.phone,
+      is_ready: u.is_ready,
+      user_id: u.id,
+    }));
+    return {
+      ...response.data,
+      data: mapped,
+    };
   },
 
   async getDriverById(id: number): Promise<ApiResponse<DriverItem>> {

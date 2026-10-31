@@ -77,68 +77,38 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
     }
   }, [isOpen]);
 
-  // Effective materials: combines live API options with context fallback
+  // Effective materials: live API options only
   const effectiveMaterials = useMemo(() => {
-    if (apiMaterials.length > 0) {
-      return apiMaterials.map((m) => ({
-        id: String(m.id),
-        name: m.name,
-        code: m.code,
-        unit: m.unit,
-        costPrice: m.unit_cost,
-        stock: m.stock ?? 0,
-        isSubAssembly: Boolean(m.is_sub_assembly),
-      }));
-    }
-    return materials.map((m) => ({
+    return apiMaterials.map((m) => ({
       id: String(m.id),
       name: m.name,
       code: m.code,
       unit: m.unit,
-      costPrice: m.unitCost,
-      stock: m.stock,
-      isSubAssembly: Boolean(m.isSubAssembly),
+      costPrice: m.unit_cost,
+      stock: m.stock ?? 0,
+      isSubAssembly: Boolean(m.is_sub_assembly),
     }));
-  }, [apiMaterials, materials]);
+  }, [apiMaterials]);
 
-  // Effective routings: combines live API routing options with steps
+  // Effective routings: live API routing options only
   const effectiveRoutings = useMemo(() => {
-    if (apiRoutings.length > 0) {
-      return apiRoutings.map((r) => ({
-        id: String(r.id),
-        name: r.name,
-        steps: (r.steps || []).map((s) => ({
-          id: String(s.id),
-          operationId: String(s.operation_id),
-          operationName: s.operation_name,
-          sequence: s.sequence,
-          durationMinutes: s.duration_minutes,
-          costingMethod: (s.costing_method === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
-          fixedLaborCost: s.fixed_labor_cost,
-          laborCostPerHour: s.labor_cost_per_hour,
-        })),
-      }));
-    }
-    return routings.map((r) => ({
+    return apiRoutings.map((r) => ({
       id: String(r.id),
       name: r.name,
-      steps: (r.steps || []).map((s) => {
-        const op = operations.find((o) => String(o.id) === String(s.operationId));
-        return {
-          id: String(s.sequence),
-          operationId: String(s.operationId),
-          operationName: op?.name || 'Operasi',
-          sequence: s.sequence,
-          durationMinutes: op?.durationMinutes || 0,
-          costingMethod: (op?.costingMethod === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
-          fixedLaborCost: op?.fixedLaborCost || 0,
-          laborCostPerHour: op?.laborCostPerHour || 0,
-        };
-      }),
+      steps: (r.steps || []).map((s) => ({
+        id: String(s.id),
+        operationId: String(s.operation_id),
+        operationName: s.operation_name,
+        sequence: s.sequence,
+        durationMinutes: s.duration_minutes,
+        costingMethod: (s.costing_method === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
+        fixedLaborCost: s.fixed_labor_cost,
+        laborCostPerHour: s.labor_cost_per_hour,
+      })),
     }));
-  }, [apiRoutings, routings, operations]);
+  }, [apiRoutings]);
 
-  // Effective operations pool for dropdown selection & label lookup
+  // Effective operations pool from live API routing steps
   const effectiveOperations = useMemo(() => {
     const opMap = new Map<
       string,
@@ -152,7 +122,6 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
       }
     >();
 
-    // 1. From API routing steps
     effectiveRoutings.forEach((r) => {
       r.steps.forEach((s) => {
         if (!opMap.has(s.operationId)) {
@@ -168,22 +137,8 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
       });
     });
 
-    // 2. From context operations fallback
-    operations.forEach((o) => {
-      if (!opMap.has(String(o.id))) {
-        opMap.set(String(o.id), {
-          id: String(o.id),
-          name: o.name,
-          costingMethod: o.costingMethod === 'hourly' ? 'hourly' : 'fixed',
-          fixedLaborCost: o.fixedLaborCost || 0,
-          laborCostPerHour: o.laborCostPerHour || 0,
-          durationMinutes: o.durationMinutes || 0,
-        });
-      }
-    });
-
     return Array.from(opMap.values());
-  }, [effectiveRoutings, operations]);
+  }, [effectiveRoutings]);
 
   // Helper to build default master BOM for a single unit of a SalesOrderItem
   const getDefaultBomForItem = (item: SalesOrderItem): CustomBomItem[] => {

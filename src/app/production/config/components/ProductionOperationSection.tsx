@@ -260,7 +260,7 @@ export function ProductionOperationSection() {
     }
   };
 
-  const countDisplay = operations.length > 0 ? operations.length : appOperations.length;
+  const countDisplay = operations.length;
 
   return (
     <>

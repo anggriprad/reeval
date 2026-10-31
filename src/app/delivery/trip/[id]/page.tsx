@@ -140,65 +140,8 @@ export default function TripDetailPage() {
       };
     }
 
-    if (!id || deliveryOrders.length === 0) {
-      return { targetTripDOs: [], tripInfo: null };
-    }
-
-    // Match either by tripId, or doNumber/id
-    let matchingDOs = deliveryOrders.filter(
-      d => d.tripId === id || d.tripNumber === id
-    );
-
-    if (matchingDOs.length === 0) {
-      const singleDO = deliveryOrders.find(d => d.id === id || d.doNumber === id);
-      if (singleDO && singleDO.tripId) {
-        matchingDOs = deliveryOrders.filter(d => d.tripId === singleDO.tripId);
-      } else if (singleDO) {
-        matchingDOs = [singleDO];
-      }
-    }
-
-    if (matchingDOs.length === 0) {
-      return { targetTripDOs: [], tripInfo: null };
-    }
-
-    const firstDO = matchingDOs[0];
-    const isAllCompleted = matchingDOs.every(d => d.status === 'DELIVERED' || d.status === 'FAILED');
-    const isAnyInTransit = matchingDOs.some(d => d.status === 'IN_TRANSIT');
-    const deliveredCount = matchingDOs.filter(d => d.status === 'DELIVERED').length;
-    const failedCount = matchingDOs.filter(d => d.status === 'FAILED').length;
-
-    // Total units count across all DOs in this trip
-    const totalUnitsCount = matchingDOs.reduce((sum, d) => {
-      if (d.orderItems && d.orderItems.length > 0) {
-        return sum + d.orderItems.reduce((acc, it) => acc + (it.qty || 1), 0);
-      }
-      return sum + (d.items?.length || 1);
-    }, 0);
-
-    return {
-      targetTripDOs: matchingDOs,
-      tripInfo: {
-        tripId: firstDO.tripId || firstDO.id,
-        tripNumber: firstDO.tripNumber || `TRIP-${firstDO.doNumber || firstDO.id}`,
-        driverName: firstDO.assignedDriverName || 'Driver Belum Ditentukan',
-        driverPhone: firstDO.driverPhone || '',
-        armadaName: firstDO.armadaName || 'Armada Standar',
-        vehiclePlate: firstDO.vehiclePlate || '-',
-        scheduledDate: firstDO.scheduledDate || firstDO.createdAt,
-        status: isAllCompleted ? 'DELIVERED' : isAnyInTransit ? 'IN_TRANSIT' : 'READY_TO_SHIP',
-        isAllDelivered: isAllCompleted,
-        isInTransit: isAnyInTransit,
-        deliveredCount,
-        failedCount,
-        totalDestinationsCount: matchingDOs.length,
-        totalUnitsCount,
-        loadedAt: firstDO.loadedAt,
-        loadedBy: firstDO.loadedBy,
-        createdAt: firstDO.createdAt,
-      },
-    };
-  }, [id, apiDOs, deliveryOrders]);
+    return { targetTripDOs: [], tripInfo: null };
+  }, [id, apiDOs]);
 
   const [previewPhotoModal, setPreviewPhotoModal] = useState<{ url: string; title: string } | null>(null);
 

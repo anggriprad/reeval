@@ -123,12 +123,8 @@ export default function ComplaintDetailPage() {
     fetchLiveComplaint();
   }, [fetchLiveComplaint]);
 
-  // Find the order that contains this complaint
-  const orderFromMock = salesOrders.find(o => o.complaints?.some(c => c.id === complaintId) || (liveComplaint && (o.id === liveComplaint.orderId || o.orderNumber === liveComplaint.orderNumber)));
-  const complaintFromMock = orderFromMock?.complaints?.find(c => c.id === complaintId);
-
-  const complaint: OrderComplaint | undefined = liveComplaint || complaintFromMock;
-  const order: SalesOrder | null = orderFromMock || (complaint ? {
+  const complaint: OrderComplaint | undefined = liveComplaint || undefined;
+  const order: SalesOrder | null = complaint ? {
     id: complaint.orderId || '',
     orderNumber: complaint.orderNumber || '',
     createdBy: 'Sales',
@@ -152,7 +148,7 @@ export default function ComplaintDetailPage() {
     shippingCost: 0,
     createdAt: complaint.createdAt,
     complaints: [complaint],
-  } : null);
+  } : null;
 
   // Set default bank account
   useEffect(() => {

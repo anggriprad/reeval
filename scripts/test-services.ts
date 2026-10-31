@@ -25,7 +25,20 @@ import { mapQueueResponseToOrderGroup, buildTripGroups } from '../src/app/delive
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
 import { NextRequest } from 'next/server';
-import { isRouteAllowed, normalizeRole } from '../src/lib/roles';
+import {
+  isRouteAllowed,
+  normalizeRole,
+  canIssueSPK,
+  canManageProduction,
+  canDeliverOrder,
+  canManageInventory,
+  canCreatePO,
+  canRequestPO,
+  canAccessPurchasing,
+  canConfirmPayment,
+  canViewFinance,
+  canSeeCosts,
+} from '../src/lib/roles';
 import {
   PERMISSIONS,
   hasPermission,
@@ -714,11 +727,17 @@ async function runTests() {
     assert(isRouteAllowed('SUPER_ADMIN', '/finance'), 'SUPER_ADMIN must access /finance');
     assert(isRouteAllowed('SUPER_ADMIN', '/settings'), 'SUPER_ADMIN must access /settings');
 
-    // ADMIN must have access to all routes
-    assert(isRouteAllowed('ADMIN', '/users'), 'ADMIN must access /users');
-    assert(isRouteAllowed('ADMIN', '/roles'), 'ADMIN must access /roles');
-    assert(isRouteAllowed('ADMIN', '/company'), 'ADMIN must access /company');
-    assert(isRouteAllowed('ADMIN', '/settings'), 'ADMIN must access /settings');
+    // ADMIN has operational access like SUPER_ADMIN, but by default no settings routes
+    assert(!isRouteAllowed('ADMIN', '/users'), 'ADMIN by default must not access /users');
+    assert(!isRouteAllowed('ADMIN', '/roles'), 'ADMIN by default must not access /roles');
+    assert(!isRouteAllowed('ADMIN', '/company'), 'ADMIN by default must not access /company');
+    assert(!isRouteAllowed('ADMIN', '/settings'), 'ADMIN by default must not access /settings');
+    assert(isRouteAllowed('ADMIN', '/order'), 'ADMIN must access /order');
+    assert(isRouteAllowed('ADMIN', '/production'), 'ADMIN must access /production');
+    assert(isRouteAllowed('ADMIN', '/delivery'), 'ADMIN must access /delivery');
+    assert(isRouteAllowed('ADMIN', '/inventory'), 'ADMIN must access /inventory');
+    assert(isRouteAllowed('ADMIN', '/finance'), 'ADMIN must access /finance');
+    assert(isRouteAllowed('ADMIN', '/purchasing'), 'ADMIN must access /purchasing');
 
     // SALES should not have access to admin management routes
     assert(!isRouteAllowed('SALES', '/users'), 'SALES must not access /users');
@@ -810,16 +829,29 @@ async function runTests() {
   {
     const subroutes = ['/roles', '/roles/create', '/roles/1', '/roles/1/edit', '/roles/edit/1'];
     for (const route of subroutes) {
-      assert(isRouteAllowed('ADMIN', route), `ADMIN must access ${route}`);
+      assert(!isRouteAllowed('ADMIN', route), `ADMIN by default must not access ${route}`);
       assert(isRouteAllowed('SUPER_ADMIN', route), `SUPER_ADMIN must access ${route}`);
       assert(!isRouteAllowed('SALES', route), `SALES must not access ${route}`);
       assert(!isRouteAllowed('DRIVER', route), `DRIVER must not access ${route}`);
+
+      const reqSuperAdmin = new NextRequest(`http://localhost:3000${route}`, {
+        headers: { cookie: 'token=valid-jwt; role=SUPER_ADMIN' },
+      });
+      const resSuperAdmin = proxy(reqSuperAdmin);
+      assert(!resSuperAdmin.headers.get('location'), `SUPER_ADMIN accessing ${route} should not be redirected`);
 
       const reqAdmin = new NextRequest(`http://localhost:3000${route}`, {
         headers: { cookie: 'token=valid-jwt; role=ADMIN' },
       });
       const resAdmin = proxy(reqAdmin);
-      assert(!resAdmin.headers.get('location'), `ADMIN accessing ${route} should not be redirected`);
+      const locAdmin = resAdmin.headers.get('location') || '';
+      assert(locAdmin.includes('/403') || locAdmin.includes('unauthorized=1'), `ADMIN without override accessing ${route} must be redirected to /403`);
+
+      const reqAdminWithOverride = new NextRequest(`http://localhost:3000${route}`, {
+        headers: { cookie: 'token=valid-jwt; role=ADMIN; permissions=["role:read","role:create","role:update"]' },
+      });
+      const resAdminWithOverride = proxy(reqAdminWithOverride);
+      assert(!resAdminWithOverride.headers.get('location'), `ADMIN with role overrides accessing ${route} should not be redirected`);
 
       const reqSales = new NextRequest(`http://localhost:3000${route}`, {
         headers: { cookie: 'token=valid-jwt; role=SALES' },
@@ -851,7 +883,7 @@ async function runTests() {
   {
     const settingsRoutes = ['/settings', '/company', '/users', '/roles'];
     for (const route of settingsRoutes) {
-      assert(isRouteAllowed('ADMIN', route), `ADMIN must access ${route}`);
+      assert(!isRouteAllowed('ADMIN', route), `ADMIN by default must not access settings route ${route}`);
       assert(isRouteAllowed('SUPER_ADMIN', route), `SUPER_ADMIN must access ${route}`);
       assert(!isRouteAllowed('SALES', route), `SALES must not access ${route}`);
       assert(!isRouteAllowed('PRODUKSI', route), `PRODUKSI must not access ${route}`);
@@ -859,11 +891,18 @@ async function runTests() {
       assert(!isRouteAllowed('GUDANG', route), `GUDANG must not access ${route}`);
       assert(!isRouteAllowed('PURCHASING', route), `PURCHASING must not access ${route}`);
 
+      const reqSuperAdmin = new NextRequest(`http://localhost:3000${route}`, {
+        headers: { cookie: 'token=valid-jwt; role=SUPER_ADMIN' },
+      });
+      const resSuperAdmin = proxy(reqSuperAdmin);
+      assert(!resSuperAdmin.headers.get('location'), `SUPER_ADMIN accessing ${route} should not be redirected`);
+
       const reqAdmin = new NextRequest(`http://localhost:3000${route}`, {
         headers: { cookie: 'token=valid-jwt; role=ADMIN' },
       });
       const resAdmin = proxy(reqAdmin);
-      assert(!resAdmin.headers.get('location'), `ADMIN accessing ${route} should not be redirected`);
+      const locAdmin = resAdmin.headers.get('location') || '';
+      assert(locAdmin.includes('/403') || locAdmin.includes('unauthorized=1'), `ADMIN without override accessing ${route} must be redirected to /403`);
 
       const reqSales = new NextRequest(`http://localhost:3000${route}`, {
         headers: { cookie: 'token=valid-jwt; role=SALES' },
@@ -872,6 +911,14 @@ async function runTests() {
       const loc = resSales.headers.get('location') || '';
       assert(loc.includes('/403') || loc.includes('unauthorized=1'), `SALES accessing ${route} must be redirected to /403`);
     }
+
+    // Verify ADMIN has operational access like SUPER_ADMIN
+    const operationalRoutes = ['/order', '/production', '/delivery', '/inventory', '/finance', '/purchasing'];
+    for (const route of operationalRoutes) {
+      assert(isRouteAllowed('ADMIN', route), `ADMIN must have operational access to ${route}`);
+      assert(isRouteAllowed('SUPER_ADMIN', route), `SUPER_ADMIN must have access to ${route}`);
+    }
+
     console.log('✓ Settings Hub and all child routes (/settings, /company, /users, /roles) verified');
   }
 
@@ -880,16 +927,29 @@ async function runTests() {
   {
     const subroutes = ['/users', '/users/create', '/users/1', '/users/1/edit', '/users/edit/1'];
     for (const route of subroutes) {
-      assert(isRouteAllowed('ADMIN', route), `ADMIN must access ${route}`);
+      assert(!isRouteAllowed('ADMIN', route), `ADMIN by default must not access ${route}`);
       assert(isRouteAllowed('SUPER_ADMIN', route), `SUPER_ADMIN must access ${route}`);
       assert(!isRouteAllowed('SALES', route), `SALES must not access ${route}`);
       assert(!isRouteAllowed('DRIVER', route), `DRIVER must not access ${route}`);
+
+      const reqSuperAdmin = new NextRequest(`http://localhost:3000${route}`, {
+        headers: { cookie: 'token=valid-jwt; role=SUPER_ADMIN' },
+      });
+      const resSuperAdmin = proxy(reqSuperAdmin);
+      assert(!resSuperAdmin.headers.get('location'), `SUPER_ADMIN accessing ${route} should not be redirected`);
 
       const reqAdmin = new NextRequest(`http://localhost:3000${route}`, {
         headers: { cookie: 'token=valid-jwt; role=ADMIN' },
       });
       const resAdmin = proxy(reqAdmin);
-      assert(!resAdmin.headers.get('location'), `ADMIN accessing ${route} should not be redirected`);
+      const locAdmin = resAdmin.headers.get('location') || '';
+      assert(locAdmin.includes('/403') || locAdmin.includes('unauthorized=1'), `ADMIN without override accessing ${route} must be redirected to /403`);
+
+      const reqAdminWithOverride = new NextRequest(`http://localhost:3000${route}`, {
+        headers: { cookie: 'token=valid-jwt; role=ADMIN; permissions=["user:read","user:create","user:update"]' },
+      });
+      const resAdminWithOverride = proxy(reqAdminWithOverride);
+      assert(!resAdminWithOverride.headers.get('location'), `ADMIN with user overrides accessing ${route} should not be redirected`);
 
       const reqSales = new NextRequest(`http://localhost:3000${route}`, {
         headers: { cookie: 'token=valid-jwt; role=SALES' },
@@ -954,6 +1014,42 @@ async function runTests() {
     assert(!resFinanceAllowed.headers.get('location'), 'User with finance:read accessing /finance must be allowed');
 
     console.log('✓ Granular PBAC Permission system verified');
+  }
+
+  // 15. Testing 9 Static Baku Roles & Access Control Helpers
+  console.log('15. Testing 9 Static Baku Roles and helper functions...');
+  {
+    const staticRoles = [
+      'SUPER_ADMIN',
+      'ADMIN',
+      'SALES',
+      'PRODUCTION',
+      'DELIVERY',
+      'INVENTORY',
+      'FINANCE',
+      'PURCHASING',
+      'VIEWER',
+    ];
+    for (const r of staticRoles) {
+      assert(normalizeRole(r) === r, `normalizeRole(${r}) must return ${r}`);
+    }
+
+    assert(canIssueSPK('PRODUCTION'), 'PRODUCTION can issue SPK');
+    assert(canManageProduction('PRODUCTION'), 'PRODUCTION can manage production');
+    assert(canDeliverOrder('DELIVERY'), 'DELIVERY can deliver order');
+    assert(canManageInventory('INVENTORY'), 'INVENTORY can manage inventory');
+    assert(canCreatePO('PURCHASING'), 'PURCHASING can create PO');
+    assert(canRequestPO('INVENTORY'), 'INVENTORY can request PO');
+    assert(canRequestPO('PRODUCTION'), 'PRODUCTION can request PO');
+    assert(canAccessPurchasing('PURCHASING'), 'PURCHASING can access purchasing');
+    assert(canAccessPurchasing('INVENTORY'), 'INVENTORY can access purchasing');
+    assert(canConfirmPayment('FINANCE'), 'FINANCE can confirm payment');
+    assert(canViewFinance('FINANCE'), 'FINANCE can view finance');
+    assert(canSeeCosts('FINANCE'), 'FINANCE can see costs');
+    assert(canSeeCosts('PRODUCTION'), 'PRODUCTION can see costs');
+    assert(canSeeCosts('INVENTORY'), 'INVENTORY can see costs');
+
+    console.log('✓ 8 Static Baku Roles and helper functions verified');
   }
 
   console.log('\nALL EXTENDED SERVICE, PROXY & RESILIENCE TESTS PASSED (100% GREEN)!');

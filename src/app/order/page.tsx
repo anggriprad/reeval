@@ -87,7 +87,7 @@ export function OrderListContent() {
   const [salesUsers, setSalesUsers] = useState<UserOption[]>([]);
   useEffect(() => {
     userService
-      .getUserOptions()
+      .getUserOptions({ role: 'SALES' })
       .then((res) => {
         if (res.success && Array.isArray(res.data)) {
           setSalesUsers(res.data);

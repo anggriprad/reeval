@@ -93,52 +93,50 @@ export default function DeliveryOrderDetailPage() {
 
   // Unified normalized delivery order
   const dOrder = useMemo(() => {
-    if (apiDeliveryOrder) {
-      return {
-        id: String(apiDeliveryOrder.id),
-        doNumber: apiDeliveryOrder.delivery_number || String(apiDeliveryOrder.id),
-        deliveryNumber: apiDeliveryOrder.delivery_number,
-        tripId: apiDeliveryOrder.trip_id || contextDO?.tripId,
-        tripNumber: apiDeliveryOrder.trip_number || contextDO?.tripNumber,
-        salesOrderId: apiDeliveryOrder.sales_order_id ? String(apiDeliveryOrder.sales_order_id) : contextDO?.salesOrderId,
-        salesOrderNumber: apiDeliveryOrder.sales_order_number || contextDO?.salesOrderNumber || '',
-        customerName: apiDeliveryOrder.customer_name || contextDO?.customerName || '',
-        customerPhone: apiDeliveryOrder.customer_phone || contextDO?.customerPhone,
-        customerAddress: apiDeliveryOrder.customer_address || contextDO?.customerAddress || '',
-        assignedDriverName: apiDeliveryOrder.driver_name || contextDO?.assignedDriverName || '',
-        driverPhone: apiDeliveryOrder.driver_phone || contextDO?.driverPhone,
-        vehiclePlate: apiDeliveryOrder.vehicle_plate || contextDO?.vehiclePlate || '',
-        armadaName: contextDO?.armadaName,
-        scheduledDate: apiDeliveryOrder.scheduled_date || contextDO?.scheduledDate || apiDeliveryOrder.created_at,
-        status: apiDeliveryOrder.status,
-        notes: apiDeliveryOrder.notes || contextDO?.notes,
-        loadedAt: apiDeliveryOrder.loaded_at || contextDO?.loadedAt,
-        loadedBy: apiDeliveryOrder.loaded_by || contextDO?.loadedBy,
-        deliveredAt: apiDeliveryOrder.delivered_at || contextDO?.deliveredAt,
-        failedAt: apiDeliveryOrder.failed_at || contextDO?.failedAt,
-        receiverName: apiDeliveryOrder.receiver_name || contextDO?.receiverName,
-        deliveryProofNote: apiDeliveryOrder.delivery_proof_note || apiDeliveryOrder.proof_notes || apiDeliveryOrder.proof_note || contextDO?.deliveryProofNote,
-        deliveryProofPhoto: apiDeliveryOrder.delivery_proof_photo || apiDeliveryOrder.proof_photo || contextDO?.deliveryProofPhoto,
-        failureReason: apiDeliveryOrder.failure_reason || contextDO?.failureReason,
-        failureNote: apiDeliveryOrder.failure_note || contextDO?.failureNote,
-        failurePhoto: apiDeliveryOrder.failure_photo || apiDeliveryOrder.proof_photo || contextDO?.failurePhoto,
-        createdAt: apiDeliveryOrder.created_at || contextDO?.createdAt,
-        orderItems: apiDeliveryOrder.items?.map((it: any) => ({
-          id: it.id,
-          orderId: String(apiDeliveryOrder.sales_order_id || it.sales_order_id || ''),
-          orderNumber: it.sales_order_number || apiDeliveryOrder.sales_order_number || '',
-          productName: it.product_name,
-          variantLabel: it.variant_label,
-          qty: Number(it.qty) || 1,
-          spkNumber: it.spk_number,
-          isReplacement: it.is_replacement,
-          complaintId: it.complaint_id,
-        })) || contextDO?.orderItems || [],
-        items: contextDO?.items || [],
-      };
-    }
-    return contextDO;
-  }, [apiDeliveryOrder, contextDO]);
+    if (!apiDeliveryOrder) return null;
+    return {
+      id: String(apiDeliveryOrder.id),
+      doNumber: apiDeliveryOrder.delivery_number || String(apiDeliveryOrder.id),
+      deliveryNumber: apiDeliveryOrder.delivery_number,
+      tripId: apiDeliveryOrder.trip_id,
+      tripNumber: apiDeliveryOrder.trip_number,
+      salesOrderId: apiDeliveryOrder.sales_order_id ? String(apiDeliveryOrder.sales_order_id) : undefined,
+      salesOrderNumber: apiDeliveryOrder.sales_order_number || '',
+      customerName: apiDeliveryOrder.customer_name || '',
+      customerPhone: apiDeliveryOrder.customer_phone,
+      customerAddress: apiDeliveryOrder.customer_address || '',
+      assignedDriverName: apiDeliveryOrder.driver_name || '',
+      driverPhone: apiDeliveryOrder.driver_phone,
+      vehiclePlate: apiDeliveryOrder.vehicle_plate || '',
+      armadaName: undefined,
+      scheduledDate: apiDeliveryOrder.scheduled_date || apiDeliveryOrder.created_at,
+      status: apiDeliveryOrder.status,
+      notes: apiDeliveryOrder.notes,
+      loadedAt: apiDeliveryOrder.loaded_at,
+      loadedBy: apiDeliveryOrder.loaded_by,
+      deliveredAt: apiDeliveryOrder.delivered_at,
+      failedAt: apiDeliveryOrder.failed_at,
+      receiverName: apiDeliveryOrder.receiver_name,
+      deliveryProofNote: apiDeliveryOrder.delivery_proof_note || apiDeliveryOrder.proof_notes || apiDeliveryOrder.proof_note,
+      deliveryProofPhoto: apiDeliveryOrder.delivery_proof_photo || apiDeliveryOrder.proof_photo,
+      failureReason: apiDeliveryOrder.failure_reason,
+      failureNote: apiDeliveryOrder.failure_note,
+      failurePhoto: apiDeliveryOrder.failure_photo || apiDeliveryOrder.proof_photo,
+      createdAt: apiDeliveryOrder.created_at,
+      orderItems: apiDeliveryOrder.items?.map((it: any) => ({
+        id: it.id,
+        orderId: String(apiDeliveryOrder.sales_order_id || it.sales_order_id || ''),
+        orderNumber: it.sales_order_number || apiDeliveryOrder.sales_order_number || '',
+        productName: it.product_name,
+        variantLabel: it.variant_label,
+        qty: Number(it.qty) || 1,
+        spkNumber: it.spk_number,
+        isReplacement: it.is_replacement,
+        complaintId: it.complaint_id,
+      })) || [],
+      items: [],
+    };
+  }, [apiDeliveryOrder]);
 
   // Find associated Sales Order
   const salesOrder = useMemo(() => {

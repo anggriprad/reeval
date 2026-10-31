@@ -63,9 +63,15 @@ export function UserForm({
   const [isReady, setIsReady] = useState(initialData ? initialData.is_ready : true);
   const [showPassword, setShowPassword] = useState(false);
 
-  const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>(
-    initialData?.roles ? initialData.roles.map(r => r.id) : []
-  );
+  const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>(() => {
+    if (initialData?.roles && initialData.roles.length > 0) {
+      return initialData.roles.map(r => (typeof r === 'number' ? r : (r as any).id));
+    }
+    if ((initialData as any)?.role_id) {
+      return [(initialData as any).role_id];
+    }
+    return [];
+  });
 
   const [overrides, setOverrides] = useState<PermissionOverride[]>(
     initialData?.overrides || []
@@ -101,12 +107,10 @@ export function UserForm({
       } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
         newErrors.email = 'Format email tidak valid.';
       }
-
-
     }
 
     if (selectedRoleIds.length === 0) {
-      newErrors.role = 'Silakan pilih minimal satu peran untuk pengguna ini.';
+      newErrors.role = 'Silakan pilih minimal satu peran untuk akun ini.';
     }
 
     if (Object.keys(newErrors).length > 0) {

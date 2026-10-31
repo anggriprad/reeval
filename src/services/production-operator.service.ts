@@ -53,13 +53,24 @@ export const productionOperatorService = {
   async getOperatorOptions(
     onlyReady?: boolean
   ): Promise<ApiResponse<ProductionOperatorOption[]>> {
-    const params = onlyReady ? { is_ready: true } : undefined;
-    const response = await httpGet<ProductionOperatorOption[]>(
-      endpointUrl("production/operators/options"),
+    const params: Record<string, any> = { role: "PRODUCTION" };
+    if (onlyReady) params.is_ready = true;
+    const response = await httpGet<any[]>(
+      endpointUrl("users/options"),
       true,
       params
     );
-    return response.data;
+    const mapped: ProductionOperatorOption[] = (response.data?.data || []).map((u: any) => ({
+      id: u.id,
+      name: u.full_name || u.email,
+      phone: u.phone,
+      is_ready: u.is_ready,
+      user_id: u.id,
+    }));
+    return {
+      ...response.data,
+      data: mapped,
+    };
   },
 
   async getOperatorById(

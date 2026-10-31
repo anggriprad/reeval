@@ -3,7 +3,6 @@
 import React from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ArmadaSection } from './components/ArmadaSection';
-import { DriverSection } from './components/DriverSection';
 import { ShippingRateSection } from './components/ShippingRateSection';
 
 export default function DeliveryConfigPage() {
@@ -19,11 +18,6 @@ export default function DeliveryConfigPage() {
         {/* ARMADA CONFIGURATION */}
         {/* ============================================================== */}
         <ArmadaSection />
-
-        {/* ============================================================== */}
-        {/* DRIVER CONFIGURATION */}
-        {/* ============================================================== */}
-        <DriverSection />
 
         {/* ============================================================== */}
         {/* SHIPPING RATE CONFIGURATION */}

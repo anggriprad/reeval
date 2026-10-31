@@ -5,6 +5,12 @@
 export type RoleType =
   | 'SUPER_ADMIN'
   | 'ADMIN'
+  | 'SALES'
+  | 'PRODUCTION'
+  | 'DELIVERY'
+  | 'INVENTORY'
+  | 'FINANCE'
+  | 'PURCHASING'
   | 'ADMIN_PRODUCT'
   | 'ADMIN_INVENTORY'
   | 'ADMIN_PRODUCTION'
@@ -12,11 +18,9 @@ export type RoleType =
   | 'ADMIN_DELIVERY'
   | 'ADMIN_FINANCE'
   | 'VIEWER'
-  | 'SALES'
   | 'PRODUKSI'
   | 'DRIVER'
-  | 'GUDANG'
-  | 'PURCHASING';
+  | 'GUDANG';
 
 export interface UserAccount {
   id: string;
@@ -107,11 +111,21 @@ export function normalizeRole(rawRole: string | undefined): RoleType {
   if (upper === 'ADMIN_DELIVERY') return 'ADMIN_DELIVERY';
   if (upper === 'ADMIN_FINANCE') return 'ADMIN_FINANCE';
   if (upper === 'VIEWER') return 'VIEWER';
+  if (upper === 'SALES') return 'SALES';
+  if (upper === 'PRODUCTION') return 'PRODUCTION';
+  if (upper === 'DELIVERY') return 'DELIVERY';
+  if (upper === 'INVENTORY') return 'INVENTORY';
+  if (upper === 'FINANCE') return 'FINANCE';
+  if (upper === 'PURCHASING') return 'PURCHASING';
+  if (upper === 'PRODUKSI') return 'PRODUCTION';
+  if (upper === 'DRIVER') return 'DELIVERY';
+  if (upper === 'GUDANG') return 'INVENTORY';
   if (upper.includes('SALES')) return 'SALES';
-  if (upper.includes('PRODUCTION') || upper.includes('PRODUKSI')) return 'PRODUKSI';
-  if (upper.includes('DELIVERY') || upper.includes('DRIVER')) return 'DRIVER';
-  if (upper.includes('INVENTORY') || upper.includes('GUDANG')) return 'GUDANG';
+  if (upper.includes('PRODUCTION') || upper.includes('PRODUKSI')) return 'PRODUCTION';
+  if (upper.includes('DELIVERY') || upper.includes('DRIVER')) return 'DELIVERY';
+  if (upper.includes('INVENTORY') || upper.includes('GUDANG')) return 'INVENTORY';
   if (upper.includes('PURCHASING')) return 'PURCHASING';
+  if (upper.includes('FINANCE')) return 'FINANCE';
   return 'ADMIN';
 }
 
@@ -137,7 +151,20 @@ const ALL_SYSTEM_ROUTES = [
 // Menu Access Matrix per Role
 export const ROLE_ALLOWED_ROUTES: Record<RoleType, string[]> = {
   SUPER_ADMIN: ALL_SYSTEM_ROUTES,
-  ADMIN: ALL_SYSTEM_ROUTES,
+  ADMIN: [
+    '/',
+    '/order',
+    '/sales',
+    '/sales-order',
+    '/production',
+    '/inventory',
+    '/products',
+    '/delivery',
+    '/finance',
+    '/purchasing',
+    '/customers',
+    '/suppliers',
+  ],
   ADMIN_PRODUCT: [
     '/',
     '/products',
@@ -198,15 +225,32 @@ export const ROLE_ALLOWED_ROUTES: Record<RoleType, string[]> = {
     '/products',
     '/customers',
   ],
+  PRODUCTION: [
+    '/',
+    '/production',
+    '/products',
+    '/inventory',
+  ],
   PRODUKSI: [
     '/',
     '/production',
     '/products',
     '/inventory',
   ],
+  DELIVERY: [
+    '/',
+    '/delivery',
+  ],
   DRIVER: [
     '/',
     '/delivery',
+  ],
+  INVENTORY: [
+    '/',
+    '/inventory',
+    '/products',
+    '/purchasing',
+    '/suppliers',
   ],
   GUDANG: [
     '/',
@@ -214,6 +258,14 @@ export const ROLE_ALLOWED_ROUTES: Record<RoleType, string[]> = {
     '/products',
     '/purchasing',
     '/suppliers',
+  ],
+  FINANCE: [
+    '/',
+    '/finance',
+    '/order',
+    '/sales',
+    '/sales-order',
+    '/purchasing',
   ],
   PURCHASING: [
     '/',
@@ -232,11 +284,11 @@ export function isRouteAllowed(role: RoleType | string | string[] | undefined, p
   }
   const cleanPath = path.split('?')[0].split('#')[0] || '/';
   const upper = String(role).toUpperCase().trim();
-  if (upper === 'SUPER_ADMIN' || upper === 'SUPERADMIN' || upper === 'ADMIN') {
+  if (upper === 'SUPER_ADMIN' || upper === 'SUPERADMIN') {
     return true;
   }
   const normalized = normalizeRole(upper);
-  if (normalized === 'SUPER_ADMIN' || normalized === 'ADMIN') {
+  if (normalized === 'SUPER_ADMIN') {
     return true;
   }
   const allowed = ROLE_ALLOWED_ROUTES[normalized] || [];
@@ -259,19 +311,19 @@ export function canApproveOrder(role: RoleType | string | string[]): boolean {
 }
 
 export function canIssueSPK(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'PRODUKSI' || norm === 'ADMIN_PRODUCTION');
+  return hasAnyMatchingRole(role, norm => norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'PRODUCTION' || norm === 'PRODUKSI' || norm === 'ADMIN_PRODUCTION');
 }
 
 export function canManageProduction(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'PRODUKSI' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_PRODUCTION');
+  return hasAnyMatchingRole(role, norm => norm === 'PRODUCTION' || norm === 'PRODUKSI' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_PRODUCTION');
 }
 
 export function canDeliverOrder(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'DRIVER' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_DELIVERY');
+  return hasAnyMatchingRole(role, norm => norm === 'DELIVERY' || norm === 'DRIVER' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_DELIVERY');
 }
 
 export function canManageInventory(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'GUDANG' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_INVENTORY');
+  return hasAnyMatchingRole(role, norm => norm === 'INVENTORY' || norm === 'GUDANG' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_INVENTORY');
 }
 
 export function canCreatePO(role: RoleType | string | string[]): boolean {
@@ -282,10 +334,12 @@ export function canRequestPO(role: RoleType | string | string[]): boolean {
   return hasAnyMatchingRole(
     role,
     norm =>
+      norm === 'INVENTORY' ||
       norm === 'GUDANG' ||
       norm === 'ADMIN' ||
       norm === 'SUPER_ADMIN' ||
       norm === 'PURCHASING' ||
+      norm === 'PRODUCTION' ||
       norm === 'PRODUKSI' ||
       norm === 'ADMIN_INVENTORY' ||
       norm === 'ADMIN_PRODUCTION'
@@ -293,15 +347,15 @@ export function canRequestPO(role: RoleType | string | string[]): boolean {
 }
 
 export function canAccessPurchasing(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'PURCHASING' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'GUDANG' || norm === 'ADMIN_INVENTORY');
+  return hasAnyMatchingRole(role, norm => norm === 'PURCHASING' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'INVENTORY' || norm === 'GUDANG' || norm === 'ADMIN_INVENTORY');
 }
 
 export function canConfirmPayment(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'SALES' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_SALES' || norm === 'ADMIN_FINANCE');
+  return hasAnyMatchingRole(role, norm => norm === 'SALES' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_SALES' || norm === 'FINANCE' || norm === 'ADMIN_FINANCE');
 }
 
 export function canViewFinance(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_FINANCE');
+  return hasAnyMatchingRole(role, norm => norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'FINANCE' || norm === 'ADMIN_FINANCE');
 }
 
 export function canSeeCosts(role: RoleType | string | string[]): boolean {
@@ -310,11 +364,14 @@ export function canSeeCosts(role: RoleType | string | string[]): boolean {
     norm =>
       norm === 'ADMIN' ||
       norm === 'SUPER_ADMIN' ||
+      norm === 'PRODUCTION' ||
       norm === 'PRODUKSI' ||
       norm === 'ADMIN_PRODUCTION' ||
+      norm === 'INVENTORY' ||
       norm === 'GUDANG' ||
       norm === 'ADMIN_INVENTORY' ||
       norm === 'PURCHASING' ||
+      norm === 'FINANCE' ||
       norm === 'ADMIN_FINANCE'
   );
 }

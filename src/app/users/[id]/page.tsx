@@ -116,7 +116,9 @@ export default function UserDetailPage() {
       .toUpperCase()
     : 'U';
 
-  const selectedRoleIds = (user.roles || []).map(r => r.id);
+  const selectedRoleIds = Array.isArray(user.roles)
+    ? user.roles.map(r => (typeof r === 'number' ? r : (r as any).id))
+    : [];
 
   return (
     <div className="space-y-4">
@@ -196,13 +198,20 @@ export default function UserDetailPage() {
             Peran yang Ditetapkan:
           </p>
           <div className="flex items-center gap-2 flex-wrap">
-            {user.roles && user.roles.length > 0 ? (
-              user.roles.map(r => (
-                <Badge key={r.id} variant="default" className="text-xs font-medium px-3 py-1">
-                  <Shield className="h-3 w-3 mr-1" />
-                  {r.name}
-                </Badge>
-              ))
+            {selectedRoleIds.length > 0 ? (
+              selectedRoleIds.map(rid => {
+                const roleObj = Array.isArray(user.roles)
+                  ? (user.roles.find(r => typeof r === 'object' && r !== null && r.id === rid) as any)
+                  : null;
+                const matched = roleOptions.find(ro => ro.id === rid);
+                const label = roleObj?.name || matched?.name || `Role #${rid}`;
+                return (
+                  <Badge key={rid} variant="default" className="text-xs font-medium px-3 py-1">
+                    <Shield className="h-3 w-3 mr-1" />
+                    {label}
+                  </Badge>
+                );
+              })
             ) : (
               <span className="text-xs text-slate-400 italic">Belum ada role yang ditetapkan.</span>
             )}

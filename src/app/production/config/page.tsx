@@ -4,7 +4,6 @@ import React, { Suspense } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ProductionOperationSection } from './components/ProductionOperationSection';
 import { ProductionRoutingSection } from './components/ProductionRoutingSection';
-import { ProductionOperatorSection } from './components/ProductionOperatorSection';
 
 function ProductionConfigContent() {
   return (
@@ -24,11 +23,6 @@ function ProductionConfigContent() {
         {/* ACCORDION ITEM 2: ALUR PRODUKSI (ROUTINGS) */}
         {/* ========================================================================= */}
         <ProductionRoutingSection />
-
-        {/* ========================================================================= */}
-        {/* ACCORDION ITEM 3: OPERATOR PRODUKSI */}
-        {/* ========================================================================= */}
-        <ProductionOperatorSection />
       </div>
     </div>
   );
