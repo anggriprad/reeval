@@ -6,3 +6,8 @@ export * from './CancelPOModal';
 export * from './ProcurementSection';
 export * from './StockMovementModal';
 export * from './StockMovementSection';
+export * from './AllocateFinishedGoodModal';
+export * from './FinishedGoodsTableSection';
+export * from './AssetModal';
+export * from './AssetServiceModal';
+export * from './AssetTableSection';

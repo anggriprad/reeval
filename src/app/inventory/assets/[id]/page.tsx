@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
+import { usePermission } from '@/hooks/usePermission';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -15,9 +16,18 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
-import type { AssetStatus, CompanyAsset } from '@/lib/types';
+import {
+  companyAssetService,
+  CompanyAssetDetail,
+  AssetServiceLogItem,
+} from '@/services/company-asset.service';
+import {
+  assetCategoryService,
+  AssetCategoryOption,
+} from '@/services/asset-category.service';
 import {
   Wrench,
   Edit2,
@@ -25,6 +35,7 @@ import {
   Plus,
   AlertTriangle,
   History,
+  Loader2,
 } from 'lucide-react';
 
 export default function AssetDetailPage() {
@@ -32,34 +43,36 @@ export default function AssetDetailPage() {
   const id = params?.id as string;
   const router = useRouter();
   const { toast, confirm } = useToast();
+  const { can } = usePermission();
 
   const {
-    assets,
-    updateAsset,
-    deleteAsset,
-    canDeleteAsset,
-    assetCategories,
-    assetServiceLogs = [],
-    recordAssetService,
-    deleteAssetServiceLog,
-    bankAccounts = [],
-    assetDepreciations = [],
     currentUser,
+    bankAccounts = [],
   } = useApp();
 
-  const asset = assets.find((a) => a.id === id);
+  const canUpdate =
+    can(PERMISSIONS.INVENTORY.ASSET_UPDATE) || canManageInventory(currentUser?.role);
+  const canDelete =
+    can(PERMISSIONS.INVENTORY.ASSET_DELETE) || canManageInventory(currentUser?.role);
+  const canManage = canUpdate || canDelete;
+
+  const [asset, setAsset] = useState<CompanyAssetDetail | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<AssetCategoryOption[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Modal Edit Asset State
   const [showEditModal, setShowEditModal] = useState(false);
   const [astCode, setAstCode] = useState('');
   const [astName, setAstName] = useState('');
-  const [astCategory, setAstCategory] = useState('');
+  const [astCategoryId, setAstCategoryId] = useState<string>('');
+  const [astCategoryName, setAstCategoryName] = useState('');
   const [astPurchaseDate, setAstPurchaseDate] = useState('');
   const [astPurchaseCost, setAstPurchaseCost] = useState<number | ''>('');
   const [astUsefulLifeMonths, setAstUsefulLifeMonths] = useState<number | ''>(60);
   const [astSalvageValue, setAstSalvageValue] = useState<number | ''>(0);
-  const [astStatus, setAstStatus] = useState<AssetStatus>('ACTIVE');
+  const [astStatus, setAstStatus] = useState<string>('ACTIVE');
   const [editError, setEditError] = useState('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
   // Modal Record Service State
   const [showServiceModal, setShowServiceModal] = useState(false);
@@ -68,6 +81,51 @@ export default function AssetDetailPage() {
   const [serviceDesc, setServiceDesc] = useState('');
   const [serviceProvider, setServiceProvider] = useState('');
   const [serviceError, setServiceError] = useState('');
+  const [isSubmittingService, setIsSubmittingService] = useState(false);
+
+  const fetchAsset = useCallback(async () => {
+    if (!id) return;
+    setIsLoading(true);
+    try {
+      const res = await companyAssetService.getAssetById(id);
+      if (res.data) {
+        setAsset(res.data);
+      } else {
+        setAsset(null);
+      }
+    } catch (err) {
+      console.error('Failed to load asset detail:', err);
+      setAsset(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchAsset();
+  }, [fetchAsset]);
+
+  useEffect(() => {
+    assetCategoryService
+      .getCategoryOptions()
+      .then((res) => {
+        if (res.data) {
+          setCategoryOptions(res.data);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load asset categories:', err);
+      });
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto pb-12 flex flex-col items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-600 mb-2" />
+        <p className="text-sm text-slate-500">Memuat detail aset...</p>
+      </div>
+    );
+  }
 
   if (!asset) {
     return (
@@ -89,11 +147,11 @@ export default function AssetDetailPage() {
     );
   }
 
-  const serviceLogs = assetServiceLogs.filter((l) => l.assetId === asset.id);
-  const depreciations = assetDepreciations.filter((d) => d.assetId === asset.id);
+  const serviceLogs = asset.service_logs || [];
+  const depreciations = asset.depreciations || [];
   const hasDependencies = serviceLogs.length > 0 || depreciations.length > 0;
-  const usefulMonths = asset.usefulLifeMonths || asset.usefulLifeYears * 12;
-  const cashAccount = bankAccounts.find((b) => b.id === asset.cashAccountId);
+  const usefulMonths = asset.useful_life_months || (asset.useful_life_years ? asset.useful_life_years * 12 : 60);
+  const cashAccount = bankAccounts.find((b) => b.id === asset.cash_account_id);
 
   const statusVariant: 'success' | 'warning' | 'danger' | 'default' =
     asset.status === 'ACTIVE' || asset.status === 'AKTIF'
@@ -118,20 +176,21 @@ export default function AssetDetailPage() {
   const openEdit = () => {
     setAstCode(asset.code);
     setAstName(asset.name);
-    setAstCategory(asset.category);
-    setAstPurchaseDate(asset.purchaseDate);
-    setAstPurchaseCost(asset.purchaseCost);
+    setAstCategoryId(asset.category_id ? String(asset.category_id) : '');
+    setAstCategoryName(asset.category_name || asset.category || '');
+    setAstPurchaseDate(asset.purchase_date ? asset.purchase_date.split('T')[0] : '');
+    setAstPurchaseCost(asset.purchase_cost);
     setAstUsefulLifeMonths(usefulMonths);
-    setAstSalvageValue(asset.salvageValue ?? 0);
-    setAstStatus(asset.status);
+    setAstSalvageValue(asset.salvage_value ?? 0);
+    setAstStatus(asset.status || 'ACTIVE');
     setEditError('');
     setShowEditModal(true);
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!astCode.trim() || !astName.trim()) {
-      setEditError('Kode dan Nama Aset wajib diisi.');
+    if (!astName.trim()) {
+      setEditError('Nama Aset wajib diisi.');
       return;
     }
     const cost = Number(astPurchaseCost) || 0;
@@ -154,26 +213,44 @@ export default function AssetDetailPage() {
       return;
     }
 
-    updateAsset(asset.id, {
-      code: astCode.trim().toUpperCase(),
-      name: astName.trim(),
-      category: astCategory,
-      purchaseDate: astPurchaseDate,
-      purchaseCost: cost,
-      usefulLifeMonths: months,
-      usefulLifeYears: Math.round((months / 12) * 10) / 10,
-      salvageValue: salvage,
-      status: astStatus,
-    });
+    try {
+      setIsSubmittingEdit(true);
+      setEditError('');
 
-    toast.success('Aset Diperbarui', `Data aset "${astName}" berhasil disimpan.`);
-    setShowEditModal(false);
+      const matchedCat = categoryOptions.find(
+        (c) => String(c.id) === String(astCategoryId) || c.name === astCategoryName
+      );
+
+      await companyAssetService.updateAsset(asset.id, {
+        name: astName.trim(),
+        category_id: matchedCat ? matchedCat.id : (astCategoryId ? Number(astCategoryId) : undefined),
+        category: matchedCat ? matchedCat.name : astCategoryName,
+        purchase_date: astPurchaseDate,
+        purchase_cost: cost,
+        useful_life_months: months,
+        useful_life_years: Math.round((months / 12) * 10) / 10,
+        salvage_value: salvage,
+        status: astStatus,
+      });
+
+      toast.success('Aset Diperbarui', `Data aset "${astName}" berhasil disimpan.`);
+      setShowEditModal(false);
+      fetchAsset();
+    } catch (err: any) {
+      setEditError(
+        err?.response?.data?.message || err?.message || 'Gagal menyimpan perubahan aset.'
+      );
+    } finally {
+      setIsSubmittingEdit(false);
+    }
   };
 
   const handleDelete = async () => {
-    const check = canDeleteAsset ? canDeleteAsset(asset.id) : { canDelete: true };
-    if (!check.canDelete) {
-      toast.error('Gagal Menghapus Aset', check.reason || 'Aset tidak dapat dihapus karena memiliki keterkaitan data.');
+    if (hasDependencies) {
+      toast.error(
+        'Gagal Menghapus Aset',
+        'Aset tidak dapat dihapus karena memiliki riwayat pemeliharaan atau depresiasi.'
+      );
       return;
     }
 
@@ -185,12 +262,15 @@ export default function AssetDetailPage() {
     });
 
     if (isOk) {
-      const res = deleteAsset(asset.id);
-      if (res && typeof res === 'object' && !res.success) {
-        toast.error('Gagal Menghapus Aset', res.reason || 'Terjadi kesalahan saat menghapus aset.');
-      } else {
+      try {
+        await companyAssetService.deleteAsset(asset.id);
         toast.success('Aset Dihapus', `Aset "${asset.name}" berhasil dihapus.`);
         router.push('/inventory?tab=assets');
+      } catch (err: any) {
+        toast.error(
+          'Gagal Menghapus Aset',
+          err?.response?.data?.message || err?.message || 'Terjadi kesalahan saat menghapus aset.'
+        );
       }
     }
   };
@@ -204,7 +284,7 @@ export default function AssetDetailPage() {
     setShowServiceModal(true);
   };
 
-  const handleSaveService = (e: React.FormEvent) => {
+  const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
     const cost = Number(serviceCost) || 0;
     if (!serviceDesc.trim() || cost <= 0) {
@@ -212,21 +292,30 @@ export default function AssetDetailPage() {
       return;
     }
 
-    recordAssetService({
-      assetId: asset.id,
-      assetCode: asset.code,
-      assetName: asset.name,
-      serviceDate: serviceDate || new Date().toISOString().split('T')[0],
-      cost,
-      description: serviceDesc.trim(),
-      serviceProvider: serviceProvider.trim() || undefined,
-    });
+    try {
+      setIsSubmittingService(true);
+      setServiceError('');
 
-    toast.success('Servis Dicatat', 'Riwayat pemeliharaan aset berhasil ditambahkan.');
-    setShowServiceModal(false);
+      await companyAssetService.addServiceLog(asset.id, {
+        service_date: serviceDate || new Date().toISOString().split('T')[0],
+        cost,
+        description: serviceDesc.trim(),
+        service_provider: serviceProvider.trim() || undefined,
+      });
+
+      toast.success('Servis Dicatat', 'Riwayat pemeliharaan aset berhasil ditambahkan.');
+      setShowServiceModal(false);
+      fetchAsset();
+    } catch (err: any) {
+      setServiceError(
+        err?.response?.data?.message || err?.message || 'Gagal menyimpan catatan servis.'
+      );
+    } finally {
+      setIsSubmittingService(false);
+    }
   };
 
-  const handleDeleteService = async (serviceId: string) => {
+  const handleDeleteService = async (serviceId: number) => {
     const isOk = await confirm({
       title: 'Hapus Riwayat Servis',
       message: 'Apakah Anda yakin ingin menghapus catatan servis ini?',
@@ -234,8 +323,16 @@ export default function AssetDetailPage() {
       variant: 'danger',
     });
     if (isOk) {
-      deleteAssetServiceLog(serviceId);
-      toast.success('Catatan Dihapus', 'Riwayat servis berhasil dihapus.');
+      try {
+        await companyAssetService.deleteServiceLog(asset.id, serviceId);
+        toast.success('Catatan Dihapus', 'Riwayat servis berhasil dihapus.');
+        fetchAsset();
+      } catch (err: any) {
+        toast.error(
+          'Gagal Menghapus Servis',
+          err?.response?.data?.message || err?.message || 'Gagal menghapus catatan servis.'
+        );
+      }
     }
   };
 
@@ -251,7 +348,7 @@ export default function AssetDetailPage() {
             </span>
             <span className="text-slate-900 dark:text-white font-bold">{asset.name}</span>
             <Badge variant={statusVariant}>{statusLabel}</Badge>
-            {asset.acquisitionType === 'NEW_PURCHASE' ? (
+            {asset.acquisition_type === 'NEW_PURCHASE' ? (
               <Badge variant="purple">Beli Baru</Badge>
             ) : (
               <Badge variant="default">Saldo Awal</Badge>
@@ -259,32 +356,36 @@ export default function AssetDetailPage() {
           </div>
         }
       >
-        {canManageInventory(currentUser.role) && (
+        {canManage && (
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={openAddService}>
               <Wrench className="h-3.5 w-3.5 mr-1.5" />
               Catat Servis
             </Button>
-            <Button size="sm" variant="outline" onClick={openEdit}>
-              <Edit2 className="h-3.5 w-3.5 mr-1.5" />
-              Edit
-            </Button>
-            {hasDependencies ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled
-                title="Aset tidak dapat dihapus karena memiliki riwayat operasional"
-                className="text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40"
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                Hapus
+            {canUpdate && (
+              <Button size="sm" variant="outline" onClick={openEdit}>
+                <Edit2 className="h-3.5 w-3.5 mr-1.5" />
+                Edit
               </Button>
-            ) : (
-              <Button size="sm" variant="danger" onClick={handleDelete}>
-                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                Hapus
-              </Button>
+            )}
+            {canDelete && (
+              hasDependencies ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled
+                  title="Aset tidak dapat dihapus karena memiliki riwayat operasional"
+                  className="text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Hapus
+                </Button>
+              ) : (
+                <Button size="sm" variant="danger" onClick={handleDelete}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Hapus
+                </Button>
+              )
             )}
           </div>
         )}
@@ -298,13 +399,13 @@ export default function AssetDetailPage() {
             <div>
               <span className="text-slate-500 dark:text-slate-400 font-medium">Nilai Buku Saat Ini</span>
               <p className="font-mono font-bold text-slate-900 dark:text-white text-base mt-0.5">
-                {formatCurrency(asset.currentBookValue ?? asset.purchaseCost)}
+                {formatCurrency(asset.current_book_value ?? asset.purchase_cost)}
               </p>
             </div>
             <div>
               <span className="text-slate-500 dark:text-slate-400 font-medium">Harga Perolehan</span>
               <p className="font-mono font-semibold text-slate-700 dark:text-slate-300 mt-0.5">
-                {formatCurrency(asset.purchaseCost)}
+                {formatCurrency(asset.purchase_cost)}
               </p>
             </div>
           </div>
@@ -314,7 +415,7 @@ export default function AssetDetailPage() {
             <div>
               <span className="text-slate-500 dark:text-slate-400 font-medium">Penyusutan / Bulan</span>
               <p className="font-mono font-bold text-red-600 dark:text-red-400 text-base mt-0.5">
-                {formatCurrency(asset.monthlyDepreciation)}
+                {formatCurrency(asset.monthly_depreciation)}
               </p>
             </div>
             <div>
@@ -330,15 +431,15 @@ export default function AssetDetailPage() {
             <div>
               <span className="text-slate-500 dark:text-slate-400 font-medium">Tanggal Perolehan</span>
               <p className="font-semibold text-slate-900 dark:text-white text-sm mt-0.5">
-                {asset.purchaseDate}
+                {asset.purchase_date ? formatDate(asset.purchase_date) : '-'}
               </p>
             </div>
             <div>
               <span className="text-slate-500 dark:text-slate-400 font-medium">Sumber Dana</span>
               <p className="font-medium text-slate-700 dark:text-slate-300 mt-0.5">
-                {asset.acquisitionType === 'NEW_PURCHASE' && cashAccount
+                {asset.acquisition_type === 'NEW_PURCHASE' && cashAccount
                   ? cashAccount.name
-                  : asset.acquisitionType === 'NEW_PURCHASE'
+                  : asset.acquisition_type === 'NEW_PURCHASE'
                   ? 'Kas Keluar'
                   : 'Saldo Awal (Tanpa Kas)'}
               </p>
@@ -350,13 +451,13 @@ export default function AssetDetailPage() {
             <div>
               <span className="text-slate-500 dark:text-slate-400 font-medium">Kategori</span>
               <p className="font-semibold text-slate-900 dark:text-white text-sm mt-0.5">
-                {asset.category}
+                {asset.category_name || asset.category || '-'}
               </p>
             </div>
             <div>
               <span className="text-slate-500 dark:text-slate-400 font-medium">Total Biaya Servis</span>
               <p className="font-mono font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">
-                {formatCurrency(asset.accumulatedServiceCost)}
+                {formatCurrency(asset.accumulated_service_cost)}
               </p>
             </div>
           </div>
@@ -372,7 +473,7 @@ export default function AssetDetailPage() {
               Riwayat Pemeliharaan & Servis
             </h2>
           </div>
-          {canManageInventory(currentUser.role) && (
+          {canManage && (
             <Button size="sm" variant="outline" onClick={openAddService}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               Tambah Catatan
@@ -389,14 +490,14 @@ export default function AssetDetailPage() {
         ) : (
           <Table
             data={serviceLogs}
-            keyExtractor={(log) => log.id}
+            keyExtractor={(log) => String(log.id)}
             columns={[
               {
-                key: 'serviceDate',
+                key: 'service_date',
                 header: 'Tanggal',
                 cell: (log) => (
                   <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                    {log.serviceDate}
+                    {formatDate(log.service_date)}
                   </span>
                 ),
               },
@@ -408,9 +509,9 @@ export default function AssetDetailPage() {
                     <span className="font-medium text-slate-900 dark:text-white">
                       {log.description}
                     </span>
-                    {log.serviceProvider && (
+                    {log.service_provider && (
                       <span className="block text-[11px] text-slate-400 mt-0.5">
-                        Vendor/Teknisi: {log.serviceProvider}
+                        Vendor/Teknisi: {log.service_provider}
                       </span>
                     )}
                   </div>
@@ -426,13 +527,13 @@ export default function AssetDetailPage() {
                   </span>
                 ),
               },
-              ...(canManageInventory(currentUser.role)
+              ...(canDelete
                 ? [
                     {
                       key: 'actions',
                       header: 'Aksi',
                       align: 'center' as const,
-                      cell: (log: (typeof serviceLogs)[0]) => (
+                      cell: (log: AssetServiceLogItem) => (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -459,11 +560,20 @@ export default function AssetDetailPage() {
         size="lg"
         actions={
           <>
-            <Button type="button" variant="ghost" onClick={() => setShowEditModal(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setShowEditModal(false)}
+              disabled={isSubmittingEdit}
+            >
               Batal
             </Button>
-            <Button type="button" onClick={handleSaveEdit}>
-              Simpan
+            <Button
+              type="button"
+              onClick={handleSaveEdit}
+              disabled={isSubmittingEdit}
+            >
+              {isSubmittingEdit ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </>
         }
@@ -487,9 +597,17 @@ export default function AssetDetailPage() {
             <Select
               label="Kategori"
               required
-              value={astCategory}
-              onChange={(e) => setAstCategory(e.target.value)}
-              options={assetCategories.map((c) => ({ value: c, label: c }))}
+              value={astCategoryId || astCategoryName}
+              onChange={(e) => {
+                const val = e.target.value;
+                setAstCategoryId(val);
+                const opt = categoryOptions.find((c) => String(c.id) === val);
+                if (opt) setAstCategoryName(opt.name);
+              }}
+              options={categoryOptions.map((c) => ({
+                value: String(c.id),
+                label: c.name,
+              }))}
             />
           </div>
 
@@ -514,7 +632,7 @@ export default function AssetDetailPage() {
               label="Status"
               required
               value={astStatus}
-              onChange={(e) => setAstStatus(e.target.value as any)}
+              onChange={(e) => setAstStatus(e.target.value)}
               options={[
                 { value: 'ACTIVE', label: 'Aktif' },
                 { value: 'IN_MAINTENANCE', label: 'Dalam Pemeliharaan' },
@@ -537,7 +655,9 @@ export default function AssetDetailPage() {
               label="Masa Manfaat (Bulan)"
               required
               value={astUsefulLifeMonths}
-              onChange={(e) => setAstUsefulLifeMonths(e.target.value === '' ? '' : Number(e.target.value))}
+              onChange={(e) =>
+                setAstUsefulLifeMonths(e.target.value === '' ? '' : Number(e.target.value))
+              }
             />
             <CurrencyInput
               label="Nilai Sisa / Residu (Rp)"
@@ -551,14 +671,14 @@ export default function AssetDetailPage() {
             <Checkbox
               id="checkbox-edit-new-purchase"
               label="Pembelian Baru"
-              checked={asset.acquisitionType === 'NEW_PURCHASE'}
+              checked={asset.acquisition_type === 'NEW_PURCHASE'}
               disabled
             />
 
-            {asset.acquisitionType === 'NEW_PURCHASE' && (
+            {asset.acquisition_type === 'NEW_PURCHASE' && (
               <Select
                 label="Sumber Dana"
-                value={asset.cashAccountId || ''}
+                value={asset.cash_account_id || ''}
                 options={bankAccounts.map((b) => ({
                   value: b.id,
                   label: `${b.name} (${formatCurrency(b.balance)})`,
@@ -578,11 +698,20 @@ export default function AssetDetailPage() {
         size="md"
         actions={
           <>
-            <Button type="button" variant="ghost" onClick={() => setShowServiceModal(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setShowServiceModal(false)}
+              disabled={isSubmittingService}
+            >
               Batal
             </Button>
-            <Button type="button" onClick={handleSaveService}>
-              Simpan
+            <Button
+              type="button"
+              onClick={handleSaveService}
+              disabled={isSubmittingService}
+            >
+              {isSubmittingService ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </>
         }

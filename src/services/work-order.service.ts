@@ -296,10 +296,11 @@ export const workOrderService = {
   /**
    * Get real-time counter for each status tab (active, completed, canceled).
    */
-  async getStatusCounts(): Promise<ApiResponse<WorkOrderStatusCountsResponse>> {
+  async getStatusCounts(params?: { spk_type?: string; search?: string }): Promise<ApiResponse<WorkOrderStatusCountsResponse>> {
     const response = await httpGet<WorkOrderStatusCountsResponse>(
       endpointUrl("production/work-orders/counts"),
-      true
+      true,
+      params
     );
     return response.data;
   },

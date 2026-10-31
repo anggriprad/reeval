@@ -21,6 +21,8 @@ import { productService, resolveProductImageUrl } from '../src/services/product.
 import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '../src/services/order.service';
 import { workOrderService, mapWorkOrderResponseToWorkOrder, mapJobCardResponseToJobCard } from '../src/services/work-order.service';
 import { deliveryService, resolveDeliveryPhotoUrl } from '../src/services/delivery.service';
+import { finishedGoodService } from '../src/services/finished-good.service';
+import { companyAssetService } from '../src/services/company-asset.service';
 import { mapQueueResponseToOrderGroup, buildTripGroups } from '../src/app/delivery/components/types';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
@@ -600,6 +602,32 @@ async function runTests() {
   assert(PERMISSIONS.DELIVERY.UPDATE === 'delivery:update', 'DELIVERY.UPDATE must be delivery:update');
   assert(PERMISSIONS.DELIVERY.DISPATCH === 'delivery:dispatch', 'DELIVERY.DISPATCH must be delivery:dispatch');
   console.log('✓ deliveryService contract, photo resolver & PBAC verified');
+
+  // 4u. Verify finishedGoodService structure & PBAC mapping
+  console.log('4u. Checking finishedGoodService contract & PBAC mapping...');
+  assert(typeof finishedGoodService.getFinishedGoods === 'function', 'finishedGoodService.getFinishedGoods must be a function');
+  assert(typeof finishedGoodService.allocateFinishedGood === 'function', 'finishedGoodService.allocateFinishedGood must be a function');
+  assert(PERMISSIONS.PRODUCT.READ === 'product:read', 'PRODUCT.READ must be product:read');
+  assert(PERMISSIONS.PRODUCT.UPDATE === 'product:update', 'PRODUCT.UPDATE must be product:update');
+  console.log('✓ finishedGoodService contract & PBAC verified');
+
+  // 4v. Verify companyAssetService structure & PBAC mapping
+  console.log('4v. Checking companyAssetService contract & PBAC mapping...');
+  assert(typeof companyAssetService.getAssets === 'function', 'companyAssetService.getAssets must be a function');
+  assert(typeof companyAssetService.getAssetById === 'function', 'companyAssetService.getAssetById must be a function');
+  assert(typeof companyAssetService.createAsset === 'function', 'companyAssetService.createAsset must be a function');
+  assert(typeof companyAssetService.updateAsset === 'function', 'companyAssetService.updateAsset must be a function');
+  assert(typeof companyAssetService.deleteAsset === 'function', 'companyAssetService.deleteAsset must be a function');
+  assert(typeof companyAssetService.getServiceLogs === 'function', 'companyAssetService.getServiceLogs must be a function');
+  assert(typeof companyAssetService.addServiceLog === 'function', 'companyAssetService.addServiceLog must be a function');
+  assert(typeof companyAssetService.deleteServiceLog === 'function', 'companyAssetService.deleteServiceLog must be a function');
+  assert(typeof companyAssetService.getDepreciations === 'function', 'companyAssetService.getDepreciations must be a function');
+  assert(typeof companyAssetService.recordDepreciation === 'function', 'companyAssetService.recordDepreciation must be a function');
+  assert(PERMISSIONS.INVENTORY.ASSET_READ === 'asset:read', 'ASSET_READ must be asset:read');
+  assert(PERMISSIONS.INVENTORY.ASSET_CREATE === 'asset:create', 'ASSET_CREATE must be asset:create');
+  assert(PERMISSIONS.INVENTORY.ASSET_UPDATE === 'asset:update', 'ASSET_UPDATE must be asset:update');
+  assert(PERMISSIONS.INVENTORY.ASSET_DELETE === 'asset:delete', 'ASSET_DELETE must be asset:delete');
+  console.log('✓ companyAssetService contract & PBAC verified');
 
   // 5. Test Proxy logic for mustChangePassword
   console.log('5. Testing Proxy middleware mustChangePassword logic...');

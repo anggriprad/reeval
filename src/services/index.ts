@@ -21,3 +21,5 @@ export * from "./product.service";
 export * from "./order.service";
 export * from "./work-order.service";
 export * from "./delivery.service";
+export * from "./finished-good.service";
+export * from "./company-asset.service";

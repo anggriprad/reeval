@@ -23,6 +23,7 @@ import {
 import {
   workOrderService,
   mapWorkOrderResponseToWorkOrder,
+  WorkOrderStatusCountsResponse,
 } from '@/services/work-order.service';
 import { productionOperationService } from '@/services/production-operation.service';
 import { productionOperatorService } from '@/services/production-operator.service';
@@ -125,29 +126,26 @@ function ProductionContent() {
       });
   }, [setOperatorsList]);
 
-  // Tab counter from API (only for active SPK)
-  const [activeCount, setActiveCount] = useState<number | undefined>(undefined);
+  // Tab counter from dedicated API (/production/work-orders/counts)
+  const [statusCounts, setStatusCounts] = useState<WorkOrderStatusCountsResponse | null>(null);
 
-  const fetchActiveCount = useCallback(async () => {
+  const fetchStatusCounts = useCallback(async () => {
     try {
       const spkType = filters.spk_type || undefined;
       const search = filters.search || undefined;
 
-      const activeRes = await workOrderService.getWorkOrders(
-        { page: 1, per_page: 1, status: 'active', spk_type: spkType, search },
-        { skipLoadingBar: true }
-      );
-
-      const total = activeRes.meta?.total ?? (activeRes.data?.length || 0);
-      setActiveCount(total > 0 ? total : undefined);
+      const res = await workOrderService.getStatusCounts({ spk_type: spkType, search });
+      if (res.success && res.data) {
+        setStatusCounts(res.data);
+      }
     } catch (err) {
-      console.warn('Gagal memuat counter SPK berjalan:', err);
+      console.warn('Gagal memuat counter status SPK:', err);
     }
   }, [filters.spk_type, filters.search]);
 
   useEffect(() => {
-    fetchActiveCount();
-  }, [fetchActiveCount]);
+    fetchStatusCounts();
+  }, [fetchStatusCounts]);
 
 
 
@@ -208,10 +206,6 @@ function ProductionContent() {
           const mappedWOs = res.data.map(mapWorkOrderResponseToWorkOrder);
           const totalCount = res.meta?.total ?? mappedWOs.length;
           const lastPage = res.meta?.total_pages ?? 1;
-
-          if (activeTab === 'active') {
-            setActiveCount(totalCount > 0 ? totalCount : undefined);
-          }
 
           if (isInitial) {
             setWorkOrders(mappedWOs);
@@ -274,8 +268,8 @@ function ProductionContent() {
     setPage(1);
     currentPageRef.current = 1;
     fetchWorkOrders(1, true);
-    fetchActiveCount();
-  }, [fetchWorkOrders, fetchActiveCount]);
+    fetchStatusCounts();
+  }, [fetchWorkOrders, fetchStatusCounts]);
 
   // Job card execution handlers
   const handleStartJobCard = async (woId: string, jcId: string, e?: React.MouseEvent) => {
@@ -333,17 +327,19 @@ function ProductionContent() {
           {
             key: 'active',
             label: 'Berjalan',
-            count: activeCount,
+            count: statusCounts?.active && statusCounts.active > 0 ? statusCounts.active : undefined,
             icon: Factory,
           },
           {
             key: 'completed',
             label: 'Selesai',
+            // count: statusCounts?.completed && statusCounts.completed > 0 ? statusCounts.completed : undefined,
             icon: CheckCircle,
           },
           {
             key: 'canceled',
             label: 'Dibatalkan',
+            // count: statusCounts?.canceled && statusCounts.canceled > 0 ? statusCounts.canceled : undefined,
             icon: XCircle,
           },
           {
