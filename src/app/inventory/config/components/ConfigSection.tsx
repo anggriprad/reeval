@@ -12,6 +12,7 @@ export function ConfigSection({
   defaultExpanded = false,
   isExpanded: controlledExpanded,
   onToggle,
+  isLoading = false,
 }: {
   title: string;
   description: string;
@@ -21,6 +22,7 @@ export function ConfigSection({
   defaultExpanded?: boolean;
   isExpanded?: boolean;
   onToggle?: (expanded: boolean) => void;
+  isLoading?: boolean;
 }) {
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
   const isControlled = controlledExpanded !== undefined;
@@ -47,7 +49,10 @@ export function ConfigSection({
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h3>
           <p className="text-xs text-slate-500">{description}</p>
         </div>
-        <div className="text-slate-400">
+        <div className="text-slate-400 flex items-center gap-2">
+          {isLoading && (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent dark:border-indigo-400" />
+          )}
           {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </div>
       </div>

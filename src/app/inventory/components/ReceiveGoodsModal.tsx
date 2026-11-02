@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { useToast } from '@/context/ToastContext';
+import { useApp } from '@/context/AppContext';
 import {
   procurementService,
   PurchaseOrderResponse,
@@ -16,7 +17,7 @@ interface ReceiveGoodsModalProps {
   isOpen: boolean;
   onClose: () => void;
   po: PurchaseOrderResponse | null;
-  onSuccess: () => void;
+  onSuccess: (updatedStatus?: string) => void;
 }
 
 export function ReceiveGoodsModal({
@@ -26,6 +27,7 @@ export function ReceiveGoodsModal({
   onSuccess,
 }: ReceiveGoodsModalProps) {
   const { toast } = useToast();
+  const { receivePO } = useApp();
   const [receiveSelections, setReceiveSelections] = useState<
     Record<number, { checked: boolean; receivedQty: number | '' }>
   >({});
@@ -103,22 +105,42 @@ export function ReceiveGoodsModal({
         received_items: itemsToReceive,
       });
 
-      if (res.data) {
-        const isPartial = res.data.status === 'PARTIALLY_RECEIVED';
-        if (isPartial) {
-          toast.success(
-            'Diterima Sebagian',
-            `Penerimaan barang PO ${po.po_number} berhasil dicatat.`
-          );
-        } else {
-          toast.success(
-            'Penerimaan Selesai',
-            `Seluruh barang PO ${po.po_number} telah lengkap diterima di gudang.`
-          );
-        }
-        onSuccess();
-        onClose();
+      // Sinkronisasi ke AppContext persis seperti pada halaman detail pengadaan
+      receivePO(
+        String(po.id),
+        itemsToReceive.map((i) => ({
+          materialId: String(i.material_id),
+          qty: i.qty,
+        }))
+      );
+
+      // Hitung apakah penerimaan ini sebagian (PARTIALLY_RECEIVED) atau penuh (RECEIVED)
+      const allFullyReceived = po.items.every((item) => {
+        const receivedNow = itemsToReceive.find((r) => r.material_id === item.material_id)?.qty || 0;
+        const alreadyReceived = item.received_qty || 0;
+        return alreadyReceived + receivedNow >= item.qty;
+      });
+
+      const updatedStatus = allFullyReceived
+        ? 'RECEIVED'
+        : (res?.data?.status || 'PARTIALLY_RECEIVED');
+
+      const isPartial = updatedStatus === 'PARTIALLY_RECEIVED';
+
+      if (isPartial) {
+        toast.success(
+          'Diterima Sebagian',
+          'Penerimaan sebagian barang berhasil dicatat.'
+        );
+      } else {
+        toast.success(
+          'Diterima Penuh',
+          'Seluruh barang pengadaan berhasil diterima.'
+        );
       }
+
+      onSuccess(updatedStatus);
+      onClose();
     } catch (err: any) {
       console.error('Failed to receive goods:', err);
       setErrorMsg(
@@ -185,7 +207,10 @@ export function ReceiveGoodsModal({
                           );
                           next[i.material_id] = {
                             checked,
-                            receivedQty: rem,
+                            receivedQty:
+                              prev[i.material_id]?.receivedQty !== '' && prev[i.material_id]?.receivedQty !== undefined
+                                ? prev[i.material_id].receivedQty
+                                : rem,
                           };
                         });
                         return next;
@@ -225,7 +250,10 @@ export function ReceiveGoodsModal({
                             ...prev,
                             [item.material_id]: {
                               checked,
-                              receivedQty: remaining,
+                              receivedQty:
+                                checked && (prev[item.material_id]?.receivedQty === '' || prev[item.material_id]?.receivedQty === 0)
+                                  ? remaining
+                                  : (prev[item.material_id]?.receivedQty ?? remaining),
                             },
                           }));
                         }}
@@ -284,7 +312,7 @@ export function ReceiveGoodsModal({
                                 setReceiveSelections((prev) => ({
                                   ...prev,
                                   [item.material_id]: {
-                                    ...prev[item.material_id],
+                                    checked: typeof val === 'number' && val > 0,
                                     receivedQty: val,
                                   },
                                 }));

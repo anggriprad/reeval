@@ -185,11 +185,9 @@ export function ProductionOperatorSection() {
         updated_at: new Date().toISOString(),
       };
 
-      setOperators((prev) => {
-        const next = [newOp, ...prev];
-        syncToAppContext(next);
-        return next;
-      });
+      const next = [newOp, ...operators];
+      setOperators(next);
+      syncToAppContext(next);
 
       toast.success(
         'Operator Ditugaskan',
@@ -216,11 +214,9 @@ export function ProductionOperatorSection() {
     if (isOk) {
       try {
         await productionOperatorService.deleteOperator(id);
-        setOperators((prev) => {
-          const next = prev.filter((o) => o.id !== id);
-          syncToAppContext(next);
-          return next;
-        });
+        const next = operators.filter((o) => o.id !== id);
+        setOperators(next);
+        syncToAppContext(next);
         toast.success('Operator Dihapus', `Penugasan operator "${name}" berhasil dilepas.`);
       } catch (err: any) {
         const msg = err?.response?.data?.message || err?.message || 'Gagal menghapus operator.';

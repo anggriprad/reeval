@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +14,7 @@ import { companyService, CompanyDetail, UpdateCompanyPayload } from '@/services/
 import { Building2, Save, RefreshCw, AlertCircle, CheckCircle2, ShieldCheck, Mail, Phone, MapPin, Hash, Lock } from 'lucide-react';
 
 export default function CompanyProfilePage() {
+  const router = useRouter();
   const { toast } = useToast();
   const { can, isSuperAdmin } = usePermission();
   const canUpdate = isSuperAdmin || can(PERMISSIONS.COMPANY.UPDATE);
@@ -87,6 +89,7 @@ export default function CompanyProfilePage() {
       const res = await companyService.updateCurrentCompany(payload);
       if (res.success) {
         toast.success('Berhasil', 'Informasi perusahaan berhasil diperbarui');
+        router.push('/settings?tab=profile');
         if (res.data) {
           setFormData(prev => ({
             ...prev,
@@ -121,7 +124,7 @@ export default function CompanyProfilePage() {
       <PageHeader
         title={
           <div className="flex items-center gap-2.5">
-            <span>Profil Perusahaan</span>
+            <span>Edit Profil Perusahaan</span>
             {!canUpdate && (
               <Badge variant="default" className="text-xs font-medium text-slate-500">
                 <Lock className="h-3 w-3 mr-1" />
@@ -130,7 +133,7 @@ export default function CompanyProfilePage() {
             )}
           </div>
         }
-        backHref="/settings"
+        backHref="/settings?tab=profile"
       />
 
       {error && (

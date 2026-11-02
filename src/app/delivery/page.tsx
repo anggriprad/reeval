@@ -58,10 +58,21 @@ function DeliveryContent() {
   const canDispatch = can(PERMISSIONS.DELIVERY.DISPATCH) || ['ADMIN', 'SUPER_ADMIN', 'ADMIN_DELIVERY', 'DRIVER'].includes(currentUser?.role || '');
   const canConfig = can(PERMISSIONS.DELIVERY.VEHICLE_READ) || can(PERMISSIONS.DELIVERY.DRIVER_READ) || ['ADMIN', 'SUPER_ADMIN', 'ADMIN_DELIVERY'].includes(currentUser?.role || '');
 
-  const [activeTab, setActiveTab] = useUrlTab(
-    ['queue', 'ready-to-ship', 'in-transit', 'delivered'] as const,
-    currentUser?.role === 'DRIVER' ? 'ready-to-ship' : 'queue'
-  );
+  const validTabs = useMemo<readonly TabKey[]>(() => {
+    return canCreate
+      ? ['queue', 'ready-to-ship', 'in-transit', 'delivered']
+      : ['ready-to-ship', 'in-transit', 'delivered'];
+  }, [canCreate]);
+
+  const defaultTab: TabKey = canCreate ? 'queue' : 'ready-to-ship';
+
+  const [activeTab, setActiveTab] = useUrlTab<TabKey>(validTabs, defaultTab);
+
+  useEffect(() => {
+    if (!canCreate && activeTab === 'queue') {
+      setActiveTab('ready-to-ship');
+    }
+  }, [canCreate, activeTab, setActiveTab]);
 
   // 1. URL Table Filters integration (search & driver_id)
   const { filters, setFilter } = useTableFilters({
@@ -668,12 +679,16 @@ function DeliveryContent() {
 
   // Tab definitions
   const tabOptions: SegmentOption<TabKey>[] = [
-    {
-      key: 'queue',
-      label: 'Antrean Kirim',
-      count: statusCounts.queue,
-      icon: Clock,
-    },
+    ...(canCreate
+      ? [
+          {
+            key: 'queue' as const,
+            label: 'Antrean Kirim',
+            count: statusCounts.queue,
+            icon: Clock,
+          },
+        ]
+      : []),
     {
       key: 'ready-to-ship',
       label: 'Siap Kirim',
@@ -688,9 +703,8 @@ function DeliveryContent() {
     },
     {
       key: 'delivered',
-      label: 'Terkirim',
+      label: 'Selesai',
       icon: CheckCircle2,
-      count: statusCounts.delivered + statusCounts.failed,
     },
   ];
 
@@ -735,7 +749,7 @@ function DeliveryContent() {
       />
 
       {/* Tab 1: Antrean Kirim */}
-      {activeTab === 'queue' && (
+      {canCreate && activeTab === 'queue' && (
         <QueueSection
           displayOrderGroups={displayQueueGroups}
           totalReadyUnitsCount={totalReadyUnitsCount}

@@ -203,22 +203,18 @@ export function ProductionOperationSection() {
         const res = await productionOperationService.updateOperation(editOpId, updatePayload);
         const updatedItem = res?.data;
 
-        setOperations((prev) => {
-          const next = prev.map((o) => (o.id === editOpId ? (updatedItem || { ...o, ...payload }) : o));
-          syncToAppContext(next);
-          return next;
-        });
+        const next = operations.map((o) => (o.id === editOpId ? (updatedItem || { ...o, ...payload }) : o));
+        setOperations(next);
+        syncToAppContext(next);
 
         toast.success('Operasi Diperbarui', `Operasi "${payload.name}" berhasil diperbarui.`);
       } else {
         const res = await productionOperationService.createOperation(payload);
         const newItem = res?.data;
 
-        setOperations((prev) => {
-          const next = newItem ? [newItem, ...prev] : prev;
-          syncToAppContext(next);
-          return next;
-        });
+        const next = newItem ? [newItem, ...operations] : operations;
+        setOperations(next);
+        syncToAppContext(next);
 
         toast.success('Operasi Ditambahkan', `Operasi "${payload.name}" berhasil ditambahkan.`);
       }
@@ -244,11 +240,9 @@ export function ProductionOperationSection() {
     if (isOk) {
       try {
         await productionOperationService.deleteOperation(id);
-        setOperations((prev) => {
-          const next = prev.filter((o) => o.id !== id);
-          syncToAppContext(next);
-          return next;
-        });
+        const next = operations.filter((o) => o.id !== id);
+        setOperations(next);
+        syncToAppContext(next);
         toast.success('Operasi Dihapus', `Operasi "${name}" berhasil dihapus.`);
       } catch (err: any) {
         const msg =

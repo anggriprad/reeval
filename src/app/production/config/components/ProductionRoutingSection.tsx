@@ -309,22 +309,18 @@ export function ProductionRoutingSection() {
         const res = await productionRoutingService.updateRouting(editRtId, updatePayload);
         const updatedItem = res?.data;
 
-        setRoutings((prev) => {
-          const next = prev.map((r) => (r.id === editRtId ? (updatedItem || { ...r, ...payload }) : r));
-          syncToAppContext(next);
-          return next;
-        });
+        const next = routings.map((r) => (r.id === editRtId ? (updatedItem || { ...r, ...payload }) : r));
+        setRoutings(next);
+        syncToAppContext(next);
 
         toast.success('Alur Diperbarui', `Alur produksi "${payload.name}" berhasil diperbarui.`);
       } else {
         const res = await productionRoutingService.createRouting(payload);
         const newItem = res?.data;
 
-        setRoutings((prev) => {
-          const next = newItem ? [newItem, ...prev] : prev;
-          syncToAppContext(next);
-          return next;
-        });
+        const next = newItem ? [newItem, ...routings] : routings;
+        setRoutings(next);
+        syncToAppContext(next);
 
         toast.success('Alur Ditambahkan', `Alur produksi "${payload.name}" berhasil ditambahkan.`);
       }
@@ -350,11 +346,9 @@ export function ProductionRoutingSection() {
     if (isOk) {
       try {
         await productionRoutingService.deleteRouting(id);
-        setRoutings((prev) => {
-          const next = prev.filter((r) => r.id !== id);
-          syncToAppContext(next);
-          return next;
-        });
+        const next = routings.filter((r) => r.id !== id);
+        setRoutings(next);
+        syncToAppContext(next);
         toast.success('Alur Dihapus', `Alur produksi "${name}" berhasil dihapus.`);
       } catch (err: any) {
         const msg =
