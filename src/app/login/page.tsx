@@ -70,12 +70,18 @@ function LoginForm() {
         const roleCookieValue = isSuper ? 'SUPER_ADMIN' : (rawRoles.length > 0 ? rawRoles.join(',') : primaryRole);
 
         setCookie('token', access_token, { maxAge: 60 * 60 * 24 * 7, path: '/' });
-        setCookie('cookieKey', access_token, { maxAge: 60 * 60 * 24 * 7, path: '/' });
-        setCookie('user', JSON.stringify(user), { maxAge: 60 * 60 * 24 * 7, path: '/' });
         setCookie('role', roleCookieValue, { maxAge: 60 * 60 * 24 * 7, path: '/' });
-        setCookie('permissions', JSON.stringify(user.permissions || []), { maxAge: 60 * 60 * 24 * 7, path: '/' });
         if (company?.id) {
           setCookie('activeCompanyId', company.id.toString(), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        }
+
+        deleteCookie('cookieKey', { path: '/' });
+        deleteCookie('user', { path: '/' });
+        deleteCookie('permissions', { path: '/' });
+        if (typeof document !== 'undefined') {
+          document.cookie = 'cookieKey=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+          document.cookie = 'user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+          document.cookie = 'permissions=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
         }
 
         if (requiresPasswordChange) {

@@ -464,6 +464,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Load from localStorage on mount
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      deleteCookie('cookieKey', { path: '/' });
+      deleteCookie('user', { path: '/' });
+      deleteCookie('permissions', { path: '/' });
+      document.cookie = 'cookieKey=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'permissions=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    }
+
     const saved = loadState();
     if (saved) {
       const loadedBankAccounts = saved.bankAccounts || structuredClone(initialBankAccounts);
@@ -631,18 +640,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [storedUser, setStoredUser] = useState<UserSummary | null>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const u = localStorage.getItem('user') || (getCookie('user') as string);
+        const u = localStorage.getItem('user');
         return u ? JSON.parse(u) : null;
       } catch {
         return null;
       }
     }
-    try {
-      const u = getCookie('user') as string;
-      return u ? JSON.parse(u) : null;
-    } catch {
-      return null;
-    }
+    return null;
   });
 
   const refreshProfile = useCallback(async () => {
@@ -660,9 +664,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setStoredUser(res.data);
         setHasAuthToken(true);
         localStorage.setItem('user', JSON.stringify(res.data));
-        setCookie('user', JSON.stringify(res.data), { maxAge: 60 * 60 * 24 * 7, path: '/' });
-        setCookie('permissions', JSON.stringify(res.data.permissions || []), { maxAge: 60 * 60 * 24 * 7, path: '/' });
         setCookie('role', (res.data.roles || []).join(','), { maxAge: 60 * 60 * 24 * 7, path: '/' });
+        deleteCookie('user', { path: '/' });
+        deleteCookie('permissions', { path: '/' });
+        deleteCookie('cookieKey', { path: '/' });
+        if (typeof document !== 'undefined') {
+          document.cookie = 'user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+          document.cookie = 'permissions=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+          document.cookie = 'cookieKey=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        }
 
         if (res.data.must_change_password) {
           localStorage.setItem('mustChangePassword', '1');
