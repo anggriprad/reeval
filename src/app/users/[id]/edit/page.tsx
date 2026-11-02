@@ -101,12 +101,12 @@ export default function EditUserPage() {
 
       if (!assignRes.success) {
         toast.warning('Profil Diperbarui', 'Profil tersimpan, namun konfigurasi wewenang hak akses gagal.');
-        router.push('/users');
+        router.push(userId ? `/users/${userId}` : '/settings?tab=users');
         return;
       }
 
       toast.success('Pengguna Berhasil Diperbarui', `Perubahan untuk ${formData.full_name} berhasil disimpan.`);
-      router.push('/users');
+      router.push(userId ? `/users/${userId}` : '/settings?tab=users');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Gagal memperbarui data pengguna.';
       toast.error('Gagal Menyimpan', msg);
@@ -118,7 +118,7 @@ export default function EditUserPage() {
   if (loading) {
     return (
       <div className="space-y-6 max-w-5xl mx-auto">
-        <PageHeader title="Edit Pengguna" backHref="/users" />
+        <PageHeader title="Edit Pengguna" backHref={userId ? `/users/${userId}` : '/settings?tab=users'} />
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
           <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent dark:border-indigo-400" />
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Memuat rincian data pengguna...</p>

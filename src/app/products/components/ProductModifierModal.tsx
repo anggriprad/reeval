@@ -161,7 +161,14 @@ export function ProductModifierModal({
     } else {
       setName('');
       setSelectType('MULTI');
-      setOptions([]);
+      setOptions([
+        {
+          id: `opt-0-${Date.now()}`,
+          name: '',
+          additional_price: 0,
+          bom: [],
+        },
+      ]);
       setErrorMessage('');
       setExpandedOptionId(null);
       setNewBOMMatId({});
@@ -280,8 +287,9 @@ export function ProductModifierModal({
   };
 
   // Submit Handler
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (isSubmitting) return;
 
     if (!name.trim()) {
       setErrorMessage('Nama grup modifier wajib diisi.');
@@ -302,11 +310,14 @@ export function ProductModifierModal({
 
     const payloadOptions: ProductModifierOptionRequest[] = options.map((opt) => ({
       name: opt.name.trim(),
-      additional_price: opt.additional_price || 0,
-      bom: opt.bom.map((b) => ({
-        material_id: b.material_id,
-        quantity: b.quantity,
-      })),
+      additional_price: Number(opt.additional_price) || 0,
+      bom:
+        opt.bom && opt.bom.length > 0
+          ? opt.bom.map((b) => ({
+              material_id: Number(b.material_id),
+              quantity: Number(b.quantity),
+            }))
+          : [],
     }));
 
     setIsSubmitting(true);
@@ -337,11 +348,18 @@ export function ProductModifierModal({
       onSuccess();
       onClose();
     } catch (err: any) {
-      const msg =
+      let msg =
         err?.response?.data?.message ||
         err?.message ||
         'Gagal menyimpan grup modifier master.';
+      if (err?.response?.data?.errors && typeof err.response.data.errors === 'object') {
+        const errorDetails = Object.values(err.response.data.errors).flat().join(', ');
+        if (errorDetails) {
+          msg = `${msg}: ${errorDetails}`;
+        }
+      }
       setErrorMessage(msg);
+      toast.error('Gagal Menyimpan Modifier', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -359,6 +377,7 @@ export function ProductModifierModal({
             Batal
           </Button>
           <Button
+            type="button"
             onClick={handleSubmit}
             disabled={isSubmitting || isLoadingDetails}
           >

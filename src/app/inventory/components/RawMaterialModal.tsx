@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { useToast } from '@/context/ToastContext';
 import { useApp } from '@/context/AppContext';
 import { usePermission } from '@/hooks/usePermission';
@@ -22,7 +23,7 @@ import {
 } from '@/services/material.service';
 import { MaterialCategoryOption } from '@/services/material-category.service';
 import { ProductionRoutingOption } from '@/services/production-routing.service';
-import { AlertTriangle, Layers, Plus, X } from 'lucide-react';
+import { AlertTriangle, Layers, Plus, Trash2, X } from 'lucide-react';
 
 interface RawMaterialModalProps {
   isOpen: boolean;
@@ -151,12 +152,70 @@ export function RawMaterialModal({
     setCrudError('');
   }, [isOpen, editMaterial, categoryOptions, routingOptions, allMaterials, allRoutings, allOperations]);
 
+  const availableChildOptions = useMemo(() => {
+    return materialOptions.filter(
+      m =>
+        (editMaterial ? String(m.id) !== String(editMaterial.id) : true) &&
+        !matChildBom.some(item => String(item.materialId) === String(m.id))
+    );
+  }, [materialOptions, editMaterial, matChildBom]);
+
+  const selectedRoutingOperations = useMemo<{ sequence: number; name: string; laborCost: number }[]>(() => {
+    if (!matRoutingId) return [];
+    const opt = routingOptions.find(r => String(r.id) === String(matRoutingId));
+    if (opt?.steps && opt.steps.length > 0) {
+      return opt.steps.map((s, idx) => {
+        let cost = 0;
+        if (typeof (s as any).labor_cost === 'number') {
+          cost = (s as any).labor_cost;
+        } else if (s.costing_method === 'hourly') {
+          const duration = s.duration_minutes || 0;
+          const rate = s.labor_cost_per_hour || 0;
+          cost = (duration / 60) * rate;
+        } else {
+          cost = s.fixed_labor_cost || 0;
+        }
+        return {
+          sequence: s.sequence ?? idx + 1,
+          name: s.operation_name,
+          laborCost: cost,
+        };
+      });
+    }
+    const rt = allRoutings.find((r: any) => String(r.id) === String(matRoutingId));
+    if (rt?.steps && rt.steps.length > 0) {
+      return rt.steps.map((s: any, idx: number) => {
+        const op = allOperations.find((o: any) => String(o.id) === String(s.operationId || s.operation_id));
+        let cost = 0;
+        if (typeof s.labor_cost === 'number') {
+          cost = s.labor_cost;
+        } else if (op) {
+          if (op.costingMethod === 'hourly') {
+            const duration = op.durationMinutes || 0;
+            const rate = op.laborCostPerHour || 0;
+            cost = (duration / 60) * rate;
+          } else {
+            cost = op.fixedLaborCost || 0;
+          }
+        }
+        return {
+          sequence: s.sequence ?? idx + 1,
+          name: op?.name || s.operationName || s.operation_name || `Operasi #${idx + 1}`,
+          laborCost: cost,
+        };
+      });
+    }
+    return [];
+  }, [matRoutingId, routingOptions, allRoutings, allOperations]);
+
   const handleAddChildBomItem = () => {
     if (!childMatId) return;
-    const parsedQty = parseFloat(childMatQty.replace(',', '.'));
+    const parsedQty = parseFloat(String(childMatQty).replace(',', '.'));
     if (isNaN(parsedQty) || parsedQty <= 0) return;
 
-    const existingIndex = matChildBom.findIndex(item => item.materialId === childMatId);
+    const existingIndex = matChildBom.findIndex(
+      item => String(item.materialId) === String(childMatId)
+    );
     let updated: BOMItem[];
     if (existingIndex !== -1) {
       updated = [...matChildBom];
@@ -166,12 +225,24 @@ export function RawMaterialModal({
     }
     setMatChildBom(updated);
     setChildMatId('');
-    setChildMatQty('');
+    setChildMatQty('1');
+    setMatUnitCost(computeSubAssemblyCost(updated, matRoutingId));
+  };
+
+  const handleUpdateChildBomQty = (materialId: string, newQty: number) => {
+    const updated = matChildBom.map(item =>
+      String(item.materialId) === String(materialId)
+        ? { ...item, qty: Math.max(0, newQty) }
+        : item
+    );
+    setMatChildBom(updated);
     setMatUnitCost(computeSubAssemblyCost(updated, matRoutingId));
   };
 
   const handleRemoveChildBomItem = (materialId: string) => {
-    const updated = matChildBom.filter(item => item.materialId !== materialId);
+    const updated = matChildBom.filter(
+      item => String(item.materialId) !== String(materialId)
+    );
     setMatChildBom(updated);
     setMatUnitCost(computeSubAssemblyCost(updated, matRoutingId));
   };
@@ -407,47 +478,156 @@ export function RawMaterialModal({
 
         {/* Bahan Setengah Jadi Checkbox & Child BOM Builder */}
         <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={matIsSubAssembly}
-              onChange={e => {
-                const checked = e.target.checked;
-                setMatIsSubAssembly(checked);
-                if (checked) {
-                  const targetRtId =
-                    matRoutingId || (routingOptions[0] ? String(routingOptions[0].id) : '');
-                  if (!matRoutingId && targetRtId) {
-                    setMatRoutingId(targetRtId);
-                  }
-                  setMatUnitCost(computeSubAssemblyCost(matChildBom, targetRtId));
+          <Checkbox
+            checked={matIsSubAssembly}
+            onChange={checked => {
+              setMatIsSubAssembly(checked);
+              if (checked) {
+                const targetRtId =
+                  matRoutingId || (routingOptions[0] ? String(routingOptions[0].id) : '');
+                if (!matRoutingId && targetRtId) {
+                  setMatRoutingId(targetRtId);
                 }
-              }}
-              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-              Item ini adalah Bahan Setengah Jadi (Memiliki Child BOM)
-            </span>
-          </label>
+                setMatUnitCost(computeSubAssemblyCost(matChildBom, targetRtId));
+              }
+            }}
+            label="Bahan Setengah Jadi"
+          />
 
           {matIsSubAssembly && (
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3.5 dark:border-indigo-900/60 dark:bg-indigo-950/30 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
-                  <Layers className="h-3.5 w-3.5 text-indigo-600" />
-                  Child BOM Builder & Routing Bahan Setengah Jadi
-                </span>
-                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                  Total HPP Bahan Setengah Jadi:{' '}
-                  {formatCurrency(computeSubAssemblyCost(matChildBom, matRoutingId))}
-                </span>
+            <>
+              {/* Container BOM */}
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                  BOM
+                </h3>
+
+                {/* List BOM */}
+                {matChildBom.length === 0 ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 py-1">
+                    Belum ada material dalam BOM.
+                  </p>
+                ) : (
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {matChildBom.map((item, idx) => {
+                          const compMat = allMaterials.find(
+                            m => String(m.id) === String(item.materialId)
+                          );
+                          const compCost = compMat
+                            ? compMat.isSubAssembly && compMat.childBom
+                              ? calculateSubAssemblyCost(
+                                compMat.childBom,
+                                allMaterials,
+                                compMat.routingId,
+                                allRoutings,
+                                allOperations
+                              )
+                              : compMat.unitCost
+                            : 0;
+                          const subtotal = compCost * item.qty;
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                              <td className="px-3.5 py-2.5 font-medium text-slate-800 dark:text-slate-200">
+                                {compMat?.name || 'Unknown'}
+                              </td>
+                              <td className="px-3 py-2 text-center w-28">
+                                <Input
+                                  type="number"
+                                  min={0.001}
+                                  step="any"
+                                  value={item.qty}
+                                  onChange={e => handleUpdateChildBomQty(item.materialId, parseFloat(e.target.value) || 0)}
+                                  inputSize="sm"
+                                  containerClassName="w-20 mx-auto"
+                                  className="font-medium text-right"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-slate-500 dark:text-slate-400 w-16">
+                                {compMat?.unit || 'unit'}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
+                                {formatCurrency(subtotal)}
+                              </td>
+                              <td className="px-2 py-2 text-center w-10">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveChildBomItem(item.materialId)}
+                                  className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                                  title="Hapus Material"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Tambah Material Manual */}
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <Select
+                    value={childMatId}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setChildMatId(val);
+                      if (val && (!childMatQty || childMatQty === '0')) {
+                        setChildMatQty('1');
+                      }
+                    }}
+                    inputSize="sm"
+                    containerClassName="flex-1"
+                  >
+                    <option value="">-- Pilih Material --</option>
+                    {availableChildOptions.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} / {m.unit}
+                      </option>
+                    ))}
+                  </Select>
+
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0.001}
+                      step="any"
+                      value={childMatQty}
+                      onChange={e => setChildMatQty(e.target.value)}
+                      placeholder="Qty"
+                      disabled={!childMatId}
+                      inputSize="sm"
+                      containerClassName="w-20"
+                      className="font-medium text-right"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddChildBomItem();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddChildBomItem}
+                      disabled={!childMatId}
+                      size="sm"
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> Tambah
+                    </Button>
+                  </div>
+                </div>
               </div>
 
-              {/* Routing Selector */}
-              <div className="space-y-1">
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                  Pilih Alur Routing Produksi Bahan Setengah Jadi <span className="text-red-500">*</span>
-                </label>
+              {/* Container Alur Produksi */}
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Alur Produksi
+                </h3>
                 <Select
                   value={matRoutingId}
                   onChange={e => {
@@ -456,129 +636,42 @@ export function RawMaterialModal({
                     setMatUnitCost(computeSubAssemblyCost(matChildBom, newRtId));
                   }}
                   options={[
-                    { value: '', label: '-- Tanpa Routing (Hanya Biaya Bahan) --' },
+                    { value: '', label: '-- Pilih Alur Produksi --' },
                     ...routingOptions.map(r => ({
                       value: String(r.id),
-                      label: `${r.name} (${r.step_count ?? 0} Tahap Operasi)`,
+                      label: r.name,
                     })),
                   ]}
                   inputSize="sm"
                 />
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                  Biaya upah dari alur routing ini akan otomatis ditambahkan ke HPP Bahan Setengah Jadi dan teralokasi saat SPK dibuat.
-                </p>
-              </div>
 
-              {/* Add Row */}
-              <div className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-6">
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    Pilih Material Penyusun
-                  </label>
-                  <Select
-                    value={childMatId}
-                    onChange={e => setChildMatId(e.target.value)}
-                    options={[
-                      { value: '', label: '-- Pilih Bahan Baku Anak --' },
-                      ...materialOptions
-                        .filter(m => (editMaterial ? String(m.id) !== editMaterial.id : true))
-                        .map(m => ({
-                          value: String(m.id),
-                          label: `${m.name} (${m.unit})`,
-                        })),
-                    ]}
-                    inputSize="sm"
-                  />
-                </div>
-                <div className="col-span-4">
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    Jumlah Qty
-                  </label>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    value={childMatQty}
-                    onChange={e => setChildMatQty(e.target.value)}
-                    placeholder="0"
-                    inputSize="sm"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Button type="button" size="sm" onClick={handleAddChildBomItem} className="w-full">
-                    <Plus className="h-3.5 w-3.5" /> Tambah
-                  </Button>
-                </div>
+                {selectedRoutingOperations.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Daftar Operasi
+                    </label>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+                      {selectedRoutingOperations.map((step, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between px-3 py-2 text-xs text-slate-800 dark:text-slate-200"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                              {step.sequence ?? idx + 1}
+                            </span>
+                            <span>{step.name}</span>
+                          </div>
+                          <span className="font-mono text-slate-600 dark:text-slate-300 font-medium">
+                            {formatCurrency(step.laborCost)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {/* Child BOM Table */}
-              {matChildBom.length === 0 ? (
-                <EmptyState
-                  title="Belum Ada Bahan Penyusun"
-                  description="Belum ada bahan baku yang ditambahkan ke Child BOM ini."
-                  variant="plain"
-                />
-              ) : (
-                <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
-                      <tr>
-                        <th className="px-3 py-1.5">Material</th>
-                        <th className="px-3 py-1.5 text-center">Qty Required</th>
-                        <th className="px-3 py-1.5 text-right">Biaya Subtotal</th>
-                        <th className="px-2 py-1.5 text-center w-8"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {matChildBom.map((item, idx) => {
-                        const compMat = allMaterials.find(
-                          m => String(m.id) === String(item.materialId)
-                        );
-                        const compCost = compMat
-                          ? compMat.isSubAssembly && compMat.childBom
-                            ? calculateSubAssemblyCost(
-                                compMat.childBom,
-                                allMaterials,
-                                compMat.routingId,
-                                allRoutings,
-                                allOperations
-                              )
-                            : compMat.unitCost
-                          : 0;
-                        const subtotal = compCost * item.qty;
-                        return (
-                          <tr key={idx}>
-                            <td className="px-3 py-1.5">
-                              <div className="font-semibold text-slate-800 dark:text-slate-200">
-                                {compMat?.name || 'Unknown'}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                {compMat?.code}
-                              </div>
-                            </td>
-                            <td className="px-3 py-1.5 text-center font-bold text-slate-900 dark:text-white">
-                              {item.qty} {compMat?.unit}
-                            </td>
-                            <td className="px-3 py-1.5 text-right font-mono text-slate-600 dark:text-slate-400">
-                              {formatCurrency(subtotal)}
-                            </td>
-                            <td className="px-2 py-1.5 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveChildBomItem(item.materialId)}
-                                className="text-red-500 hover:text-red-700 p-1"
-                                title="Hapus Material Anak"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            </>
           )}
         </div>
       </div>

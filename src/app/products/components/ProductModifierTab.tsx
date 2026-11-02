@@ -13,6 +13,7 @@ import {
   productModifierService,
   ProductModifierGroupResponse,
 } from '@/services/product-modifier.service';
+import { Button } from '@/components/ui/Button';
 import { ProductModifierModal } from './ProductModifierModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Grip, Layers } from 'lucide-react';
@@ -23,6 +24,8 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
+  Plus,
+  Loader2,
 } from 'lucide-react';
 
 export interface ProductModifierTabProps {
@@ -40,7 +43,7 @@ export function ProductModifierTab({
 }: ProductModifierTabProps) {
   const { toast, confirm } = useToast();
   const { can } = usePermission();
-  const { currentUser } = useApp();
+  const { currentUser, setMasterModifierGroups } = useApp();
 
   const isInventoryManager = canManageInventory(currentUser.role);
   const seeCosts = canSeeCosts(currentUser.role);
@@ -59,7 +62,9 @@ export function ProductModifierTab({
   const [isLoading, setIsLoading] = useState(false);
   const [expandedModifierGroupId, setExpandedModifierGroupId] = useState<number | null>(null);
 
-  // Edit modal states
+  // Modal states
+  const [isLocalAddModalOpen, setIsLocalAddModalOpen] = useState(false);
+  const isAddOpen = isAddModalOpen || isLocalAddModalOpen;
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [groupToEdit, setGroupToEdit] = useState<ProductModifierGroupResponse | null>(null);
 
@@ -105,6 +110,25 @@ export function ProductModifierTab({
         const metaTotal = res.meta?.total ?? res.data.length;
         setTotal(metaTotal);
         setTotalPages(res.meta?.total_pages ?? Math.max(1, Math.ceil(metaTotal / perPage)));
+
+        if (setMasterModifierGroups && Array.isArray(res.data)) {
+          setMasterModifierGroups(
+            res.data.map((g) => ({
+              id: String(g.id),
+              name: g.name,
+              selectType: g.select_type,
+              options: (g.options || []).map((opt) => ({
+                id: String(opt.id),
+                name: opt.name,
+                additionalPrice: opt.additional_price || 0,
+                bom: (opt.bom || []).map((b) => ({
+                  materialId: String(b.material_id),
+                  qty: b.quantity,
+                })),
+              })),
+            }))
+          );
+        }
       } else {
         setGroups([]);
         setTotal(0);
@@ -200,26 +224,13 @@ export function ProductModifierTab({
   };
 
   const handleCloseModal = () => {
-    if (isAddModalOpen && onCloseAddModal) {
+    if (onCloseAddModal) {
       onCloseAddModal();
     }
+    setIsLocalAddModalOpen(false);
     setIsEditModalOpen(false);
     setGroupToEdit(null);
   };
-
-  if (groups.length === 0) {
-    return (
-      <EmptyState
-        title={searchTerm ? 'Tidak ada modifier yang cocok.' : 'Belum ada grup modifier terdaftar.'}
-        icon={<Grip className="h-7 w-7 text-slate-400" />}
-        description={
-          searchTerm
-            ? 'Coba gunakan kata kunci pencarian yang berbeda.'
-            : 'Tambahkan grup modifier baru untuk mulai mengelola opsi tambahan produk.'
-        }
-      />
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -237,15 +248,35 @@ export function ProductModifierTab({
             {isLoading ? (
               <tr>
                 <td colSpan={canManage ? 4 : 3} className="py-12 text-center text-slate-400 dark:text-slate-500">
-                  Memuat grup modifier...
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="h-6 w-6 animate-spin text-purple-600" />
+                    <span>Memuat grup modifier...</span>
+                  </div>
                 </td>
               </tr>
             ) : groups.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 4 : 3} className="py-12 text-center text-slate-400 dark:text-slate-500">
-                  {filters.mod_search
-                    ? 'Tidak ada modifier yang cocok.'
-                    : 'Belum ada grup modifier terdaftar.'}
+                <td colSpan={canManage ? 4 : 3} className="py-12 text-center">
+                  <div className="py-8 flex flex-col items-center justify-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 mb-3">
+                      <Grip className="h-6 w-6" />
+                    </div>
+                    <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm">
+                      {filters.mod_search
+                        ? 'Tidak ada modifier yang cocok.'
+                        : 'Belum ada grup modifier terdaftar.'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1 mb-4">
+                      {filters.mod_search
+                        ? 'Coba gunakan kata kunci pencarian yang berbeda.'
+                        : 'Tambahkan grup modifier baru untuk mulai mengelola opsi tambahan produk.'}
+                    </p>
+                    {canManage && !filters.mod_search && (
+                      <Button size="sm" onClick={() => setIsLocalAddModalOpen(true)}>
+                        <Plus className="h-4 w-4 mr-1.5" /> Tambah Modifier
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -403,6 +434,7 @@ export function ProductModifierTab({
       </div>
 
       {/* Server-side Pagination Bar */}
+      {total > 0 && (
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2 py-1 text-xs text-slate-500 dark:text-slate-400">
         <div className="flex items-center gap-2">
           <span>Menampilkan</span>
@@ -448,10 +480,11 @@ export function ProductModifierTab({
           </div>
         </div>
       </div>
+      )}
 
       {/* Product Modifier Modal (Create / Edit) */}
       <ProductModifierModal
-        isOpen={isAddModalOpen || isEditModalOpen}
+        isOpen={isAddOpen || isEditModalOpen}
         onClose={handleCloseModal}
         onSuccess={loadGroups}
         groupToEdit={isEditModalOpen ? groupToEdit : null}

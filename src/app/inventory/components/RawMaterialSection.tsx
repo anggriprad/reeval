@@ -12,7 +12,6 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory, canRequestPO, canManageProduction } from '@/lib/roles';
 import {
-  formatCurrency,
   getStockLevel,
   getStockLevelBadgeVariant,
   getStockLevelDescription,
@@ -61,7 +60,6 @@ export function RawMaterialSection({
   const { can } = usePermission();
   const {
     currentUser,
-    workOrders = [],
     routings = [],
     operations = [],
     setMaterialsList,
@@ -171,20 +169,6 @@ export function RawMaterialSection({
     }));
   }, [materialOptions]);
 
-  // Map stok bahan baku yang ditahan oleh SPK aktif
-  const reservedMaterialMap = useMemo(() => {
-    const map = new Map<string, number>();
-    (workOrders || [])
-      .filter((w) => w.status !== 'COMPLETED' && w.status !== 'CANCELED')
-      .forEach((w) => {
-        (w.materialsConsumed || []).forEach((b) => {
-          const current = map.get(b.materialId) || 0;
-          map.set(b.materialId, current + b.qty);
-        });
-      });
-    return map;
-  }, [workOrders]);
-
   const handleDeleteMaterial = async (id: string, name: string) => {
     if (!canDelete) {
       toast.error('Akses Ditolak', 'Anda tidak memiliki hak akses untuk menghapus bahan baku.');
@@ -231,12 +215,12 @@ export function RawMaterialSection({
 
   const materialColumns: Column<RawMaterial>[] = [
     {
-      id: 'code',
-      header: 'Kode',
+      id: 'category',
+      header: 'Kategori',
       align: 'left',
       cell: ({ row: mat }) => (
-        <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-400">
-          {mat.code}
+        <span className="text-xs text-slate-700 dark:text-slate-300 font-medium">
+          {mat.category}
         </span>
       ),
     },
@@ -262,12 +246,6 @@ export function RawMaterialSection({
       ),
     },
     {
-      id: 'category',
-      header: 'Kategori',
-      align: 'left',
-      cell: ({ row: mat }) => <Badge>{mat.category}</Badge>,
-    },
-    {
       id: 'stock',
       header: 'Stok',
       align: 'right',
@@ -276,25 +254,6 @@ export function RawMaterialSection({
           {mat.stock}
         </span>
       ),
-    },
-    {
-      id: 'reservedStock',
-      header: 'Stok Ditahan',
-      align: 'right',
-      cell: ({ row: mat }) => {
-        const reserved = reservedMaterialMap.get(mat.id) || 0;
-        return (
-          <span
-            className={`font-mono ${
-              reserved > 0
-                ? 'text-amber-600 dark:text-amber-400 font-semibold'
-                : 'text-slate-400 dark:text-slate-500'
-            }`}
-          >
-            {reserved}
-          </span>
-        );
-      },
     },
     {
       id: 'unit',
@@ -307,29 +266,9 @@ export function RawMaterialSection({
       ),
     },
     {
-      id: 'unitCost',
-      header: 'HPP Satuan',
-      align: 'right',
-      cell: ({ row: mat }) => (
-        <span className="font-mono text-slate-700 dark:text-slate-300">
-          {formatCurrency(mat.unitCost)}
-        </span>
-      ),
-    },
-    {
-      id: 'totalValue',
-      header: 'Total Nilai',
-      align: 'right',
-      cell: ({ row: mat }) => (
-        <span className="font-mono text-emerald-600 dark:text-emerald-400">
-          {formatCurrency(mat.stock * mat.unitCost)}
-        </span>
-      ),
-    },
-    {
       id: 'minStock',
       header: 'Batas Min',
-      align: 'center',
+      align: 'right',
       cell: ({ row: mat }) => <span className="text-slate-500">{mat.minStock}</span>,
     },
     {

@@ -52,7 +52,7 @@ export function ProcurementSection({
   const router = useRouter();
   const { toast, confirm } = useToast();
   const { can } = usePermission();
-  const { currentUser } = useApp();
+  const { currentUser, purchaseOrders = [] } = useApp();
 
   // UAC / PBAC Permissions
   const canRead = can(PERMISSIONS.PURCHASING.READ);
@@ -93,7 +93,16 @@ export function ProcurementSection({
       });
 
       if (res.data) {
-        setProcurements(res.data);
+        const synced = res.data.map((p) => {
+          const appPO = purchaseOrders.find(
+            (ap) => ap.id === String(p.id) || ap.poNumber === p.po_number
+          );
+          if (appPO && appPO.status === 'PARTIALLY_RECEIVED') {
+            return { ...p, status: 'PARTIALLY_RECEIVED' };
+          }
+          return p;
+        });
+        setProcurements(synced);
         if (res.meta) {
           setTotalPOs(res.meta.total);
           setTotalPages(res.meta.total_pages || 1);
@@ -108,7 +117,7 @@ export function ProcurementSection({
     } finally {
       setIsLoading(false);
     }
-  }, [filters.page, filters.per_page, filters.status, debouncedSearch, toast]);
+  }, [filters.page, filters.per_page, filters.status, debouncedSearch, purchaseOrders, toast]);
 
   useEffect(() => {
     fetchProcurements();
@@ -442,7 +451,14 @@ export function ProcurementSection({
         isOpen={Boolean(receiveModalPO)}
         onClose={() => setReceiveModalPO(null)}
         po={receiveModalPO}
-        onSuccess={() => {
+        onSuccess={(updatedStatus) => {
+          if (receiveModalPO && updatedStatus) {
+            setProcurements((prev) =>
+              prev.map((p) =>
+                p.id === receiveModalPO.id ? { ...p, status: updatedStatus } : p
+              )
+            );
+          }
           fetchProcurements();
         }}
       />

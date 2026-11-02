@@ -81,13 +81,13 @@ export default function CreateUserPage() {
 
         if (!assignRes.success) {
           toast.warning('Pengguna Dibuat dengan Catatan', 'Pengguna berhasil dibuat, namun konfigurasi override hak akses gagal disimpan.');
-          router.push('/users');
+          router.push('/settings?tab=users');
           return;
         }
       }
 
       toast.success('Pengguna Berhasil Dibuat', `Akun untuk ${formData.full_name} siap digunakan.`);
-      router.push('/users');
+      router.push('/settings?tab=users');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Gagal menyimpan pengguna baru.';
       toast.error('Gagal Menyimpan', msg);
@@ -100,7 +100,7 @@ export default function CreateUserPage() {
     <div className="space-y-4">
       <PageHeader
         title="Tambah Pengguna Baru"
-        backHref="/users"
+        backHref="/settings?tab=users"
       />
 
       <UserForm

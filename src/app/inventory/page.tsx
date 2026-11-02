@@ -518,19 +518,19 @@ export function InventoryContent() {
         <div className="flex gap-2">
           {activeTab === 'raw' && (can(PERMISSIONS.INVENTORY.CREATE) || canManageInventory(currentUser.role)) && (
             <Button onClick={() => setShowAddMaterialModal(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
+              <Plus className="h-4 w-4" />
               Register Bahan
             </Button>
           )}
           {activeTab === 'procurement' && (can(PERMISSIONS.PURCHASING.CREATE) || canRequestPO(currentUser.role)) && (
             <Button onClick={() => openAddProcurement()}>
-              <Plus className="h-4 w-4 mr-1.5" />
+              <Plus className="h-4 w-4" />
               Buat Pengadaan
             </Button>
           )}
           {activeTab === 'movements' && (can(PERMISSIONS.INVENTORY.ADJUST) || canManageInventory(currentUser.role)) && (
             <Button onClick={() => setShowAdjustStockModal(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
+              <Plus className="h-4 w-4" />
               Penyesuaian Stok
             </Button>
           )}
@@ -625,33 +625,33 @@ export function InventoryContent() {
             filters={
               activeTab === 'raw'
                 ? [
-                    {
-                      id: 'raw-cat',
-                      value: tableFilters.category_id,
-                      onChange: (catId) => {
-                        setFilter('category_id', catId);
-                        setFilter('page', 1);
-                      },
-                      options: categoryOptions.map((c) => ({ value: String(c.id), label: c.name })),
-                      placeholder: 'Semua Kategori',
+                  {
+                    id: 'raw-cat',
+                    value: tableFilters.category_id,
+                    onChange: (catId) => {
+                      setFilter('category_id', catId);
+                      setFilter('page', 1);
                     },
-                    {
-                      id: 'raw-status',
-                      value: tableFilters.status,
-                      onChange: (st) => {
-                        setFilter('status', st);
-                        setFilter('page', 1);
-                      },
-                      options: [
-                        { value: 'Aman', label: 'Status: Aman' },
-                        { value: 'Kritis', label: 'Status: Kritis' },
-                        { value: 'Habis', label: 'Status: Habis' },
-                      ],
-                      placeholder: 'Semua Status',
+                    options: categoryOptions.map((c) => ({ value: String(c.id), label: c.name })),
+                    placeholder: 'Semua Kategori',
+                  },
+                  {
+                    id: 'raw-status',
+                    value: tableFilters.status,
+                    onChange: (st) => {
+                      setFilter('status', st);
+                      setFilter('page', 1);
                     },
-                  ]
+                    options: [
+                      { value: 'Aman', label: 'Status: Aman' },
+                      { value: 'Kritis', label: 'Status: Kritis' },
+                      { value: 'Habis', label: 'Status: Habis' },
+                    ],
+                    placeholder: 'Semua Status',
+                  },
+                ]
                 : activeTab === 'finished'
-                ? [
+                  ? [
                     {
                       id: 'fg-cat',
                       value: fgFilters.fg_category_id,
@@ -663,43 +663,43 @@ export function InventoryContent() {
                       placeholder: 'Semua Kategori Produk',
                     },
                   ]
-                : activeTab === 'assets'
-                ? [
-                    {
-                      id: 'ast-cat',
-                      value: astFilters.ast_category_id,
-                      onChange: (catId) => {
-                        setAstFilter('ast_category_id', catId);
-                        setAstFilter('ast_page', 1);
+                  : activeTab === 'assets'
+                    ? [
+                      {
+                        id: 'ast-cat',
+                        value: astFilters.ast_category_id,
+                        onChange: (catId) => {
+                          setAstFilter('ast_category_id', catId);
+                          setAstFilter('ast_page', 1);
+                        },
+                        options: assetCategoryOptions.map((c) => ({ value: String(c.id), label: c.name })),
+                        placeholder: 'Semua Kategori Aset',
                       },
-                      options: assetCategoryOptions.map((c) => ({ value: String(c.id), label: c.name })),
-                      placeholder: 'Semua Kategori Aset',
-                    },
-                    {
-                      id: 'ast-status',
-                      value: astFilters.ast_status,
-                      onChange: (st) => {
-                        setAstFilter('ast_status', st);
-                        setAstFilter('ast_page', 1);
+                      {
+                        id: 'ast-status',
+                        value: astFilters.ast_status,
+                        onChange: (st) => {
+                          setAstFilter('ast_status', st);
+                          setAstFilter('ast_page', 1);
+                        },
+                        options: [
+                          { value: 'ACTIVE', label: 'Status: Aktif' },
+                          { value: 'IN_MAINTENANCE', label: 'Status: Pemeliharaan' },
+                          { value: 'BROKEN', label: 'Status: Rusak' },
+                          { value: 'DISPOSED', label: 'Status: Dijual' },
+                          { value: 'SCRAPPED', label: 'Status: Afkir / Scrap' },
+                        ],
+                        placeholder: 'Semua Status',
                       },
-                      options: [
-                        { value: 'ACTIVE', label: 'Status: Aktif' },
-                        { value: 'IN_MAINTENANCE', label: 'Status: Pemeliharaan' },
-                        { value: 'BROKEN', label: 'Status: Rusak' },
-                        { value: 'DISPOSED', label: 'Status: Dijual' },
-                        { value: 'SCRAPPED', label: 'Status: Afkir / Scrap' },
-                      ],
-                      placeholder: 'Semua Status',
-                    },
-                  ]
-                : undefined
+                    ]
+                    : undefined
             }
             filterValue={
               activeTab === 'procurement'
                 ? procurementFilters.po_status
                 : activeTab === 'movements'
-                ? movementFilters.mv_type
-                : inventoryFilter
+                  ? movementFilters.mv_type
+                  : inventoryFilter
             }
             onFilterChange={(val) => {
               if (activeTab === 'procurement') {
@@ -718,27 +718,27 @@ export function InventoryContent() {
               activeTab === 'raw'
                 ? rawSearchInput
                 : activeTab === 'finished'
-                ? fgSearchInput
-                : activeTab === 'procurement'
-                ? procurementSearchInput
-                : activeTab === 'movements'
-                ? movementSearchInput
-                : activeTab === 'assets'
-                ? astSearchInput
-                : searchTerm
+                  ? fgSearchInput
+                  : activeTab === 'procurement'
+                    ? procurementSearchInput
+                    : activeTab === 'movements'
+                      ? movementSearchInput
+                      : activeTab === 'assets'
+                        ? astSearchInput
+                        : searchTerm
             }
             onSearchChange={
               activeTab === 'raw'
                 ? setRawSearchInput
                 : activeTab === 'finished'
-                ? setFgSearchInput
-                : activeTab === 'procurement'
-                ? setProcurementSearchInput
-                : activeTab === 'movements'
-                ? setMovementSearchInput
-                : activeTab === 'assets'
-                ? setAstSearchInput
-                : setSearchTerm
+                  ? setFgSearchInput
+                  : activeTab === 'procurement'
+                    ? setProcurementSearchInput
+                    : activeTab === 'movements'
+                      ? setMovementSearchInput
+                      : activeTab === 'assets'
+                        ? setAstSearchInput
+                        : setSearchTerm
             }
             searchPlaceholder="Cari bahan baku, barang jadi, pengadaan, mutasi, atau aset..."
             extraControls={
@@ -805,134 +805,134 @@ export function InventoryContent() {
             <Table
               data={filteredReturnedGoods}
               keyExtractor={(rg) => rg.id}
-            embedded
-            emptyTitle="Tidak Ada Barang Retur"
-            emptyDescription={
-              searchTerm || inventoryFilter
-                ? "Tidak ada data barang retur yang cocok dengan pencarian atau filter."
-                : "Barang retur dari komplain yang telah disetujui (refund, penggantian, atau perbaikan) akan otomatis tercatat di sini."
-            }
-            emptyIcon={<RotateCcw className="h-7 w-7 text-slate-400" />}
-            columns={[
-              {
-                key: 'product',
-                header: 'Produk',
-                align: 'left',
-                width: '320px',
-                className: 'min-w-[300px]',
-                cell: (rg) => {
-                  const prod = products.find(p => p.id === rg.productId || p.name === rg.productName);
-                  const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
-                  const soItem = salesOrders
-                    .find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber)
-                    ?.items.find(i => i.productId === rg.productId && (!rg.variantId || i.variantId === rg.variantId));
-                  const orderItemNotes = rg.customNotes || soItem?.customNotes;
+              embedded
+              emptyTitle="Tidak Ada Barang Retur"
+              emptyDescription={
+                searchTerm || inventoryFilter
+                  ? "Tidak ada data barang retur yang cocok dengan pencarian atau filter."
+                  : "Barang retur dari komplain yang telah disetujui (refund, penggantian, atau perbaikan) akan otomatis tercatat di sini."
+              }
+              emptyIcon={<RotateCcw className="h-7 w-7 text-slate-400" />}
+              columns={[
+                {
+                  key: 'product',
+                  header: 'Produk',
+                  align: 'left',
+                  width: '320px',
+                  className: 'min-w-[300px]',
+                  cell: (rg) => {
+                    const prod = products.find(p => p.id === rg.productId || p.name === rg.productName);
+                    const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
+                    const soItem = salesOrders
+                      .find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber)
+                      ?.items.find(i => i.productId === rg.productId && (!rg.variantId || i.variantId === rg.variantId));
+                    const orderItemNotes = rg.customNotes || soItem?.customNotes;
 
-                  return (
-                    <div className="flex items-start gap-3 max-w-[320px]">
-                      {prod?.image ? (
-                        <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                          <img src={prod.image} alt={rg.productName} className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                          <IconComp className="h-5 w-5" />
-                        </div>
-                      )}
-                      <div className="min-w-0 flex flex-col gap-0.5">
-                        <TruncatedText
-                          text={rg.productName}
-                          className="font-semibold text-xs text-slate-900 dark:text-white"
-                          maxWidth="240px"
-                        />
-                        {rg.variantLabel && (
+                    return (
+                      <div className="flex items-start gap-3 max-w-[320px]">
+                        {prod?.image ? (
+                          <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
+                            <img src={prod.image} alt={rg.productName} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
+                            <IconComp className="h-5 w-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex flex-col gap-0.5">
                           <TruncatedText
-                            text={formatVariantLabel(rg.variantLabel)}
-                            className="text-[11px] text-slate-500 dark:text-slate-400"
+                            text={rg.productName}
+                            className="font-semibold text-xs text-slate-900 dark:text-white"
                             maxWidth="240px"
                           />
-                        )}
-                        {orderItemNotes && (
-                          <TruncatedText
-                            text={`Catatan: ${orderItemNotes}`}
-                            className="text-[11px] text-slate-500 dark:text-slate-400 italic"
-                            maxWidth="240px"
-                          />
-                        )}
+                          {rg.variantLabel && (
+                            <TruncatedText
+                              text={formatVariantLabel(rg.variantLabel)}
+                              className="text-[11px] text-slate-500 dark:text-slate-400"
+                              maxWidth="240px"
+                            />
+                          )}
+                          {orderItemNotes && (
+                            <TruncatedText
+                              text={`Catatan: ${orderItemNotes}`}
+                              className="text-[11px] text-slate-500 dark:text-slate-400 italic"
+                              maxWidth="240px"
+                            />
+                          )}
+                        </div>
                       </div>
+                    );
+                  },
+                },
+                {
+                  key: 'reference',
+                  header: 'Referensi',
+                  align: 'left',
+                  width: '160px',
+                  className: 'min-w-[150px]',
+                  cell: (rg) => (
+                    <div>
+                      <Link
+                        href={`/order/complaint/${rg.complaintId}`}
+                        className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline block"
+                      >
+                        Komplain #{rg.complaintId}
+                      </Link>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                        {rg.salesOrderNumber}
+                      </span>
                     </div>
-                  );
+                  ),
                 },
-              },
-              {
-                key: 'reference',
-                header: 'Referensi',
-                align: 'left',
-                width: '160px',
-                className: 'min-w-[150px]',
-                cell: (rg) => (
-                  <div>
-                    <Link
-                      href={`/order/complaint/${rg.complaintId}`}
-                      className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline block"
-                    >
-                      Komplain #{rg.complaintId}
-                    </Link>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                      {rg.salesOrderNumber}
+                {
+                  key: 'qty',
+                  header: 'Qty',
+                  align: 'right',
+                  cell: (rg) => (
+                    <span className="font-mono text-xs font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                      {rg.qty} unit
                     </span>
-                  </div>
-                ),
-              },
-              {
-                key: 'qty',
-                header: 'Qty',
-                align: 'right',
-                cell: (rg) => (
-                  <span className="font-mono text-xs font-semibold text-slate-900 dark:text-white whitespace-nowrap">
-                    {rg.qty} unit
-                  </span>
-                ),
-              },
-              {
-                key: 'reason',
-                header: 'Alasan Retur',
-                align: 'left',
-                width: '260px',
-                className: 'min-w-[240px]',
-                cell: (rg) => (
-                  <TruncatedText
-                    text={rg.conditionReason}
-                    className="text-xs text-slate-600 dark:text-slate-400"
-                    maxWidth="240px"
-                  />
-                ),
-              },
-              {
-                key: 'status',
-                header: 'Status',
-                align: 'center',
-                cell: (rg) => {
-                  const statusConfig: Record<string, { label: string; variant: 'warning' | 'success' | 'purple' | 'default' | 'danger' }> = {
-                    AWAITING_RECEIVAL: { label: 'Menunggu Fisik', variant: 'warning' },
-                    PENDING: { label: 'Menunggu Fisik', variant: 'warning' },
-                    RECEIVED: { label: 'Diterima di Gudang', variant: 'purple' },
-                    RESTOCKED: { label: 'Masuk Barang Jadi', variant: 'success' },
-                    REPAIR: { label: 'Diperbaiki', variant: 'purple' },
-                    DISASSEMBLED: { label: 'Dibongkar', variant: 'default' },
-                    SCRAPPED: { label: 'Afkir / Sampah', variant: 'danger' },
-                    CANCELED: { label: 'Dibatalkan', variant: 'default' },
-                  };
-                  const cfg = statusConfig[rg.status] || { label: rg.status, variant: 'default' };
-                  return (
-                    <Badge variant={cfg.variant} className="text-[11px]">
-                      {cfg.label}
-                    </Badge>
-                  );
+                  ),
                 },
-              },
-              ...(canManageInventory(currentUser.role)
-                ? [
+                {
+                  key: 'reason',
+                  header: 'Alasan Retur',
+                  align: 'left',
+                  width: '260px',
+                  className: 'min-w-[240px]',
+                  cell: (rg) => (
+                    <TruncatedText
+                      text={rg.conditionReason}
+                      className="text-xs text-slate-600 dark:text-slate-400"
+                      maxWidth="240px"
+                    />
+                  ),
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  align: 'center',
+                  cell: (rg) => {
+                    const statusConfig: Record<string, { label: string; variant: 'warning' | 'success' | 'purple' | 'default' | 'danger' }> = {
+                      AWAITING_RECEIVAL: { label: 'Menunggu Fisik', variant: 'warning' },
+                      PENDING: { label: 'Menunggu Fisik', variant: 'warning' },
+                      RECEIVED: { label: 'Diterima di Gudang', variant: 'purple' },
+                      RESTOCKED: { label: 'Masuk Barang Jadi', variant: 'success' },
+                      REPAIR: { label: 'Diperbaiki', variant: 'purple' },
+                      DISASSEMBLED: { label: 'Dibongkar', variant: 'default' },
+                      SCRAPPED: { label: 'Afkir / Sampah', variant: 'danger' },
+                      CANCELED: { label: 'Dibatalkan', variant: 'default' },
+                    };
+                    const cfg = statusConfig[rg.status] || { label: rg.status, variant: 'default' };
+                    return (
+                      <Badge variant={cfg.variant} className="text-[11px]">
+                        {cfg.label}
+                      </Badge>
+                    );
+                  },
+                },
+                ...(canManageInventory(currentUser.role)
+                  ? [
                     {
                       key: 'action',
                       header: 'Aksi',
@@ -993,12 +993,12 @@ export function InventoryContent() {
                       },
                     },
                   ]
-                : []),
-            ]}
-          />
-        </Card>
-      )
-    )}
+                  : []),
+              ]}
+            />
+          </Card>
+        )
+      )}
 
       {/* Stock Movements Section (Modular) */}
       {activeTab === 'movements' && (
