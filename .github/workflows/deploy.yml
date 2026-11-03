@@ -3,7 +3,7 @@ name: Deploy Frontend
 on:
   push:
     branches:
-      - main
+      - dev
 
 jobs:
   deploy:
@@ -28,12 +28,12 @@ jobs:
             if [ ! -d ".git" ]; then
               git init
               git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-              git fetch origin main
-              git checkout -f -B main origin/main
+              git fetch origin dev
+              git checkout -f -B dev origin/dev
             else
               git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-              git fetch origin main
-              git reset --hard origin/main
+              git fetch origin dev
+              git reset --hard origin/dev
             fi
             
             # Build dan jalankan ulang container frontend
