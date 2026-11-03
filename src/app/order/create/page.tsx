@@ -196,9 +196,9 @@ export function CreateOrderContent() {
         console.warn('Gagal memuat produk options dari backend:', err);
       });
 
-    productModifierService
-      .getGroups({ per_page: 100 })
-      .then((res) => {
+    const loadModifiers = async () => {
+      try {
+        const res = await productModifierService.getGroupOptions();
         if (res.success && res.data) {
           const mapped: ProductModifierGroup[] = res.data.map((g) => {
             const groupOptions = g.options || [];
@@ -223,10 +223,12 @@ export function CreateOrderContent() {
           });
           setApiModifierGroups(mapped);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.warn('Gagal memuat modifier groups dari backend:', err);
-      });
+      }
+    };
+
+    loadModifiers();
   }, []);
 
   const effectiveShippingRateEnabled =

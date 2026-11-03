@@ -64,6 +64,7 @@ export interface ProductModifierGroupOption {
   id: number;
   name: string;
   select_type: "SINGLE" | "MULTI";
+  options?: ProductModifierOptionResponse[];
 }
 
 export interface GetProductModifierGroupsParams {
