@@ -1,0 +1,44 @@
+name: Deploy Frontend 
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            mkdir -p /root/docker/reeval-fe
+            cd /root/docker/reeval-fe
+            
+            # Inisialisasi atau fetch update tanpa error non-empty directory
+            if [ ! -d ".git" ]; then
+              git init
+              git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+              git fetch origin main
+              git checkout -f -B main origin/main
+            else
+              git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+            
+            # Build dan jalankan ulang container frontend
+            docker compose build --no-cache
+            docker compose up -d --force-recreate
+            
+            # Cek status container
+            docker ps | grep reeval-frontend
