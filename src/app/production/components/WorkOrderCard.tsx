@@ -37,7 +37,7 @@ import {
   FolderTree,
   Sparkles,
 } from 'lucide-react';
-import type { WorkOrder, Product, JobCard } from '@/lib/types';
+import type { WorkOrder, Product, JobCard, ProductionOperation } from '@/lib/types';
 import { JobCardTracker } from './JobCardTracker';
 
 const productIconMap: Record<string, React.ElementType> = {
@@ -67,12 +67,14 @@ interface WorkOrderCardProps {
   wo: WorkOrder;
   tab: 'active' | 'completed' | 'canceled';
   products: Product[];
+  operations?: ProductionOperation[];
   allWorkOrders?: WorkOrder[];
   isExpanded?: boolean;
   onToggleExpand?: (woId: string) => void;
   canManage: boolean;
   onOpenKPI: (wo: WorkOrder) => void;
   onOpenCancel?: (wo: WorkOrder) => void;
+  onAssignOperator?: (woId: string, jc: JobCard, e?: React.MouseEvent) => void;
   onStartJobCard?: (woId: string, jcId: string, e?: React.MouseEvent) => void;
   onPauseJobCard?: (woId: string, jcId: string, e?: React.MouseEvent) => void;
   onOpenCompleteModal?: (woId: string, jc: JobCard, e?: React.MouseEvent) => void;
@@ -82,12 +84,14 @@ export function WorkOrderCard({
   wo,
   tab,
   products,
+  operations = [],
   allWorkOrders = [],
   isExpanded = false,
   onToggleExpand,
   canManage,
   onOpenKPI,
   onOpenCancel,
+  onAssignOperator,
   onStartJobCard,
   onPauseJobCard,
   onOpenCompleteModal,
@@ -300,14 +304,16 @@ export function WorkOrderCard({
         >
           <div className="overflow-hidden">
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
-              {onStartJobCard && onPauseJobCard && onOpenCompleteModal && (
+              {onAssignOperator && onStartJobCard && onPauseJobCard && onOpenCompleteModal && (
                 <JobCardTracker
                   workOrderId={wo.id}
                   jobCards={wo.jobCards}
+                  operations={operations}
                   canManage={canManage}
+                  onAssignOperator={onAssignOperator}
                   onStart={onStartJobCard}
                   onPause={onPauseJobCard}
-                  onOpenCompleteModal={onOpenCompleteModal}
+                  onComplete={onOpenCompleteModal}
                 />
               )}
             </div>

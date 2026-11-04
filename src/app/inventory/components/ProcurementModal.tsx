@@ -10,15 +10,17 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/context/ToastContext';
 import { useApp } from '@/context/AppContext';
 import { formatCurrency } from '@/lib/utils';
+import { canCreatePO, canViewFinance } from '@/lib/roles';
 import {
   procurementService,
   CreateProcurementRequest,
+  PurchaseOrderResponse,
 } from '@/services/procurement.service';
 import {
   materialService,
   MaterialOption,
 } from '@/services/material.service';
-import { AlertTriangle, Plus, Trash2, Check, X, ShoppingCart } from 'lucide-react';
+import { AlertTriangle, Plus, Trash2, Check, X } from 'lucide-react';
 
 interface ProcurementItemDraft {
   material_id: number;
@@ -32,6 +34,7 @@ interface ProcurementModalProps {
   isOpen: boolean;
   onClose: () => void;
   preselectedMaterialId?: string | number | null;
+  draftPO?: PurchaseOrderResponse | null;
   onSuccess: () => void;
 }
 
@@ -39,10 +42,16 @@ export function ProcurementModal({
   isOpen,
   onClose,
   preselectedMaterialId,
+  draftPO = null,
   onSuccess,
 }: ProcurementModalProps) {
   const { toast } = useToast();
-  const { bankAccounts = [] } = useApp();
+  const { bankAccounts = [], currentUser } = useApp();
+
+  const canExecuteCommercial = canCreatePO(currentUser.role);
+  const canShowBankBalance = canViewFinance(currentUser.role);
+  const isExecuteDraftMode = Boolean(draftPO);
+  const isRequestOnlyMode = !canExecuteCommercial && !isExecuteDraftMode;
 
   const [purchaseType, setPurchaseType] = useState<'PO' | 'DIRECT'>('PO');
   const [supplier, setSupplier] = useState('');
@@ -56,43 +65,55 @@ export function ProcurementModal({
   const [showAddItemRow, setShowAddItemRow] = useState(false);
 
   const [materialOptions, setMaterialOptions] = useState<MaterialOption[]>([]);
-  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const fetchMaterialOptions = useCallback(async () => {
-    setIsLoadingOptions(true);
     try {
       const res = await materialService.getMaterialOptions();
       if (res.data) {
-        // Hanya bahan baku non sub-assembly
         setMaterialOptions(res.data.filter((m) => !m.is_sub_assembly));
       }
     } catch (err: any) {
       console.error('Failed to fetch material options:', err);
-    } finally {
-      setIsLoadingOptions(false);
     }
   }, []);
 
   useEffect(() => {
     if (isOpen) {
       fetchMaterialOptions();
-      setPurchaseType('PO');
-      setSupplier('');
       setSelectedBankAccountId(bankAccounts[0]?.id ? String(bankAccounts[0].id) : '');
-      setAdditionalCost(0);
-      setItems([]);
       setSelectedMatId('');
       setSelectedQty(1);
       setErrorMsg('');
-      setShowAddItemRow(false);
-    }
-  }, [isOpen, fetchMaterialOptions, bankAccounts]);
 
-  // Pre-fill ketika preselectedMaterialId diberikan
+      if (draftPO) {
+        setPurchaseType((draftPO.purchase_type as 'PO' | 'DIRECT') || 'PO');
+        setSupplier(draftPO.supplier && draftPO.supplier !== '-' ? draftPO.supplier : '');
+        setAdditionalCost(draftPO.additional_cost || 0);
+        setItems(
+          (draftPO.items || []).map((it) => ({
+            material_id: it.material_id,
+            material_name: it.material_name,
+            unit: it.unit || 'unit',
+            unit_cost: it.unit_cost || 0,
+            qty: it.qty,
+          }))
+        );
+        setShowAddItemRow(false);
+      } else {
+        setPurchaseType('PO');
+        setSupplier('');
+        setAdditionalCost(0);
+        setItems([]);
+        setShowAddItemRow(!preselectedMaterialId);
+      }
+    }
+  }, [isOpen, fetchMaterialOptions, bankAccounts, draftPO, preselectedMaterialId]);
+
+  // Pre-fill ketika preselectedMaterialId diberikan pada mode Create
   useEffect(() => {
-    if (isOpen && preselectedMaterialId && materialOptions.length > 0) {
+    if (isOpen && !draftPO && preselectedMaterialId && materialOptions.length > 0) {
       const targetMat = materialOptions.find(
         (m) => String(m.id) === String(preselectedMaterialId)
       );
@@ -108,17 +129,14 @@ export function ProcurementModal({
         ]);
         setShowAddItemRow(false);
       }
-    } else if (isOpen && !preselectedMaterialId) {
-      setShowAddItemRow(true);
     }
-  }, [isOpen, preselectedMaterialId, materialOptions]);
+  }, [isOpen, draftPO, preselectedMaterialId, materialOptions]);
 
   const handleAddItem = () => {
     if (!selectedMatId || selectedQty <= 0) return;
     const target = materialOptions.find((m) => String(m.id) === String(selectedMatId));
     if (!target) return;
 
-    // Check if already in items
     const existingIndex = items.findIndex((i) => i.material_id === target.id);
     if (existingIndex >= 0) {
       setItems((prev) =>
@@ -155,20 +173,26 @@ export function ProcurementModal({
     );
   };
 
+  const handleUpdateItemCost = (index: number, newCost: number) => {
+    setItems((prev) =>
+      prev.map((item, idx) => (idx === index ? { ...item, unit_cost: newCost } : item))
+    );
+  };
+
   const itemsTotal = useMemo(() => {
     return items.reduce((acc, i) => acc + (i.qty || 0) * (i.unit_cost || 0), 0);
   }, [items]);
 
   const grandTotal = useMemo(() => {
-    return itemsTotal + (purchaseType === 'DIRECT' ? Number(additionalCost || 0) : 0);
-  }, [itemsTotal, purchaseType, additionalCost]);
+    return itemsTotal + Number(additionalCost || 0);
+  }, [itemsTotal, additionalCost]);
 
   const handleSubmit = async () => {
     setErrorMsg('');
-    const supplierTrimmed = supplier.trim();
+    const supplierTrimmed = isRequestOnlyMode ? '-' : supplier.trim();
 
-    if (!supplierTrimmed) {
-      setErrorMsg('Nama Vendor / Supplier wajib diisi.');
+    if (!isRequestOnlyMode && !supplierTrimmed) {
+      setErrorMsg('Nama Vendor / Toko wajib diisi.');
       return;
     }
 
@@ -182,16 +206,19 @@ export function ProcurementModal({
       return;
     }
 
-    if (purchaseType === 'DIRECT' && !selectedBankAccountId) {
+    if (!isRequestOnlyMode && purchaseType === 'DIRECT' && !selectedBankAccountId) {
       setErrorMsg('Kas / Rekening Pembayaran wajib dipilih untuk Pembelian Langsung.');
       return;
     }
 
     const payload: CreateProcurementRequest = {
       supplier: supplierTrimmed,
-      purchase_type: purchaseType,
-      bank_account_id: purchaseType === 'DIRECT' ? Number(selectedBankAccountId) : undefined,
-      additional_cost: purchaseType === 'DIRECT' ? Number(additionalCost || 0) : 0,
+      purchase_type: isRequestOnlyMode ? 'PO' : purchaseType,
+      bank_account_id:
+        !isRequestOnlyMode && purchaseType === 'DIRECT'
+          ? Number(selectedBankAccountId)
+          : undefined,
+      additional_cost: !isRequestOnlyMode ? Number(additionalCost || 0) : 0,
       items: items.map((i) => ({
         material_id: i.material_id,
         qty: Number(i.qty),
@@ -201,28 +228,58 @@ export function ProcurementModal({
 
     setIsSubmitting(true);
     try {
-      const res = await procurementService.createProcurement(payload);
-      if (res.data) {
+      if (isExecuteDraftMode && draftPO) {
+        await procurementService.orderPO(draftPO.id, payload);
         toast.success(
-          purchaseType === 'DIRECT' ? 'Pembelian Langsung Berhasil Dibuat' : 'Pengadaan Berhasil Diajukan',
-          `Dokumen ${res.data.po_number} telah berhasil diterbitkan.`
+          'Pengadaan Diproses',
+          `Pengadaan ${draftPO.po_number} berhasil disetujui dan diproses.`
         );
         onSuccess();
         onClose();
+      } else {
+        const res = await procurementService.createProcurement(payload);
+        if (res.data) {
+          toast.success(
+            isRequestOnlyMode
+              ? 'Kebutuhan Bahan Diajukan'
+              : purchaseType === 'DIRECT'
+              ? 'Pembelian Langsung Berhasil'
+              : 'Pengadaan Berhasil Dibuat',
+            `Dokumen ${res.data.po_number} berhasil disimpan.`
+          );
+          onSuccess();
+          onClose();
+        }
       }
     } catch (err: any) {
-      console.error('Failed to create procurement:', err);
-      setErrorMsg(err?.response?.data?.message || err?.message || 'Gagal menyimpan pengadaan.');
+      console.error('Failed to process procurement:', err);
+      setErrorMsg(
+        err?.response?.data?.message || err?.message || 'Gagal menyimpan pengadaan.'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const modalTitle = isExecuteDraftMode
+    ? `Proses Pengadaan — ${draftPO?.po_number}`
+    : isRequestOnlyMode
+    ? 'Ajukan Kebutuhan Bahan Baku'
+    : 'Form Pengadaan Bahan Baku';
+
+  const submitLabel = isSubmitting
+    ? 'Menyimpan...'
+    : isExecuteDraftMode
+    ? 'Setujui & Pesan'
+    : isRequestOnlyMode
+    ? 'Ajukan Kebutuhan'
+    : 'Buat Pengadaan';
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Form Pengadaan Bahan Baku"
+      title={modalTitle}
       size="lg"
       actions={
         <>
@@ -233,8 +290,12 @@ export function ProcurementModal({
             onClick={handleSubmit}
             disabled={isSubmitting || items.length === 0}
           >
-            <Plus className="h-4 w-4 mr-1" />
-            {isSubmitting ? 'Menyimpan...' : 'Buat Pengadaan'}
+            {isExecuteDraftMode ? (
+              <Check className="h-4 w-4 mr-1" />
+            ) : (
+              <Plus className="h-4 w-4 mr-1" />
+            )}
+            {submitLabel}
           </Button>
         </>
       }
@@ -247,125 +308,133 @@ export function ProcurementModal({
           </div>
         )}
 
-        {/* Tipe Pembelian */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div
-            onClick={() => setPurchaseType('PO')}
-            className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
-              purchaseType === 'PO'
-                ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
-                : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <input
-                type="radio"
-                name="purchaseTypeOption"
-                value="PO"
-                checked={purchaseType === 'PO'}
-                onChange={() => setPurchaseType('PO')}
-                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-              />
-              <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                Purchase Order (PO)
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
-              Alur pemesanan standar dengan persetujuan dan penerimaan barang di gudang.
-            </p>
-          </div>
+        {/* Kontrol Komersial (Hanya untuk Purchasing / Admin) */}
+        {!isRequestOnlyMode && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                onClick={() => setPurchaseType('PO')}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                  purchaseType === 'PO'
+                    ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
+                    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="purchaseTypeOption"
+                    value="PO"
+                    checked={purchaseType === 'PO'}
+                    onChange={() => setPurchaseType('PO')}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Purchase Order (PO)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                  Pesan ke vendor dan terima fisik barang saat tiba di gudang.
+                </p>
+              </div>
 
-          <div
-            onClick={() => setPurchaseType('DIRECT')}
-            className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
-              purchaseType === 'DIRECT'
-                ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
-                : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <input
-                type="radio"
-                name="purchaseTypeOption"
-                value="DIRECT"
-                checked={purchaseType === 'DIRECT'}
-                onChange={() => setPurchaseType('DIRECT')}
-                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-              />
-              <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                Pembelian Langsung (Tunai)
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
-              Bayar kas/bank langsung & kuantitas stok otomatis bertambah seketika.
-            </p>
-          </div>
-        </div>
-
-        {/* Form Inputs */}
-        <Input
-          label="Nama Vendor / Toko"
-          required
-          placeholder="Contoh: CV Sumber Kayu / PT Multi Perkasa"
-          value={supplier}
-          onChange={(e) => setSupplier(e.target.value)}
-        />
-
-        {purchaseType === 'DIRECT' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Kas / Rekening Pembayaran <span className="text-red-500 font-bold">*</span>
-              </label>
-              <Select
-                value={selectedBankAccountId}
-                onChange={(e) => setSelectedBankAccountId(e.target.value)}
-                options={bankAccounts.map((b) => ({
-                  value: String(b.id),
-                  label: `${b.name} (${formatCurrency(b.balance)})`,
-                }))}
-              />
+              <div
+                onClick={() => setPurchaseType('DIRECT')}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                  purchaseType === 'DIRECT'
+                    ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
+                    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="purchaseTypeOption"
+                    value="DIRECT"
+                    checked={purchaseType === 'DIRECT'}
+                    onChange={() => setPurchaseType('DIRECT')}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Pembelian Langsung (Tunai)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                  Bayar kas/bank langsung & stok bertambah seketika.
+                </p>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Biaya Ekspedisi / Ongkir Tambahan (Opsional)
-              </label>
-              <CurrencyInput
-                value={additionalCost}
-                onChange={(val) => setAdditionalCost(typeof val === 'number' ? val : 0)}
-                placeholder="Rp 0"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                label="Nama Vendor / Toko"
+                required
+                placeholder="Contoh: CV Sumber Kayu / PT Multi Perkasa"
+                value={supplier}
+                onChange={(e) => setSupplier(e.target.value)}
               />
+
+              <div>
+                <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 md:mb-1.5">
+                  Biaya Ekspedisi / Ongkir Tambahan (Opsional)
+                </label>
+                <CurrencyInput
+                  value={additionalCost}
+                  onChange={(val) => setAdditionalCost(typeof val === 'number' ? val : 0)}
+                  placeholder="Rp 0"
+                />
+              </div>
             </div>
-          </div>
+
+            {purchaseType === 'DIRECT' && (
+              <div>
+                <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 md:mb-1.5">
+                  Kas / Rekening Pembayaran <span className="text-red-500 font-bold">*</span>
+                </label>
+                <Select
+                  value={selectedBankAccountId}
+                  onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                  options={bankAccounts.map((b) => ({
+                    value: String(b.id),
+                    label: canShowBankBalance
+                      ? `${b.name} (${formatCurrency(b.balance)})`
+                      : b.name,
+                  }))}
+                />
+              </div>
+            )}
+          </>
         )}
 
-        {/* Item List */}
-        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+        {/* Daftar Item Bahan Baku */}
+        <div className="space-y-2 pt-2">
+          <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
             Daftar Item Bahan Baku <span className="text-red-500 font-bold">*</span>
           </label>
 
           {items.length === 0 ? (
             <EmptyState
               title="Daftar Item Masih Kosong"
-              description="Belum ada bahan baku yang ditambahkan ke daftar pengadaan."
+              description="Tambahkan bahan baku beserta kuantitas yang dibutuhkan."
               variant="plain"
             />
           ) : (
-            <div className="space-y-2 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:border-slate-800 dark:bg-slate-900/40">
               {items.map((item, idx) => (
-                <div key={item.material_id} className="flex items-center justify-between gap-3 pt-2 first:pt-0">
+                <div
+                  key={item.material_id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2.5 first:pt-0"
+                >
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">
                       {item.material_name}
                     </div>
                     <div className="text-xs text-slate-500">
-                      {formatCurrency(item.unit_cost)} / {item.unit}
+                      Satuan: {item.unit}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
                     <div className="w-24">
                       <Input
                         type="number"
@@ -375,12 +444,33 @@ export function ProcurementModal({
                           const val = Number(e.target.value);
                           handleUpdateItemQty(idx, val);
                         }}
+                        placeholder="Qty"
                       />
                     </div>
-                    <span className="text-xs text-slate-500 w-10 truncate">{item.unit}</span>
-                    <div className="font-mono text-xs font-semibold text-right min-w-[90px] text-slate-900 dark:text-white">
-                      {formatCurrency(item.qty * item.unit_cost)}
-                    </div>
+                    <span className="text-xs text-slate-500 w-10 truncate">
+                      {item.unit}
+                    </span>
+
+                    {!isRequestOnlyMode && (
+                      <>
+                        <div className="w-36">
+                          <CurrencyInput
+                            value={item.unit_cost}
+                            onChange={(val) =>
+                              handleUpdateItemCost(
+                                idx,
+                                typeof val === 'number' ? val : 0
+                              )
+                            }
+                            placeholder="Harga / Unit"
+                          />
+                        </div>
+                        <div className="font-mono text-xs font-semibold text-right min-w-[96px] text-slate-900 dark:text-white">
+                          {formatCurrency(item.qty * item.unit_cost)}
+                        </div>
+                      </>
+                    )}
+
                     <Button
                       type="button"
                       size="sm"
@@ -406,7 +496,9 @@ export function ProcurementModal({
                   onChange={(e) => setSelectedMatId(e.target.value)}
                   options={materialOptions.map((m) => ({
                     value: String(m.id),
-                    label: `${m.name} (${formatCurrency(m.unit_cost)} / ${m.unit})`,
+                    label: isRequestOnlyMode
+                      ? `${m.name} (${m.unit})`
+                      : `${m.name} (${formatCurrency(m.unit_cost)} / ${m.unit})`,
                   }))}
                 />
               </div>
@@ -458,12 +550,14 @@ export function ProcurementModal({
                 <Plus className="h-3.5 w-3.5 mr-1" />
                 Tambah Item Lain
               </Button>
-              <div className="text-right text-xs">
-                <span className="text-slate-500 mr-2">Total Estimasi:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                  {formatCurrency(grandTotal)}
-                </span>
-              </div>
+              {!isRequestOnlyMode && (
+                <div className="text-right text-xs">
+                  <span className="text-slate-500 mr-2">Total Estimasi:</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                    {formatCurrency(grandTotal)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>

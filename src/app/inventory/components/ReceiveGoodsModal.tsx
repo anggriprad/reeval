@@ -105,7 +105,6 @@ export function ReceiveGoodsModal({
         received_items: itemsToReceive,
       });
 
-      // Sinkronisasi ke AppContext persis seperti pada halaman detail pengadaan
       receivePO(
         String(po.id),
         itemsToReceive.map((i) => ({
@@ -114,7 +113,6 @@ export function ReceiveGoodsModal({
         }))
       );
 
-      // Hitung apakah penerimaan ini sebagian (PARTIALLY_RECEIVED) atau penuh (RECEIVED)
       const allFullyReceived = po.items.every((item) => {
         const receivedNow = itemsToReceive.find((r) => r.material_id === item.material_id)?.qty || 0;
         const alreadyReceived = item.received_qty || 0;
@@ -181,7 +179,7 @@ export function ReceiveGoodsModal({
           <div>
             <span className="text-slate-400">Vendor:</span>{' '}
             <strong className="text-slate-900 dark:text-white font-semibold">
-              {po.supplier}
+              {!po.supplier || po.supplier === '-' ? '-' : po.supplier}
             </strong>
           </div>
           <div className="text-slate-500">

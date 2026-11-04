@@ -84,6 +84,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
     - **Isolasi Target Spesifik**: Jika user menyebut nama komponen atau file secara spesifik (misal: `PageHeader`, `Table`, dsb.), area kerja HANYA terbatas pada file komponen tersebut. DILARANG KERAS membuka, membaca, atau mengedit file lain (seperti `MobileHeader`, layout, atau modul tetangga) hanya karena komponen tersebut memiliki relasi/import dengannya, kecuali jika diperintahkan eksplisit oleh user.
     - **Eksekusi Harfiah (Zero Speculation & No Second-Guessing)**: Terima instruksi user apa adanya secara harfiah. DILARANG berspekulasi atau menebak motif tersembunyi (seperti mengait-ngaitkan ke tampilan mobile jika user tidak menyebut mobile, atau mengira tombol yang dimaksud ada di file lain).
     - **Larangan Global Search untuk Masalah Lokal**: Untuk perubahan tampilan, styling, atau logika internal pada satu komponen/halaman, DILARANG melakukan grep atau pencarian global ke seluruh codebase yang tidak ada hubungannya. Langsung buka file target, temukan barisnya, eksekusi dalam sekali jalan, dan verifikasi.
+17. **Larangan Mutlak Mengedit Kode saat Pertanyaan / Investigasi (Zero Autonomous Edits on Inquiry - Mutlak Haram)**:
+    - **Pemisahan Tegas Pertanyaan vs Perintah Tindakan**: Jika pesan atau permintaan user berupa pertanyaan, diskusi, atau investigasi (misal mengandung kata tanya seperti *"kenapa"*, *"mengapa"*, *"apakah"*, *"bagaimana"*, dsb.), asisten DILARANG KERAS membuat, menyentuh, atau mengedit file kode apa pun.
+    - **Hanya Analisis Teks & Read-Only**: Tanggapan asisten HANYA terbatas pada penelusuran read-only, menganalisis penyebab, dan memberikan penjelasan komprehensif secara teks di chat.
+    - **Wajib Instruksi Eksekusi Eksplisit**: DILARANG KERAS mengambil inisiatif (*ngide*) langsung memperbaiki atau mengutak-atik kode saat user hanya bertanya. Asisten HANYA boleh mengedit kode jika dan hanya jika user memberikan perintah tindakan yang eksplisit (seperti *"ubah"*, *"perbaiki"*, *"ganti"*, *"eksekusi"*, atau *"terapkan"*).
 
 
 
