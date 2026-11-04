@@ -23,6 +23,7 @@ export interface ModalProps {
   showClose?: boolean;
   showTitle?: boolean;
   noPadding?: boolean;
+  zIndex?: string;
 }
 
 const sizeClasses: Record<string, string> = {
@@ -53,6 +54,7 @@ export function Modal({
   showClose = true,
   showTitle = true,
   noPadding = false,
+  zIndex,
 }: ModalProps) {
   const resolvedSheetHeight = sheetHeight || bottomSheetHeight || 'lg';
   const [modalEntered, setModalEntered] = useState(false);
@@ -138,7 +140,8 @@ export function Modal({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-hidden overscroll-none',
+        'fixed inset-0 flex items-center justify-center p-3 sm:p-6 overflow-hidden overscroll-none',
+        zIndex || 'z-50',
         mobileFullScreen && 'max-md:p-0 max-md:items-stretch',
         mobileBottomSheet && (
           resolvedSheetHeight === 'full'

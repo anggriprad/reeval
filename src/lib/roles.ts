@@ -327,7 +327,11 @@ export function canManageInventory(role: RoleType | string | string[]): boolean 
 }
 
 export function canCreatePO(role: RoleType | string | string[]): boolean {
-  return hasAnyMatchingRole(role, norm => norm === 'PURCHASING' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'ADMIN_INVENTORY');
+  return hasAnyMatchingRole(role, norm => norm === 'PURCHASING' || norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'FINANCE' || norm === 'ADMIN_FINANCE');
+}
+
+export function canReceivePO(role: RoleType | string | string[]): boolean {
+  return hasAnyMatchingRole(role, norm => norm === 'INVENTORY' || norm === 'GUDANG' || norm === 'ADMIN_INVENTORY' || norm === 'ADMIN' || norm === 'SUPER_ADMIN');
 }
 
 export function canRequestPO(role: RoleType | string | string[]): boolean {
@@ -364,12 +368,6 @@ export function canSeeCosts(role: RoleType | string | string[]): boolean {
     norm =>
       norm === 'ADMIN' ||
       norm === 'SUPER_ADMIN' ||
-      norm === 'PRODUCTION' ||
-      norm === 'PRODUKSI' ||
-      norm === 'ADMIN_PRODUCTION' ||
-      norm === 'INVENTORY' ||
-      norm === 'GUDANG' ||
-      norm === 'ADMIN_INVENTORY' ||
       norm === 'PURCHASING' ||
       norm === 'FINANCE' ||
       norm === 'ADMIN_FINANCE'

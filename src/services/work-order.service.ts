@@ -226,8 +226,11 @@ export function mapJobCardResponseToJobCard(dto: JobCardResponse): JobCard {
     operatorId: dto.operator_id ? String(dto.operator_id) : undefined,
     picName: dto.pic_name || undefined,
     startedAt: dto.started_at || undefined,
+    lastStartedAt: dto.last_started_at || undefined,
+    lastPausedAt: dto.last_paused_at || undefined,
     completedAt: dto.completed_at || undefined,
     actualMinutes: dto.actual_minutes,
+    totalDurationMinutes: dto.total_duration_minutes,
     plannedMinutes: dto.planned_minutes,
   };
 }

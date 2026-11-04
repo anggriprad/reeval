@@ -12,22 +12,26 @@ import { Input } from '@/components/ui/Input';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
-import { ActionMenu, type ActionMenuItem } from '@/components/ui/ActionMenu';
+import { ActionMenu } from '@/components/ui/ActionMenu';
 import {
   formatCurrency,
   formatDateTime,
   getPOStatusLabel,
   getPOStatusVariant,
 } from '@/lib/utils';
-import { canCreatePO, canManageInventory } from '@/lib/roles';
+import {
+  canCreatePO,
+  canReceivePO,
+  canSeeCosts,
+} from '@/lib/roles';
 import {
   procurementService,
   PurchaseOrderResponse,
 } from '@/services/procurement.service';
+import { ProcurementModal } from '../../components/ProcurementModal';
 import type { PurchaseOrder } from '@/lib/types';
 import {
   Check,
-  X,
   XCircle,
   Ban,
   AlertTriangle,
@@ -36,7 +40,6 @@ import {
   Calendar,
   CreditCard,
   User,
-  RotateCcw,
 } from 'lucide-react';
 
 export default function ProcurementDetailPage() {
@@ -57,8 +60,13 @@ export default function ProcurementDetailPage() {
     bankAccounts = [],
   } = useApp();
 
+  const canExecuteCommercial = canCreatePO(currentUser.role);
+  const canReceivePhysical = canReceivePO(currentUser.role);
+  const canShowCosts = canSeeCosts(currentUser.role);
+
   const initialPo = purchaseOrders.find((p) => p.id === id || p.poNumber === id);
   const [fetchedPO, setFetchedPO] = useState<PurchaseOrder | null>(null);
+  const [rawPOResponse, setRawPOResponse] = useState<PurchaseOrderResponse | null>(null);
   const [isLoading, setIsLoading] = useState(!initialPo);
 
   const fetchPO = useCallback(async () => {
@@ -66,6 +74,7 @@ export default function ProcurementDetailPage() {
       const res = await procurementService.getProcurementById(id);
       if (res.data) {
         const p = res.data;
+        setRawPOResponse(p);
         const mapped: PurchaseOrder = {
           id: String(p.id),
           poNumber: p.po_number,
@@ -109,6 +118,9 @@ export default function ProcurementDetailPage() {
   }, [fetchPO]);
 
   const po = fetchedPO || initialPo;
+
+  // State Modal Fase 2 (Proses & Pesan Draft)
+  const [showExecuteDraftModal, setShowExecuteDraftModal] = useState(false);
 
   // State Modal Terima Barang
   const [showReceiveModal, setShowReceiveModal] = useState(false);
@@ -161,7 +173,6 @@ export default function ProcurementDetailPage() {
   const isDraft = po.status === 'DRAFT';
   const isOrdered = po.status === 'ORDERED';
   const isPartiallyReceived = po.status === 'PARTIALLY_RECEIVED';
-  const isReceived = po.status === 'RECEIVED';
   const isRejected = po.status === 'REJECTED';
   const isCanceled = po.status === 'CANCELED';
   const isDirect = po.purchaseType === 'DIRECT';
@@ -170,23 +181,29 @@ export default function ProcurementDetailPage() {
     ? bankAccounts.find((b) => b.id === po.bankAccountId)
     : undefined;
 
-  // Handler: Setujui & Pesan
-  const handleApproveAndOrder = async () => {
-    const ok = await confirm({
-      title: 'Pesan Pengadaan',
-      message: `Setujui pengadaan "${po.poNumber}" dan kirimkan pesanan ke vendor "${po.supplier}"?`,
-      confirmText: 'Pesan Sekarang',
-    });
-    if (ok) {
-      try {
-        await procurementService.orderPO(po.id);
-        orderPO(po.id);
-        fetchPO();
-        toast.success('Pengadaan Dipesan', `Pengadaan ${po.poNumber} berhasil disetujui.`);
-      } catch (err: any) {
-        toast.error('Gagal Memesan PO', err?.response?.data?.message || err?.message || 'Terjadi kesalahan.');
-      }
-    }
+  const draftPOForModal: PurchaseOrderResponse = rawPOResponse || {
+    id: Number(po.id) || 0,
+    po_number: po.poNumber,
+    supplier: po.supplier,
+    created_by: po.createdBy || '',
+    purchase_type: po.purchaseType || 'PO',
+    status: po.status,
+    payment_status: po.paymentStatus || 'UNPAID',
+    total_amount: po.totalAmount,
+    additional_cost: po.additionalCost || 0,
+    created_at: po.createdAt,
+    updated_at: po.createdAt,
+    items: po.items.map((it, idx) => ({
+      id: idx + 1,
+      material_id: Number(it.materialId),
+      material_name: it.materialName,
+      unit: it.unit || 'unit',
+      qty: it.qty,
+      received_qty: it.receivedQty || 0,
+      remaining_qty: Math.max(0, it.qty - (it.receivedQty || 0)),
+      unit_cost: it.unitCost,
+      subtotal: it.qty * it.unitCost,
+    })),
   };
 
   // Handler: Buka Modal Tolak
@@ -318,20 +335,20 @@ export default function ProcurementDetailPage() {
           {/* Action Buttons for DRAFT */}
           {isDraft && (
             <div className="flex items-center gap-2">
-              {canCreatePO(currentUser.role) && (
+              {canExecuteCommercial && (
                 <Button
                   variant="primary"
-                  onClick={handleApproveAndOrder}
+                  onClick={() => setShowExecuteDraftModal(true)}
                 >
                   <Check className="h-4 w-4 mr-1.5" />
-                  Setujui & Pesan
+                  Proses & Pesan
                 </Button>
               )}
               <ActionMenu
                 triggerSize="md"
                 menuWidth="w-max min-w-[130px]"
                 items={[
-                  ...(canCreatePO(currentUser.role)
+                  ...(canExecuteCommercial
                     ? [
                         {
                           label: 'Tolak PO',
@@ -341,7 +358,7 @@ export default function ProcurementDetailPage() {
                         },
                       ]
                     : []),
-                  ...(canCreatePO(currentUser.role) || po.createdBy === currentUser.name
+                  ...(canExecuteCommercial || po.createdBy === currentUser.name
                     ? [
                         {
                           label: 'Batalkan PO',
@@ -359,7 +376,7 @@ export default function ProcurementDetailPage() {
           {/* Action Buttons for ORDERED or PARTIALLY_RECEIVED */}
           {(isOrdered || isPartiallyReceived) && (
             <div className="flex items-center gap-2">
-              {(canManageInventory(currentUser.role) || canCreatePO(currentUser.role)) && (
+              {canReceivePhysical && (
                 <Button
                   variant="primary"
                   onClick={openReceiveModal}
@@ -368,7 +385,7 @@ export default function ProcurementDetailPage() {
                   Terima Barang
                 </Button>
               )}
-              {(canCreatePO(currentUser.role) || po.createdBy === currentUser.name) && (
+              {canExecuteCommercial && (
                 <ActionMenu
                   triggerSize="md"
                   menuWidth="w-max min-w-[130px]"
@@ -454,7 +471,7 @@ export default function ProcurementDetailPage() {
             <span>Nama Vendor</span>
           </div>
           <p className="font-semibold text-slate-900 dark:text-white text-sm truncate" title={po.supplier}>
-            {po.supplier}
+            {!po.supplier || po.supplier === '-' ? 'Menunggu Purchasing' : po.supplier}
           </p>
         </Card>
 
@@ -465,9 +482,13 @@ export default function ProcurementDetailPage() {
             <span>Tipe Pengadaan</span>
           </div>
           <p className="font-semibold text-slate-900 dark:text-white text-sm">
-            {isDirect ? 'Pembelian Langsung (Cash)' : 'Purchase Order (PO)'}
+            {isDraft && (!po.supplier || po.supplier === '-')
+              ? 'Pengajuan Kebutuhan'
+              : isDirect
+              ? 'Pembelian Langsung (Cash)'
+              : 'Purchase Order (PO)'}
           </p>
-          {bankAccount && (
+          {canShowCosts && bankAccount && (
             <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate">
               Kas: {bankAccount.name}
             </span>
@@ -549,54 +570,75 @@ export default function ProcurementDetailPage() {
                   );
                 },
               },
-              {
-                key: 'unitCost',
-                header: 'Harga Satuan',
-                align: 'right',
-                cell: (item) => (
-                  <span className="font-mono text-slate-700 dark:text-slate-300">
-                    {formatCurrency(item.unitCost)}
-                  </span>
-                ),
-              },
-              {
-                key: 'subtotal',
-                header: 'Subtotal',
-                align: 'right',
-                cell: (item) => (
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">
-                    {formatCurrency(item.qty * item.unitCost)}
-                  </span>
-                ),
-              },
+              ...(canShowCosts
+                ? [
+                    {
+                      key: 'unitCost',
+                      header: 'Harga Satuan',
+                      align: 'right' as const,
+                      cell: (item: PurchaseOrder['items'][number]) => (
+                        <span className="font-mono text-slate-700 dark:text-slate-300">
+                          {isDraft && (!po.supplier || po.supplier === '-')
+                            ? '-'
+                            : formatCurrency(item.unitCost)}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'subtotal',
+                      header: 'Subtotal',
+                      align: 'right' as const,
+                      cell: (item: PurchaseOrder['items'][number]) => (
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">
+                          {isDraft && (!po.supplier || po.supplier === '-')
+                            ? '-'
+                            : formatCurrency(item.qty * item.unitCost)}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
             ]}
           />
         </Card>
       </div>
 
-      {/* Ringkasan Total Biaya */}
-      <div className="flex justify-end">
-        <div className="w-full sm:w-72 space-y-1.5 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
-          <div className="flex justify-between text-slate-500 dark:text-slate-400">
-            <span>Subtotal Item</span>
-            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
-              {formatCurrency(po.totalAmount - (po.additionalCost || 0))}
-            </span>
-          </div>
-          {po.additionalCost && po.additionalCost > 0 ? (
+      {/* Ringkasan Total Biaya (Hanya tampil untuk role komersial / finansial) */}
+      {canShowCosts && !(isDraft && (!po.supplier || po.supplier === '-')) && (
+        <div className="flex justify-end">
+          <div className="w-full sm:w-72 space-y-1.5 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
             <div className="flex justify-between text-slate-500 dark:text-slate-400">
-              <span>Biaya Tambahan / Ongkir</span>
+              <span>Subtotal Item</span>
               <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                {formatCurrency(po.additionalCost)}
+                {formatCurrency(po.totalAmount - (po.additionalCost || 0))}
               </span>
             </div>
-          ) : null}
-          <div className="flex justify-between font-bold text-slate-900 dark:text-white pt-2 border-t border-slate-100 dark:border-slate-800 text-sm">
-            <span>Total Akhir</span>
-            <span className="font-mono">{formatCurrency(po.totalAmount)}</span>
+            {po.additionalCost && po.additionalCost > 0 ? (
+              <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                <span>Biaya Tambahan / Ongkir</span>
+                <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+                  {formatCurrency(po.additionalCost)}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex justify-between font-bold text-slate-900 dark:text-white pt-2 border-t border-slate-100 dark:border-slate-800 text-sm">
+              <span>Total Akhir</span>
+              <span className="font-mono">{formatCurrency(po.totalAmount)}</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Modal Fase 2: Proses & Pesan Draft */}
+      <ProcurementModal
+        isOpen={showExecuteDraftModal}
+        onClose={() => setShowExecuteDraftModal(false)}
+        draftPO={draftPOForModal}
+        onSuccess={() => {
+          orderPO(po.id);
+          fetchPO();
+        }}
+      />
 
       {/* Modal Tolak PO */}
       <Modal

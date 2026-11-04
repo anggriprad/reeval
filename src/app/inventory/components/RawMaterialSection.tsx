@@ -10,11 +10,12 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
-import { canManageInventory, canRequestPO, canManageProduction } from '@/lib/roles';
+import { canManageInventory, canRequestPO, canCreatePO, canManageProduction } from '@/lib/roles';
 import {
   getStockLevel,
   getStockLevelBadgeVariant,
   getStockLevelDescription,
+  cn,
 } from '@/lib/utils';
 import type { RawMaterial } from '@/lib/types';
 import {
@@ -69,8 +70,8 @@ export function RawMaterialSection({
   const canUpdate = can(PERMISSIONS.INVENTORY.UPDATE) || canManageInventory(currentUser.role);
   const canDelete = can(PERMISSIONS.INVENTORY.DELETE) || canManageInventory(currentUser.role);
   const canProcure = can(PERMISSIONS.PURCHASING.CREATE) || canRequestPO(currentUser.role);
+  const canExecuteCommercial = canCreatePO(currentUser.role);
   const canProduce = can(PERMISSIONS.PRODUCTION.CREATE) || canManageProduction(currentUser.role);
-  const canAnyAction = canUpdate || canDelete || canProcure || canProduce;
 
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [totalMaterials, setTotalMaterials] = useState(0);
@@ -219,9 +220,7 @@ export function RawMaterialSection({
       header: 'Kategori',
       align: 'left',
       cell: ({ row: mat }) => (
-        <span className="text-xs text-slate-700 dark:text-slate-300 font-medium">
-          {mat.category}
-        </span>
+        <Badge variant="default">{mat.category}</Badge>
       ),
     },
     {
@@ -288,76 +287,79 @@ export function RawMaterialSection({
         );
       },
     },
-    ...(canAnyAction
-      ? [
-          {
-            id: 'actions',
-            header: 'Aksi',
-            align: 'center' as const,
-            width: '190px',
-            className: 'w-[190px] whitespace-nowrap',
-            cell: ({ row: mat }: { row: RawMaterial }) => (
-              <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
-                {!mat.isSubAssembly ? (
-                  canProcure && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenProcurement(mat.id);
-                      }}
-                      title={`Buat pengadaan untuk ${mat.name}`}
-                    >
-                      Buat Pengadaan
-                    </Button>
-                  )
-                ) : (
-                  canProduce && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenCreateSaWorkOrder(mat.id);
-                      }}
-                      title={`Buat SPK untuk ${mat.name}`}
-                    >
-                      Buat SPK
-                    </Button>
-                  )
-                )}
+    {
+      id: 'actions',
+      header: 'Aksi',
+      align: 'center' as const,
+      width: '190px',
+      className: 'w-[190px] whitespace-nowrap',
+      cell: ({ row: mat }: { row: RawMaterial }) => {
+        const isWip = Boolean(mat.isSubAssembly);
+        const hasPermission = isWip ? canProduce : canProcure;
+        const buttonText = isWip
+          ? 'Buat SPK'
+          : canExecuteCommercial
+          ? 'Buat Pengadaan'
+          : 'Ajukan Kebutuhan';
+        const actionTitle = hasPermission
+          ? (isWip ? `Buat SPK untuk ${mat.name}` : `${buttonText} untuk ${mat.name}`)
+          : (isWip ? 'Anda tidak memiliki hak akses untuk membuat SPK' : 'Anda tidak memiliki hak akses untuk membuat pengadaan');
 
-                {(canUpdate || canDelete) && (
-                  <ActionMenu
-                    items={[
-                      ...(canUpdate
-                        ? [
-                            {
-                              label: 'Edit',
-                              icon: <Edit2 className="h-3.5 w-3.5" />,
-                              onClick: () => handleEditClick(mat),
-                            },
-                          ]
-                        : []),
-                      ...(canDelete
-                        ? [
-                            {
-                              label: 'Delete',
-                              icon: <Trash2 className="h-3.5 w-3.5" />,
-                              variant: 'danger' as const,
-                              onClick: () => handleDeleteMaterial(mat.id, mat.name),
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-                )}
-              </div>
-            ),
-          },
-        ]
-      : []),
+        return (
+          <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+            <span
+              className={cn('inline-block', !hasPermission && 'cursor-not-allowed')}
+              title={actionTitle}
+            >
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!hasPermission}
+                className="w-[128px]"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!hasPermission) return;
+                  if (isWip) {
+                    onOpenCreateSaWorkOrder(mat.id);
+                  } else {
+                    onOpenProcurement(mat.id);
+                  }
+                }}
+                title={actionTitle}
+              >
+                {buttonText}
+              </Button>
+            </span>
+
+            {(canUpdate || canDelete) && (
+              <ActionMenu
+                items={[
+                  ...(canUpdate
+                    ? [
+                      {
+                        label: 'Edit',
+                        icon: <Edit2 className="h-3.5 w-3.5" />,
+                        onClick: () => handleEditClick(mat),
+                      },
+                    ]
+                    : []),
+                  ...(canDelete
+                    ? [
+                      {
+                        label: 'Delete',
+                        icon: <Trash2 className="h-3.5 w-3.5" />,
+                        variant: 'danger' as const,
+                        onClick: () => handleDeleteMaterial(mat.id, mat.name),
+                      },
+                    ]
+                    : []),
+                ]}
+              />
+            )}
+          </div>
+        );
+      },
+    },
   ];
 
   return (

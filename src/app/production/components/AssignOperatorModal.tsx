@@ -91,6 +91,7 @@ export function AssignOperatorModal({
 
     const foundOp = effectiveOperators.find((o) => o.name === picName);
     const opId = foundOp?.id ? Number(foundOp.id) : undefined;
+    const isInitialAssign = !target.jc.picName;
     setIsSubmitting(true);
     try {
       const res = await workOrderService.updateWorkOrder(
@@ -99,14 +100,14 @@ export function AssignOperatorModal({
           job_card_id: Number(target.jc.id),
           operator_id: opId,
           pic_name: picName,
-          notes: 'Revisi operator dari Analisis Kinerja',
+          notes: isInitialAssign ? 'Penugasan operator' : 'Perubahan operator',
         }
       );
 
       if (res.success) {
         toast.success(
-          'Operator Berhasil Direvisi',
-          `Operator untuk tahapan "${target.jc.operationName}" berhasil diubah menjadi ${picName}.`
+          isInitialAssign ? 'Operator Ditugaskan' : 'Operator Diperbarui',
+          `${picName} ditugaskan pada tahapan "${target.jc.operationName}".`
         );
         handleClose();
         onSuccess();
@@ -129,6 +130,7 @@ export function AssignOperatorModal({
       title="Pilih Operator"
       size="sm"
       sheetHeight="auto"
+      zIndex="z-[60]"
       actions={
         target ? (
           <Button

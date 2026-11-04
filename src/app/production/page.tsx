@@ -274,8 +274,19 @@ function ProductionContent() {
   // Job card execution handlers
   const handleStartJobCard = async (woId: string, jcId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    const targetWO = workOrders.find((w) => w.id === woId);
+    const targetJC = targetWO?.jobCards.find((j) => j.id === jcId);
+
+    if (targetJC && (!targetJC.picName || !targetJC.picName.trim())) {
+      setAssignTarget({ woId, jc: targetJC });
+      return;
+    }
+
     try {
-      const res = await workOrderService.startJobCard(Number(woId), Number(jcId));
+      const res = await workOrderService.startJobCard(Number(woId), Number(jcId), {
+        operator_id: targetJC?.operatorId ? Number(targetJC.operatorId) : undefined,
+        pic_name: targetJC?.picName,
+      });
       if (res.success) {
         toast.success('Operasi Dimulai', 'Operasi telah berhasil dimulai.');
         handleRefresh();
@@ -296,6 +307,33 @@ function ProductionContent() {
         handleRefresh();
       } else {
         toast.error(res.message || 'Gagal menjeda operasi.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Terjadi kesalahan sistem.');
+    }
+  };
+
+  const handleCompleteJobCard = async (woId: string, jc: JobCard, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!jc.picName || !jc.picName.trim()) {
+      setCompleteTarget({ woId, jc });
+      return;
+    }
+
+    try {
+      const res = await workOrderService.completeJobCard(Number(woId), Number(jc.id), {
+        operator_id: jc.operatorId ? Number(jc.operatorId) : undefined,
+        pic_name: jc.picName,
+        completed_qty: jc.targetQty,
+      });
+      if (res.success) {
+        toast.success(
+          'Tahapan Selesai',
+          `Operasi "${jc.operationName}" berhasil diselesaikan oleh ${jc.picName}.`
+        );
+        handleRefresh();
+      } else {
+        toast.error(res.message || 'Gagal menyelesaikan operasi.');
       }
     } catch (err: any) {
       toast.error(err.message || 'Terjadi kesalahan sistem.');
@@ -375,6 +413,7 @@ function ProductionContent() {
           items={workOrders}
           allWorkOrders={allActiveWOs}
           products={products}
+          operations={operations}
           isLoading={isLoading}
           isLoadingMore={isLoadingMore}
           hasMore={hasMore}
@@ -385,9 +424,10 @@ function ProductionContent() {
           canManage={canManage}
           onOpenKPI={(wo) => setSelectedWO(wo)}
           onOpenCancel={(wo) => setCancelTargetWO(wo)}
+          onAssignOperator={(woId, jc) => setAssignTarget({ woId, jc })}
           onStartJobCard={handleStartJobCard}
           onPauseJobCard={handlePauseJobCard}
-          onOpenCompleteModal={(woId, jc) => setCompleteTarget({ woId, jc })}
+          onOpenCompleteModal={handleCompleteJobCard}
         />
       )}
 
@@ -418,6 +458,20 @@ function ProductionContent() {
         operators={operators}
       />
 
+      <WorkOrderKpiModal
+        isOpen={!!selectedWO}
+        onClose={() => {
+          setSelectedWO(null);
+          setAssignTarget(null);
+        }}
+        selectedWO={selectedWO}
+        products={products}
+        operations={operations}
+        onOpenEditOperator={(woId, jc) => {
+          setAssignTarget({ woId, jc });
+        }}
+      />
+
       <AssignOperatorModal
         isOpen={!!assignTarget}
         onClose={() => setAssignTarget(null)}
@@ -436,17 +490,6 @@ function ProductionContent() {
         }}
         target={assignTarget}
         operators={operators}
-      />
-
-      <WorkOrderKpiModal
-        isOpen={!!selectedWO}
-        onClose={() => setSelectedWO(null)}
-        selectedWO={selectedWO}
-        products={products}
-        operations={operations}
-        onOpenEditOperator={(woId, jc) => {
-          setAssignTarget({ woId, jc });
-        }}
       />
     </div>
   );

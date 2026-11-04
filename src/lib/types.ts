@@ -392,8 +392,11 @@ export interface JobCard {
   operatorId?: string;
   picName?: string;
   startedAt?: string;            // waktu mulai kerja (ISO)
+  lastStartedAt?: string;        // waktu mulai sesi terakhir (ISO)
+  lastPausedAt?: string;         // waktu jeda terakhir (ISO)
   completedAt?: string;          // waktu selesai kerja (ISO)
   actualMinutes?: number;        // durasi aktual (menit)
+  totalDurationMinutes?: number; // akumulasi durasi berjalan (menit)
   plannedMinutes: number;        // durasi standar (dari operasi master)
 }
 

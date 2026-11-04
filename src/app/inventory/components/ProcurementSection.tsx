@@ -12,7 +12,12 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
-import { canManageInventory, canCreatePO, canRequestPO } from '@/lib/roles';
+import {
+  canCreatePO,
+  canReceivePO,
+  canRequestPO,
+  canSeeCosts,
+} from '@/lib/roles';
 import {
   formatCurrency,
   getPOStatusLabel,
@@ -25,7 +30,7 @@ import {
 import { ProcurementModal } from './ProcurementModal';
 import { ReceiveGoodsModal } from './ReceiveGoodsModal';
 import { CancelPOModal } from './CancelPOModal';
-import { XCircle, Ban, PackageCheck, Trash2, Plus } from 'lucide-react';
+import { XCircle, Ban, PackageCheck, Trash2 } from 'lucide-react';
 
 interface ProcurementSectionProps {
   filters: {
@@ -54,11 +59,12 @@ export function ProcurementSection({
   const { can } = usePermission();
   const { currentUser, purchaseOrders = [] } = useApp();
 
-  // UAC / PBAC Permissions
-  const canRead = can(PERMISSIONS.PURCHASING.READ);
-  const canCreate = can(PERMISSIONS.PURCHASING.CREATE) || canRequestPO(currentUser.role);
-  const canUpdate = can(PERMISSIONS.PURCHASING.UPDATE) || canManageInventory(currentUser.role) || canCreatePO(currentUser.role);
-  const canDelete = can(PERMISSIONS.PURCHASING.DELETE) || canCreatePO(currentUser.role);
+  // Fase 1 (Request), Fase 2 (Eksekusi Komersial), Fase 3 (Penerimaan Fisik)
+  const canRequest = can(PERMISSIONS.PURCHASING.CREATE) || canRequestPO(currentUser.role);
+  const canExecuteCommercial = canCreatePO(currentUser.role);
+  const canReceivePhysical = canReceivePO(currentUser.role);
+  const canShowCosts = canSeeCosts(currentUser.role);
+  const canDelete = can(PERMISSIONS.PURCHASING.DELETE) || canExecuteCommercial;
 
   const [procurements, setProcurements] = useState<PurchaseOrderResponse[]>([]);
   const [totalPOs, setTotalPOs] = useState(0);
@@ -66,6 +72,7 @@ export function ProcurementSection({
   const [isLoading, setIsLoading] = useState(true);
 
   // Modal states
+  const [executeDraftPO, setExecuteDraftPO] = useState<PurchaseOrderResponse | null>(null);
   const [receiveModalPO, setReceiveModalPO] = useState<PurchaseOrderResponse | null>(null);
   const [cancelModalState, setCancelModalState] = useState<{
     po: PurchaseOrderResponse;
@@ -123,24 +130,6 @@ export function ProcurementSection({
     fetchProcurements();
   }, [fetchProcurements]);
 
-  // Action: Setujui & Pesan
-  const handleOrderPO = async (po: PurchaseOrderResponse) => {
-    const isOk = await confirm({
-      title: 'Pesan Pengadaan',
-      message: `Setujui pengadaan "${po.po_number}" dan kirimkan pesanan ke vendor "${po.supplier}"?`,
-      confirmText: 'Pesan Sekarang',
-    });
-    if (isOk) {
-      try {
-        await procurementService.orderPO(po.id);
-        toast.success('Pengadaan Disetujui', `PO ${po.po_number} telah disetujui dan berstatus Dipesan.`);
-        fetchProcurements();
-      } catch (err: any) {
-        toast.error('Gagal Memesan PO', err?.response?.data?.message || err?.message || 'Gagal mengubah status.');
-      }
-    }
-  };
-
   // Action: Batalkan Sisa PO
   const handleCancelRemainingPO = async (po: PurchaseOrderResponse) => {
     const isOk = await confirm({
@@ -179,8 +168,8 @@ export function ProcurementSection({
     }
   };
 
-  const columns: Column<PurchaseOrderResponse>[] = useMemo(
-    () => [
+  const columns: Column<PurchaseOrderResponse>[] = useMemo(() => {
+    const cols: Column<PurchaseOrderResponse>[] = [
       {
         id: 'po_number',
         header: 'No. Pengadaan',
@@ -193,25 +182,14 @@ export function ProcurementSection({
             >
               {po.po_number}
             </Link>
-            {po.purchase_type === 'DIRECT' ? (
-              <Badge variant="purple">Cash</Badge>
-            ) : (
-              <Badge variant="info">PO</Badge>
+            {po.status !== 'DRAFT' && (
+              po.purchase_type === 'DIRECT' ? (
+                <Badge variant="purple">Cash</Badge>
+              ) : (
+                <Badge variant="info">PO</Badge>
+              )
             )}
           </div>
-        ),
-      },
-      {
-        id: 'supplier',
-        header: 'Vendor',
-        width: '220px',
-        className: 'min-w-[200px]',
-        cell: ({ row: po }) => (
-          <TruncatedText
-            text={po.supplier}
-            className="text-sm font-normal text-slate-700 dark:text-slate-300"
-            maxWidth="200px"
-          />
         ),
       },
       {
@@ -256,16 +234,24 @@ export function ProcurementSection({
           );
         },
       },
-      {
+    ];
+
+    if (canShowCosts) {
+      cols.push({
         id: 'total_amount',
         header: 'Total Transaksi',
         align: 'right',
         cell: ({ row: po }) => (
           <span className="font-mono font-bold text-slate-900 dark:text-white">
-            {formatCurrency(po.total_amount)}
+            {po.status === 'DRAFT' && (!po.supplier || po.supplier === '-')
+              ? '-'
+              : formatCurrency(po.total_amount)}
           </span>
         ),
-      },
+      });
+    }
+
+    cols.push(
       {
         id: 'status',
         header: 'Status',
@@ -299,15 +285,15 @@ export function ProcurementSection({
           const moreItems: ActionMenuItem[] = [];
 
           if (po.status === 'DRAFT') {
-            if (canUpdate) {
+            if (canExecuteCommercial) {
               mainButton = (
                 <Button
                   size="sm"
                   variant="primary"
-                  onClick={() => handleOrderPO(po)}
-                  title="Setujui pengadaan ini"
+                  onClick={() => setExecuteDraftPO(po)}
+                  title="Verifikasi harga, vendor, dan proses pesanan"
                 >
-                  Setujui & Pesan
+                  Proses & Pesan
                 </Button>
               );
               moreItems.push({
@@ -317,6 +303,8 @@ export function ProcurementSection({
                 onClick: () =>
                   setCancelModalState({ po, mode: 'REJECT' }),
               });
+            }
+            if (canExecuteCommercial || canRequest) {
               moreItems.push({
                 label: 'Batalkan PO',
                 icon: <Ban className="h-3.5 w-3.5" />,
@@ -334,7 +322,7 @@ export function ProcurementSection({
               });
             }
           } else if (po.status === 'ORDERED') {
-            if (canUpdate) {
+            if (canReceivePhysical) {
               mainButton = (
                 <Button
                   size="sm"
@@ -346,6 +334,8 @@ export function ProcurementSection({
                   Terima Barang
                 </Button>
               );
+            }
+            if (canExecuteCommercial) {
               moreItems.push({
                 label: 'Batalkan PO',
                 icon: <Ban className="h-3.5 w-3.5" />,
@@ -355,7 +345,7 @@ export function ProcurementSection({
               });
             }
           } else if (po.status === 'PARTIALLY_RECEIVED') {
-            if (canUpdate) {
+            if (canReceivePhysical) {
               mainButton = (
                 <Button
                   size="sm"
@@ -367,6 +357,8 @@ export function ProcurementSection({
                   Terima Barang
                 </Button>
               );
+            }
+            if (canExecuteCommercial) {
               moreItems.push({
                 label: 'Batalkan Sisa PO',
                 icon: <Ban className="h-3.5 w-3.5" />,
@@ -399,10 +391,11 @@ export function ProcurementSection({
             </div>
           );
         },
-      },
-    ],
-    [canUpdate, canDelete]
-  );
+      }
+    );
+
+    return cols;
+  }, [canShowCosts, canExecuteCommercial, canReceivePhysical, canRequest, canDelete]);
 
   return (
     <>
@@ -429,24 +422,28 @@ export function ProcurementSection({
         emptyDescription={
           filters.search || filters.status
             ? 'Tidak ada data pengadaan yang sesuai dengan pencarian atau filter.'
-            : 'Buat pengadaan baru untuk memesan bahan baku ke vendor.'
+            : 'Ajukan atau buat pengadaan baru untuk memenuhi kebutuhan bahan baku.'
         }
       />
 
-      {/* Modal: Form Pengadaan Baru (PO & Pembelian Langsung) */}
+      {/* Modal: Form Pengadaan Baru (Fase 1 Request Gudang / Fase 1+2 Buat Langsung) & Fase 2 Eksekusi Draft */}
       <ProcurementModal
-        isOpen={isCreateModalOpen}
+        isOpen={isCreateModalOpen || Boolean(executeDraftPO)}
         onClose={() => {
-          onCloseCreateModal();
-          if (onClearPreselectedMaterial) onClearPreselectedMaterial();
+          if (executeDraftPO) setExecuteDraftPO(null);
+          if (isCreateModalOpen) {
+            onCloseCreateModal();
+            if (onClearPreselectedMaterial) onClearPreselectedMaterial();
+          }
         }}
         preselectedMaterialId={preselectedMaterialId}
+        draftPO={executeDraftPO}
         onSuccess={() => {
           fetchProcurements();
         }}
       />
 
-      {/* Modal: Terima Barang */}
+      {/* Modal: Terima Barang (Fase 3) */}
       <ReceiveGoodsModal
         isOpen={Boolean(receiveModalPO)}
         onClose={() => setReceiveModalPO(null)}

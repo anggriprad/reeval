@@ -141,10 +141,13 @@ export const procurementService = {
     return response.data;
   },
 
-  async orderPO(id: number | string): Promise<ApiResponse<PurchaseOrderResponse>> {
+  async orderPO(
+    id: number | string,
+    payload?: Partial<CreateProcurementRequest>
+  ): Promise<ApiResponse<PurchaseOrderResponse>> {
     const response = await httpPut<PurchaseOrderResponse>(
       endpointUrl(`inventory/procurements/${id}/order`),
-      {},
+      payload || {},
       true
     );
     return response.data;

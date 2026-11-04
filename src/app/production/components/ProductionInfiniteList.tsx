@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Factory, CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import type { WorkOrder, Product, JobCard } from '@/lib/types';
+import type { WorkOrder, Product, JobCard, ProductionOperation } from '@/lib/types';
 import { WorkOrderCard } from './WorkOrderCard';
 
 interface ProductionInfiniteListProps {
@@ -11,6 +11,7 @@ interface ProductionInfiniteListProps {
   items: WorkOrder[];
   allWorkOrders?: WorkOrder[];
   products: Product[];
+  operations?: ProductionOperation[];
   isLoading: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
@@ -21,6 +22,7 @@ interface ProductionInfiniteListProps {
   canManage: boolean;
   onOpenKPI: (wo: WorkOrder) => void;
   onOpenCancel?: (wo: WorkOrder) => void;
+  onAssignOperator?: (woId: string, jc: JobCard, e?: React.MouseEvent) => void;
   onStartJobCard?: (woId: string, jcId: string, e?: React.MouseEvent) => void;
   onPauseJobCard?: (woId: string, jcId: string, e?: React.MouseEvent) => void;
   onOpenCompleteModal?: (woId: string, jc: JobCard, e?: React.MouseEvent) => void;
@@ -31,6 +33,7 @@ export function ProductionInfiniteList({
   items,
   allWorkOrders = [],
   products,
+  operations = [],
   isLoading,
   isLoadingMore,
   hasMore,
@@ -41,6 +44,7 @@ export function ProductionInfiniteList({
   canManage,
   onOpenKPI,
   onOpenCancel,
+  onAssignOperator,
   onStartJobCard,
   onPauseJobCard,
   onOpenCompleteModal,
@@ -130,12 +134,14 @@ export function ProductionInfiniteList({
           wo={wo}
           tab={tab}
           products={products}
+          operations={operations}
           allWorkOrders={allWorkOrders}
           isExpanded={Boolean(expandedWOIds[wo.id])}
           onToggleExpand={onToggleExpand}
           canManage={canManage}
           onOpenKPI={onOpenKPI}
           onOpenCancel={onOpenCancel}
+          onAssignOperator={onAssignOperator}
           onStartJobCard={onStartJobCard}
           onPauseJobCard={onPauseJobCard}
           onOpenCompleteModal={onOpenCompleteModal}
