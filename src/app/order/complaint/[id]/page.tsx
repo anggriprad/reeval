@@ -81,6 +81,8 @@ export default function ComplaintDetailPage() {
   const { toast } = useToast();
 
   const { salesOrders, products, invoices, bankAccounts, finishedGoods, resolveOrderComplaint, rejectOrderComplaint, manuallyResolveComplaint } = useApp();
+  const { can } = usePermission();
+  const canRespondComplaint = can(PERMISSIONS.COMPLAINT.RESPONS);
 
   const [isFulfillmentModalOpen, setIsFulfillmentModalOpen] = useState(false);
   const [replacementSource, setReplacementSource] = useState<'NEW_SPK' | 'FINISHED_STOCK'>('NEW_SPK');
@@ -496,16 +498,28 @@ export default function ComplaintDetailPage() {
 
           {/* Action / Resolusi (Desktop) */}
           {(!complaint.resolution || complaint.status === 'DIAJUKAN' || complaint.status === 'MENUNGGU') ? (
-            <div className="hidden lg:block">
-              <Button
-                size="lg"
-                variant="primary"
-                className="w-full h-11 font-semibold text-sm shadow-sm"
-                onClick={() => setIsActionModalOpen(true)}
-              >
-                Tanggapi Komplain
-              </Button>
-            </div>
+            canRespondComplaint ? (
+              <div className="hidden lg:block">
+                <Button
+                  size="lg"
+                  variant="primary"
+                  className="w-full h-11 font-semibold text-sm shadow-sm"
+                  onClick={() => setIsActionModalOpen(true)}
+                >
+                  Tanggapi Komplain
+                </Button>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/30 space-y-1.5">
+                <div className="flex items-center gap-2 font-semibold text-sm text-amber-800 dark:text-amber-300">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  <span>Menunggu Tinjauan Admin</span>
+                </div>
+                <p className="text-xs text-amber-700/90 dark:text-amber-400/90 leading-relaxed">
+                  Pengajuan komplain sedang menunggu tindak lanjut dari Admin.
+                </p>
+              </div>
+            )
           ) : complaint.status === 'DITOLAK' ? (
             <div className="p-4 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/30 space-y-2">
               <div className="flex items-center gap-2 font-semibold text-sm text-red-800 dark:text-red-300">
@@ -580,7 +594,7 @@ export default function ComplaintDetailPage() {
                   : 'Status: Sedang Ditangani'}
               </div>
 
-              {complaint.status === 'DITANGANI' && (
+              {complaint.status === 'DITANGANI' && canRespondComplaint && (
                 <div className="pt-2 border-t border-blue-200/60 dark:border-blue-900/40 flex justify-end">
                   <Button
                     size="sm"
@@ -600,7 +614,7 @@ export default function ComplaintDetailPage() {
       </div>
 
       {/* Mobile Fixed Bottom Action Bar: Tanggapi Komplain */}
-      {(!complaint.resolution || complaint.status === 'DIAJUKAN' || complaint.status === 'MENUNGGU') && (
+      {canRespondComplaint && (!complaint.resolution || complaint.status === 'DIAJUKAN' || complaint.status === 'MENUNGGU') && (
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-4 pb-[max(12px,calc(env(safe-area-inset-bottom,0px)+4px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
           <Button
             size="lg"

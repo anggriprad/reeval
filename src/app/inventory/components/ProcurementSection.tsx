@@ -14,6 +14,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
   canCreatePO,
+  canManageInventory,
   canReceivePO,
   canRequestPO,
   canSeeCosts,
@@ -59,13 +60,14 @@ export function ProcurementSection({
   const { can } = usePermission();
   const { currentUser, purchaseOrders = [] } = useApp();
 
-  // Fase 1 (Request), Fase 2 (Eksekusi Komersial), Fase 3 (Penerimaan Fisik)
-  const canRequest = can(PERMISSIONS.PURCHASING.CREATE) || canRequestPO(currentUser.role);
-  const canExecuteCommercial = canCreatePO(currentUser.role);
-  const canReceivePhysical = canReceivePO(currentUser.role);
-  const canShowCosts = canSeeCosts(currentUser.role);
-  const canDelete = can(PERMISSIONS.PURCHASING.DELETE) || canExecuteCommercial;
-
+  // Fase 1 (Request), Fase 2 (Eksekusi Komersial), Fase 3 (Penerimaan Fisik) — Pure PBAC 1-to-1
+  const canRequest = can(PERMISSIONS.PURCHASING.CREATE);
+  const canExecuteCommercial = can(PERMISSIONS.PURCHASING.ORDER);
+  const canReceivePhysical = can(PERMISSIONS.PURCHASING.RECEIVE);
+  const canReject = can(PERMISSIONS.PURCHASING.REJECT);
+  const canCancel = can(PERMISSIONS.PURCHASING.CANCEL);
+  const canDelete = can(PERMISSIONS.PURCHASING.DELETE);
+  const canShowCosts = can(PERMISSIONS.PURCHASING.READ);
   const [procurements, setProcurements] = useState<PurchaseOrderResponse[]>([]);
   const [totalPOs, setTotalPOs] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -296,6 +298,8 @@ export function ProcurementSection({
                   Proses & Pesan
                 </Button>
               );
+            }
+            if (canReject) {
               moreItems.push({
                 label: 'Tolak PO',
                 icon: <XCircle className="h-3.5 w-3.5" />,
@@ -304,7 +308,7 @@ export function ProcurementSection({
                   setCancelModalState({ po, mode: 'REJECT' }),
               });
             }
-            if (canExecuteCommercial || canRequest) {
+            if (canCancel) {
               moreItems.push({
                 label: 'Batalkan PO',
                 icon: <Ban className="h-3.5 w-3.5" />,
@@ -335,7 +339,7 @@ export function ProcurementSection({
                 </Button>
               );
             }
-            if (canExecuteCommercial) {
+            if (canCancel) {
               moreItems.push({
                 label: 'Batalkan PO',
                 icon: <Ban className="h-3.5 w-3.5" />,
@@ -358,7 +362,7 @@ export function ProcurementSection({
                 </Button>
               );
             }
-            if (canExecuteCommercial) {
+            if (canCancel) {
               moreItems.push({
                 label: 'Batalkan Sisa PO',
                 icon: <Ban className="h-3.5 w-3.5" />,
@@ -395,7 +399,7 @@ export function ProcurementSection({
     );
 
     return cols;
-  }, [canShowCosts, canExecuteCommercial, canReceivePhysical, canRequest, canDelete]);
+  }, [canShowCosts, canExecuteCommercial, canReceivePhysical, canReject, canCancel, canRequest, canDelete]);
 
   return (
     <>

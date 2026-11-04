@@ -1,19 +1,19 @@
 /**
  * Reeval ERP — Granular Permission System (PBAC)
- * Penulisan kode permission 100% selaras dengan Seeder Backend api-reeval.
+ * Penulisan kode permission 100% selaras dengan Seeder Backend api-reeval (Contract UAC).
  */
 
 export const PERMISSIONS = {
   GLOBAL: '*',
 
-  // Company & Tenant Administration
+  // 2. Company & Tenant Administration
   COMPANY: {
     READ: 'company:read',
     UPDATE: 'company:update',
     SETTINGS: 'company:settings',
   },
 
-  // User & Role Access Control (UAC)
+  // 3. User & Role Access Control (UAC)
   USER: {
     READ: 'user:read',
     CREATE: 'user:create',
@@ -27,57 +27,57 @@ export const PERMISSIONS = {
     DELETE: 'role:delete',
   },
 
-  // Sales & Commercial
+  // 4. Sales & Complaint
   SALES: {
     READ: 'sales:read',
     CREATE: 'sales:create',
     UPDATE: 'sales:update',
     APPROVE: 'sales:approve',
+    CUSTOM: 'sales:custom',
+    CALL: 'sales:call',
+    CONFIG: 'sales:config',
     DELETE: 'sales:delete',
+    DELETE_APPROVE: 'sales:delete-approve',
+  },
+  COMPLAINT: {
+    READ: 'complaint:read',
+    CREATE: 'complaint:create',
+    UPDATE: 'complaint:update',
+    RESPONS: 'complaint:respons',
+    CANCEL: 'complaint:cancel',
+    DELETE: 'complaint:delete',
   },
 
-  // Production & Factory Floor
+  // 5. Production & Factory Floor
   PRODUCTION: {
     READ: 'production:read',
+    KPI: 'production:kpi',
     CREATE: 'production:create',
     UPDATE: 'production:update',
-    DELETE: 'production:delete',
+    ASSIGN: 'production:assign',
     OPERATE: 'production:operate',
     COMPLETE: 'production:complete',
+    DELETE: 'production:delete',
     OPERATION_READ: 'production-operation:read',
     OPERATION_CREATE: 'production-operation:create',
     OPERATION_UPDATE: 'production-operation:update',
     OPERATION_DELETE: 'production-operation:delete',
-    OPERATION_COMPLETE: 'production-operation:complete',
     ROUTING_READ: 'production-routing:read',
     ROUTING_CREATE: 'production-routing:create',
     ROUTING_UPDATE: 'production-routing:update',
     ROUTING_DELETE: 'production-routing:delete',
-    ROUTING_COMPLETE: 'production-routing:complete',
-    OPERATOR_READ: 'production-operator:read',
-    OPERATOR_CREATE: 'production-operator:create',
-    OPERATOR_UPDATE: 'production-operator:update',
-    OPERATOR_DELETE: 'production-operator:delete',
-    OPERATOR_COMPLETE: 'production-operator:complete',
   },
 
-  // Delivery & Logistics
-  DELIVERY: {
-    READ: 'delivery:read',
-    CREATE: 'delivery:create',
-    UPDATE: 'delivery:update',
-    DISPATCH: 'delivery:dispatch',
-    VEHICLE_READ: 'vehicle:read',
-    VEHICLE_CREATE: 'vehicle:create',
-    VEHICLE_UPDATE: 'vehicle:update',
-    VEHICLE_DELETE: 'vehicle:delete',
-    DRIVER_READ: 'driver:read',
-    DRIVER_CREATE: 'driver:create',
-    DRIVER_UPDATE: 'driver:update',
-    DRIVER_DELETE: 'driver:delete',
+  // 6. Inventory & Purchasing
+  FINISHED_GOOD: {
+    READ: 'finished-good:read',
+    ALLOCATE: 'finished-good:allocate',
   },
-
-  // Inventory & Materials
+  RETURNED_GOOD: {
+    READ: 'returned-good:read',
+    RECEIVE: 'returned-good:receive',
+    ACTION: 'returned-good:action',
+  },
   INVENTORY: {
     READ: 'material:read',
     CREATE: 'material:create',
@@ -93,22 +93,49 @@ export const PERMISSIONS = {
     ASSET_READ: 'asset:read',
     ASSET_CREATE: 'asset:create',
     ASSET_UPDATE: 'asset:update',
+    ASSET_SERVICE: 'asset:service',
     ASSET_DELETE: 'asset:delete',
     ASSET_CATEGORY_READ: 'asset-category:read',
     ASSET_CATEGORY_CREATE: 'asset-category:create',
     ASSET_CATEGORY_UPDATE: 'asset-category:update',
     ASSET_CATEGORY_DELETE: 'asset-category:delete',
+    FINISHED_GOOD_READ: 'finished-good:read',
+    FINISHED_GOOD_ALLOCATE: 'finished-good:allocate',
+    RETURNED_GOOD_READ: 'returned-good:read',
+    RETURNED_GOOD_RECEIVE: 'returned-good:receive',
+    RETURNED_GOOD_ACTION: 'returned-good:action',
   },
-
-  // Purchasing & Procurement
   PURCHASING: {
     READ: 'procurement:read',
     CREATE: 'procurement:create',
     UPDATE: 'procurement:update',
+    ORDER: 'procurement:order',
+    RECEIVE: 'procurement:receive',
+    REJECT: 'procurement:reject',
+    CANCEL: 'procurement:cancel',
     DELETE: 'procurement:delete',
   },
 
-  // Product Catalog & Configuration
+  // 7. Delivery & Logistics
+  DELIVERY: {
+    READ: 'delivery:read',
+    CREATE: 'delivery:create',
+    UPDATE: 'delivery:update',
+    LOAD: 'delivery:load',
+    DELIVER: 'delivery:deliver',
+    FAIL: 'delivery:fail',
+    RESCHEDULE: 'delivery:reschedule',
+    CANCEL: 'delivery:cancel',
+    CALL: 'delivery:call',
+    VEHICLE_READ: 'vehicle:read',
+    VEHICLE_CREATE: 'vehicle:create',
+    VEHICLE_UPDATE: 'vehicle:update',
+    VEHICLE_DELETE: 'vehicle:delete',
+    SHIPPING_RATE_READ: 'shipping-rate:read',
+    SHIPPING_RATE_UPDATE: 'shipping-rate:update',
+  },
+
+  // 8. Product Catalog & Configuration
   PRODUCT: {
     READ: 'product:read',
     CREATE: 'product:create',
@@ -132,11 +159,14 @@ export const PERMISSIONS = {
     MODIFIER_DELETE: 'modifier-group:delete',
   },
 
-  // Finance & Accounting
+  // 9. Finance & Accounting
   FINANCE: {
     READ: 'finance:read',
-    CREATE: 'finance:create',
-    UPDATE: 'finance:update',
+    REPORT: 'finance:report',
+    PAYMENT: 'finance:payment',
+    EXPENSE: 'finance:expense',
+    BANK: 'finance:bank',
+    COA: 'finance:coa',
     POST: 'finance:post',
   },
 } as const;
@@ -206,22 +236,49 @@ export const ROUTE_PERMISSION_RULES: RoutePermissionRule[] = [
   { path: '/roles/create', requiredPermission: 'role:create' },
   { path: '/roles', requiredPermission: 'role:read' },
 
-  // Sales Order
-  { path: '/order/create', requiredPermission: 'sales:create' },
+  // Sales Order & Complaint
+  { path: '/order/config', requiredPermission: 'sales:config' },
+  { path: '/order/complaint', requiredPermission: 'complaint:read' },
+  { path: '/order/create', requiredPermission: ['sales:create', 'sales:update'] },
   { path: '/order', requiredPermission: 'sales:read' },
 
   // Production
+  { path: '/production/config', requiredPermission: ['production-operation:read', 'production-routing:read'] },
   { path: '/production', requiredPermission: 'production:read' },
 
   // Inventory & Purchasing
-  { path: '/inventory', requiredPermission: ['material:read', 'asset:read', 'procurement:read'] },
+  {
+    path: '/inventory/config',
+    requiredPermission: ['material-category:read', 'asset-category:read'],
+  },
+  {
+    path: '/inventory',
+    requiredPermission: [
+      'material:read',
+      'asset:read',
+      'procurement:read',
+      'finished-good:read',
+      'returned-good:read',
+      'stock-movement:read',
+    ],
+  },
   { path: '/purchasing', requiredPermission: 'procurement:read' },
 
   // Products
+  {
+    path: '/products/config',
+    requiredPermission: [
+      'product-category:read',
+      'bom-preset:read',
+      'product-attribute:read',
+      'modifier-group:read',
+    ],
+  },
   { path: '/products/create', requiredPermission: 'product:create' },
   { path: '/products', requiredPermission: 'product:read' },
 
   // Delivery
+  { path: '/delivery/config', requiredPermission: ['vehicle:read', 'shipping-rate:read'] },
   { path: '/delivery', requiredPermission: 'delivery:read' },
 
   // Finance
@@ -249,6 +306,5 @@ export function getRequiredPermissionForPath(pathname: string): string | string[
       }
     }
   }
-
   return null;
 }

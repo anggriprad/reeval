@@ -66,12 +66,12 @@ export function RawMaterialSection({
     setMaterialsList,
   } = useApp();
 
-  // UAC / PBAC Permissions (Granular Permission with Role fallback)
-  const canUpdate = can(PERMISSIONS.INVENTORY.UPDATE) || canManageInventory(currentUser.role);
-  const canDelete = can(PERMISSIONS.INVENTORY.DELETE) || canManageInventory(currentUser.role);
-  const canProcure = can(PERMISSIONS.PURCHASING.CREATE) || canRequestPO(currentUser.role);
-  const canExecuteCommercial = canCreatePO(currentUser.role);
-  const canProduce = can(PERMISSIONS.PRODUCTION.CREATE) || canManageProduction(currentUser.role);
+  // UAC / PBAC Permissions (Pure PBAC 1-to-1)
+  const canUpdate = can(PERMISSIONS.INVENTORY.UPDATE);
+  const canDelete = can(PERMISSIONS.INVENTORY.DELETE);
+  const canProcure = can(PERMISSIONS.PURCHASING.CREATE);
+  const canExecuteCommercial = can(PERMISSIONS.PURCHASING.ORDER);
+  const canProduce = can(PERMISSIONS.PRODUCTION.CREATE);
 
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [totalMaterials, setTotalMaterials] = useState(0);

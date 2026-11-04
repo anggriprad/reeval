@@ -4,6 +4,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -35,6 +37,8 @@ export default function TripDetailPage() {
     deliveryOrders,
     salesOrders,
   } = useApp();
+  const { can } = usePermission();
+  const canCall = can(PERMISSIONS.DELIVERY.CALL);
 
   // API trip detail state
   const [apiDOs, setApiDOs] = useState<ApiDeliveryOrder[]>([]);
@@ -185,14 +189,20 @@ export default function TripDetailPage() {
               {tripInfo.driverName}
             </p>
             {tripInfo.driverPhone ? (
-              <a
-                href={getWhatsAppUrl(tripInfo.driverPhone)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline pt-0.5"
-              >
-                {formatPhoneDisplay(tripInfo.driverPhone)}
-              </a>
+              canCall ? (
+                <a
+                  href={getWhatsAppUrl(tripInfo.driverPhone)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline pt-0.5"
+                >
+                  {formatPhoneDisplay(tripInfo.driverPhone)}
+                </a>
+              ) : (
+                <p className="text-slate-600 dark:text-slate-300 pt-0.5">
+                  {formatPhoneDisplay(tripInfo.driverPhone)}
+                </p>
+              )
             ) : (
               <p className="text-slate-400">-</p>
             )}

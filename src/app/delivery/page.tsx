@@ -54,9 +54,11 @@ function DeliveryContent() {
   const router = useRouter();
   const { can } = usePermission();
 
-  const canCreate = can(PERMISSIONS.DELIVERY.CREATE) || ['ADMIN', 'SUPER_ADMIN', 'ADMIN_DELIVERY'].includes(currentUser?.role || '');
-  const canDispatch = can(PERMISSIONS.DELIVERY.DISPATCH) || ['ADMIN', 'SUPER_ADMIN', 'ADMIN_DELIVERY', 'DRIVER'].includes(currentUser?.role || '');
-  const canConfig = can(PERMISSIONS.DELIVERY.VEHICLE_READ) || can(PERMISSIONS.DELIVERY.DRIVER_READ) || ['ADMIN', 'SUPER_ADMIN', 'ADMIN_DELIVERY'].includes(currentUser?.role || '');
+  const canCreate = can(PERMISSIONS.DELIVERY.CREATE);
+  const canLoad = can(PERMISSIONS.DELIVERY.LOAD);
+  const canConfig =
+    can(PERMISSIONS.DELIVERY.VEHICLE_READ) ||
+    can(PERMISSIONS.DELIVERY.SHIPPING_RATE_READ);
 
   const validTabs = useMemo<readonly TabKey[]>(() => {
     return canCreate
@@ -788,7 +790,7 @@ function DeliveryContent() {
           hasMore={hasMoreTrips}
           onLoadMore={handleLoadMoreTrips}
           onOpenLoadingModal={id => setLoadingTripId(id)}
-          canDispatch={canDispatch}
+          canDispatch={canLoad}
         />
       )}
 

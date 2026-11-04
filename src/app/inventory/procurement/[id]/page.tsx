@@ -19,11 +19,8 @@ import {
   getPOStatusLabel,
   getPOStatusVariant,
 } from '@/lib/utils';
-import {
-  canCreatePO,
-  canReceivePO,
-  canSeeCosts,
-} from '@/lib/roles';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   procurementService,
   PurchaseOrderResponse,
@@ -47,6 +44,7 @@ export default function ProcurementDetailPage() {
   const id = params?.id as string;
   const router = useRouter();
   const { toast, confirm } = useToast();
+  const { can } = usePermission();
 
   const {
     purchaseOrders,
@@ -60,9 +58,11 @@ export default function ProcurementDetailPage() {
     bankAccounts = [],
   } = useApp();
 
-  const canExecuteCommercial = canCreatePO(currentUser.role);
-  const canReceivePhysical = canReceivePO(currentUser.role);
-  const canShowCosts = canSeeCosts(currentUser.role);
+  const canExecuteCommercial = can(PERMISSIONS.PURCHASING.ORDER);
+  const canReceivePhysical = can(PERMISSIONS.PURCHASING.RECEIVE);
+  const canReject = can(PERMISSIONS.PURCHASING.REJECT);
+  const canCancel = can(PERMISSIONS.PURCHASING.CANCEL);
+  const canShowCosts = can(PERMISSIONS.PURCHASING.READ);
 
   const initialPo = purchaseOrders.find((p) => p.id === id || p.poNumber === id);
   const [fetchedPO, setFetchedPO] = useState<PurchaseOrder | null>(null);
@@ -344,32 +344,34 @@ export default function ProcurementDetailPage() {
                   Proses & Pesan
                 </Button>
               )}
-              <ActionMenu
-                triggerSize="md"
-                menuWidth="w-max min-w-[130px]"
-                items={[
-                  ...(canExecuteCommercial
-                    ? [
-                        {
-                          label: 'Tolak PO',
-                          icon: <XCircle className="h-3.5 w-3.5" />,
-                          variant: 'danger' as const,
-                          onClick: openRejectModal,
-                        },
-                      ]
-                    : []),
-                  ...(canExecuteCommercial || po.createdBy === currentUser.name
-                    ? [
-                        {
-                          label: 'Batalkan PO',
-                          icon: <Ban className="h-3.5 w-3.5" />,
-                          variant: 'danger' as const,
-                          onClick: openCancelModal,
-                        },
-                      ]
-                    : []),
-                ]}
-              />
+              {(canReject || canCancel) && (
+                <ActionMenu
+                  triggerSize="md"
+                  menuWidth="w-max min-w-[130px]"
+                  items={[
+                    ...(canReject
+                      ? [
+                          {
+                            label: 'Tolak PO',
+                            icon: <XCircle className="h-3.5 w-3.5" />,
+                            variant: 'danger' as const,
+                            onClick: openRejectModal,
+                          },
+                        ]
+                      : []),
+                    ...(canCancel
+                      ? [
+                          {
+                            label: 'Batalkan PO',
+                            icon: <Ban className="h-3.5 w-3.5" />,
+                            variant: 'danger' as const,
+                            onClick: openCancelModal,
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              )}
             </div>
           )}
 
@@ -385,7 +387,7 @@ export default function ProcurementDetailPage() {
                   Terima Barang
                 </Button>
               )}
-              {canExecuteCommercial && (
+              {canCancel && (
                 <ActionMenu
                   triggerSize="md"
                   menuWidth="w-max min-w-[130px]"

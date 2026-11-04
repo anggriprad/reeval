@@ -7,7 +7,6 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
-import { canManageInventory, canSeeCosts } from '@/lib/roles';
 import { Badge } from '@/components/ui/Badge';
 import { formatCurrency } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -87,14 +86,13 @@ interface ProductSectionProps {
 export function ProductSection({ categoryFilter, searchTerm }: ProductSectionProps) {
   const { toast, confirm } = useToast();
   const { can } = usePermission();
-  const { currentUser, masterModifierGroups, materials } = useApp();
+  const { masterModifierGroups, materials } = useApp();
 
-  const isInventoryManager = canManageInventory(currentUser.role);
-  const seeCosts = canSeeCosts(currentUser.role);
-  const canCreate = isInventoryManager || can(PERMISSIONS.PRODUCT.CREATE);
-  const canUpdate = isInventoryManager || can(PERMISSIONS.PRODUCT.UPDATE);
-  const canDelete = isInventoryManager || can(PERMISSIONS.PRODUCT.DELETE);
-  const canManage = isInventoryManager || canCreate || canUpdate || canDelete;
+  const seeCosts = can(PERMISSIONS.PRODUCT.READ);
+  const canCreate = can(PERMISSIONS.PRODUCT.CREATE);
+  const canUpdate = can(PERMISSIONS.PRODUCT.UPDATE);
+  const canDelete = can(PERMISSIONS.PRODUCT.DELETE);
+  const canManage = canUpdate || canDelete;
 
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [total, setTotal] = useState(0);

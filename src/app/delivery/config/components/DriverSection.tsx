@@ -226,9 +226,9 @@ export function DriverSection() {
     }
   };
 
-  const canCreate = can(PERMISSIONS.DELIVERY.DRIVER_CREATE);
-  const canUpdate = can(PERMISSIONS.DELIVERY.DRIVER_UPDATE);
-  const canDelete = can(PERMISSIONS.DELIVERY.DRIVER_DELETE);
+  const canCreate = can(PERMISSIONS.DELIVERY.UPDATE);
+  const canUpdate = can(PERMISSIONS.DELIVERY.UPDATE);
+  const canDelete = can(PERMISSIONS.DELIVERY.UPDATE);
 
   return (
     <ConfigSection

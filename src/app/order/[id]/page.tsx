@@ -147,6 +147,25 @@ export default function OrderDetailPage() {
   }, []);
 
   const { can } = usePermission();
+  const canApprove = can(PERMISSIONS.SALES.APPROVE);
+  const canUpdate = can(PERMISSIONS.SALES.UPDATE);
+  const canCustom = can(PERMISSIONS.SALES.CUSTOM);
+  const canDelete = can(PERMISSIONS.SALES.DELETE);
+  const canCall = can(PERMISSIONS.SALES.CALL);
+  const canCreateComplaint = can(PERMISSIONS.COMPLAINT.CREATE);
+  const canReadComplaint = can(PERMISSIONS.COMPLAINT.READ);
+
+  const userRoleList = (
+    currentUser?.roles && currentUser.roles.length > 0
+      ? currentUser.roles
+      : [currentUser?.role]
+  ).map((r) => String(r || '').toUpperCase());
+  const isAdminOrSuperAdmin =
+    Boolean(currentUser?.is_superadmin) ||
+    userRoleList.includes('SUPER_ADMIN') ||
+    userRoleList.includes('ADMIN');
+  const isSalesRole = userRoleList.includes('SALES') && !isAdminOrSuperAdmin;
+
   const [liveOrder, setLiveOrder] = useState<SalesOrder | null>(null);
   const [isLoadingOrder, setIsLoadingOrder] = useState(true);
 
@@ -200,7 +219,17 @@ export default function OrderDetailPage() {
     );
   }
 
-  const salesPhone = order!.salesPhone || (order as any)!.created_by_phone || (order as any)!.sales_phone || USER_ACCOUNTS.find(u => u.name === order!.createdBy)?.phone || '';
+  const salesPhone =
+    order!.salesPhone ||
+    (order as any)!.created_by_phone ||
+    (order as any)!.sales_phone ||
+    USER_ACCOUNTS.find(u => u.name === order!.createdBy)?.phone ||
+    '';
+  const adminPhone =
+    order!.companyPhone ||
+    (order as any)!.company_phone ||
+    USER_ACCOUNTS.find(u => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN')?.phone ||
+    '';
 
   const handleProcess = async () => {
     try {
@@ -615,7 +644,8 @@ export default function OrderDetailPage() {
   });
 
   const salesWaMsg = `Halo ${order.createdBy}, perihal Sales Order ${order.orderNumber}. Detail pesanan dapat dilihat di: ${currentUrl}`;
-  const customerWaMsg = `Halo ${order.customer.name}, kami dari Reeval ERP perihal Sales Order ${order.orderNumber}...`;
+  const adminWaMsg = `Halo Admin, perihal Sales Order ${order.orderNumber}. Detail pesanan dapat dilihat di: ${currentUrl}`;
+  const customerWaMsg = `Halo ${order.customer.name}, kami perihal Sales Order ${order.orderNumber}...`;
 
   // Perhitungan Penyesuaian Refund dari Komplain
   const refundComplaints = (order.complaints || []).filter(
@@ -665,19 +695,23 @@ export default function OrderDetailPage() {
           (() => {
             const items = [];
             if (order.status === 'PENDING') {
-              items.push({
-                label: 'Kustom Proses',
-                icon: Sliders,
-                onClick: () => setCustomProcessModalOpen(true),
-              });
-              items.push({
-                label: 'Edit Pesanan',
-                icon: Edit,
-                onClick: () => router.push(`/order/create?edit=${order.id}`),
-              });
+              if (canCustom) {
+                items.push({
+                  label: 'Kustom Proses',
+                  icon: Sliders,
+                  onClick: () => setCustomProcessModalOpen(true),
+                });
+              }
+              if (canUpdate) {
+                items.push({
+                  label: 'Edit Pesanan',
+                  icon: Edit,
+                  onClick: () => router.push(`/order/create?edit=${order.id}`),
+                });
+              }
             }
 
-            if (order.status === 'PENDING' || order.status === 'PROCESSING') {
+            if ((order.status === 'PENDING' || order.status === 'PROCESSING') && canDelete) {
               items.push({
                 label: 'Batalkan Order',
                 icon: XCircle,
@@ -692,7 +726,7 @@ export default function OrderDetailPage() {
 
             // Hanya bisa mengajukan komplain jika pesanan berstatus TERKIRIM (SENT) dan tidak ada komplain aktif
             const hasActiveComplaint = order.complaints?.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK');
-            if (order.status === 'SENT' && !hasActiveComplaint) {
+            if (order.status === 'SENT' && !hasActiveComplaint && canCreateComplaint) {
               items.push({
                 label: 'Ajukan Komplain',
                 icon: AlertCircle,
@@ -1126,35 +1160,67 @@ export default function OrderDetailPage() {
             );
           })()}
 
-          {/* CONTAINER: KONTAK WHATSAPP (PELANGGAN & SALES) — Warna Netral (Secondary) */}
-          <div className="flex flex-col sm:flex-row gap-2">
-            {/* WhatsApp Pelanggan */}
-            {order.customer.phone && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => window.open(getWhatsAppUrl(order.customer.phone), '_blank')}
-              >
-                <MessageSquare className="w-4 h-4 mr-1.5" />
-                <span>Hubungi Pelanggan</span>
-              </Button>
-            )}
+          {/* CONTAINER: KONTAK WHATSAPP (Guard: sales:call + Role-Based Target) */}
+          {canCall && (
+            <div className="flex flex-col sm:flex-row gap-2">
+              {/* 1. Sales & Admin -> bisa call pelanggan (dari no hp pelanggan detail SO) */}
+              {(isSalesRole || isAdminOrSuperAdmin) && order.customer.phone && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => window.open(getWhatsAppUrl(order.customer.phone, customerWaMsg), '_blank')}
+                >
+                  <MessageSquare className="w-4 h-4 mr-1.5" />
+                  <span>Hubungi Pelanggan</span>
+                </Button>
+              )}
 
-            {/* WhatsApp Sales (Memuat Nomor SO & URL Detail SO) */}
-            {salesPhone && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => window.open(getWhatsAppUrl(salesPhone, salesWaMsg), '_blank')}
-              >
-                <MessageSquare className="w-4 h-4 mr-1.5" />
-                <span>Hubungi Sales</span>
-              </Button>
-            )}
-          </div>
+              {/* 2a. Sales -> bisa call admin (dari no hp akun company) */}
+              {isSalesRole && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    if (!adminPhone) {
+                      toast.error(
+                        'Nomor Admin Belum Diatur',
+                        'Nomor telepon akun perusahaan belum diatur pada profil perusahaan.'
+                      );
+                      return;
+                    }
+                    window.open(getWhatsAppUrl(adminPhone, adminWaMsg), '_blank');
+                  }}
+                >
+                  <MessageSquare className="w-4 h-4 mr-1.5" />
+                  <span>Hubungi Admin</span>
+                </Button>
+              )}
+
+              {/* 2b. Admin / Super Admin -> bisa call sales (dari no hp akun sales) */}
+              {isAdminOrSuperAdmin && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    if (!salesPhone) {
+                      toast.error(
+                        'Nomor Sales Belum Diatur',
+                        `Nomor telepon untuk akun ${order.createdBy || 'Sales'} belum diatur.`
+                      );
+                      return;
+                    }
+                    window.open(getWhatsAppUrl(salesPhone, salesWaMsg), '_blank');
+                  }}
+                >
+                  <MessageSquare className="w-4 h-4 mr-1.5" />
+                  <span>Hubungi Sales</span>
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* DESKTOP ACTION BUTTON: Proses Pesanan berada di bawah tombol hubungi sales & pelanggan */}
-          {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
+          {canApprove && order.status === 'PENDING' && (
             <div className="hidden md:block">
               <Button
                 variant="success"
@@ -1171,7 +1237,7 @@ export default function OrderDetailPage() {
       </div>
 
       {/* MOBILE BOTTOM FIXED ACTION BAR: Tombol aksi utama "Proses Pesanan" selalu berada di bawah tanpa ikut scroll (Konsisten dengan Buat Pesanan) */}
-      {canApproveOrder(currentUser.role) && order.status === 'PENDING' && (
+      {canApprove && order.status === 'PENDING' && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white/95 dark:border-slate-800/90 dark:bg-slate-900/95 backdrop-blur-md shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pt-3 px-3 pb-[max(12px,calc(env(safe-area-inset-bottom,0px)+4px))] after:content-[''] after:absolute after:top-full after:left-0 after:right-0 after:h-24 after:bg-white dark:after:bg-slate-900 pointer-events-auto">
           <Button
             variant="success"

@@ -11,7 +11,8 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { orderService } from '@/services/order.service';
 import { materialService, MaterialOption } from '@/services/material.service';
-import { productionRoutingService, ProductionRoutingOption } from '@/services/production-routing.service';
+import { productionRoutingService, ProductionRoutingOption, ProductionRoutingItem } from '@/services/production-routing.service';
+import { productionOperationService, ProductionOperationOption } from '@/services/production-operation.service';
 import { SalesOrder, SalesOrderItem, CustomBomItem, CustomOperationItem, UnitCustomProcess } from '@/lib/types';
 import { formatVariantLabel, cn } from '@/lib/utils';
 import {
@@ -45,6 +46,8 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
   // Live options from backend API
   const [apiMaterials, setApiMaterials] = useState<MaterialOption[]>([]);
   const [apiRoutings, setApiRoutings] = useState<ProductionRoutingOption[]>([]);
+  const [apiOperations, setApiOperations] = useState<ProductionOperationOption[]>([]);
+  const [routingDetailsMap, setRoutingDetailsMap] = useState<Record<string, ProductionRoutingItem>>({});
 
   // Accordion toggle states
   const [isMaterialOpen, setIsMaterialOpen] = useState(true);
@@ -74,6 +77,17 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
         .catch((err) => {
           console.warn('Gagal memuat routing options dari backend:', err);
         });
+
+      productionOperationService
+        .getOperationOptions()
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setApiOperations(res.data);
+          }
+        })
+        .catch((err) => {
+          console.warn('Gagal memuat operation options dari backend:', err);
+        });
     }
   }, [isOpen]);
 
@@ -90,25 +104,43 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
     }));
   }, [apiMaterials]);
 
-  // Effective routings: live API routing options only
+  // Effective routings: live API routing options + on-select routing details
   const effectiveRoutings = useMemo(() => {
-    return apiRoutings.map((r) => ({
-      id: String(r.id),
-      name: r.name,
-      steps: (r.steps || []).map((s) => ({
-        id: String(s.id),
-        operationId: String(s.operation_id),
-        operationName: s.operation_name,
-        sequence: s.sequence,
-        durationMinutes: s.duration_minutes,
-        costingMethod: (s.costing_method === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
-        fixedLaborCost: s.fixed_labor_cost,
-        laborCostPerHour: s.labor_cost_per_hour,
-      })),
-    }));
-  }, [apiRoutings]);
+    return apiRoutings.map((r) => {
+      const detail = routingDetailsMap[String(r.id)];
+      const steps = detail?.steps
+        ? detail.steps.map((s) => ({
+            id: String(s.id),
+            operationId: String(s.operation_id),
+            operationName: s.operation_name,
+            sequence: s.step_order,
+            durationMinutes: s.duration_minutes,
+            costingMethod: (s.wage_type === 'HOURLY' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
+            fixedLaborCost: s.wage_type === 'HOURLY' ? 0 : s.labor_cost,
+            laborCostPerHour:
+              s.wage_type === 'HOURLY' && s.duration_minutes > 0
+                ? (s.labor_cost * 60) / s.duration_minutes
+                : 0,
+          }))
+        : (r.steps || []).map((s) => ({
+            id: String(s.id),
+            operationId: String(s.operation_id),
+            operationName: s.operation_name,
+            sequence: s.sequence,
+            durationMinutes: s.duration_minutes,
+            costingMethod: (s.costing_method === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
+            fixedLaborCost: s.fixed_labor_cost,
+            laborCostPerHour: s.labor_cost_per_hour,
+          }));
+      return {
+        id: String(r.id),
+        name: r.name,
+        steps,
+      };
+    });
+  }, [apiRoutings, routingDetailsMap]);
 
-  // Effective operations pool from live API routing steps
+  // Effective operations pool from live API operation options + routing steps
   const effectiveOperations = useMemo(() => {
     const opMap = new Map<
       string,
@@ -121,6 +153,21 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
         durationMinutes: number;
       }
     >();
+
+    apiOperations.forEach((op) => {
+      const idStr = String(op.id);
+      const isHourly = op.wage_type === 'HOURLY';
+      const duration = op.standard_duration_minutes ?? 0;
+      const calcCost = op.calculated_labor_cost ?? 0;
+      opMap.set(idStr, {
+        id: idStr,
+        name: op.name,
+        costingMethod: isHourly ? 'hourly' : 'fixed',
+        fixedLaborCost: isHourly ? 0 : calcCost,
+        laborCostPerHour: isHourly && duration > 0 ? (calcCost * 60) / duration : 0,
+        durationMinutes: duration,
+      });
+    });
 
     effectiveRoutings.forEach((r) => {
       r.steps.forEach((s) => {
@@ -138,7 +185,7 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
     });
 
     return Array.from(opMap.values());
-  }, [effectiveRoutings]);
+  }, [apiOperations, effectiveRoutings]);
 
   // Helper to build default master BOM for a single unit of a SalesOrderItem
   const getDefaultBomForItem = (item: SalesOrderItem): CustomBomItem[] => {
@@ -483,29 +530,64 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
   };
 
   // Handlers for modifying active unit operations
-  const handleApplyRoutingTemplate = (routingId: string) => {
+  const handleApplyRoutingTemplate = async (routingId: string) => {
     if (!routingId || !activeItem || !activeUnit) return;
-    const routing = effectiveRoutings.find((r) => String(r.id) === String(routingId));
-    if (!routing) return;
+
+    let stepsToApply: {
+      operationId: string;
+      costingMethod: 'fixed' | 'hourly';
+      fixedLaborCost: number;
+      laborCostPerHour: number;
+      durationMinutes: number;
+    }[] = [];
+    let routingName = '';
+
+    const cachedRouting = effectiveRoutings.find((r) => String(r.id) === String(routingId));
+    if (cachedRouting && cachedRouting.steps.length > 0) {
+      routingName = cachedRouting.name;
+      stepsToApply = cachedRouting.steps.map((s) => ({
+        operationId: s.operationId,
+        costingMethod: s.costingMethod,
+        fixedLaborCost: s.fixedLaborCost,
+        laborCostPerHour: s.laborCostPerHour,
+        durationMinutes: s.durationMinutes,
+      }));
+    } else if (!isNaN(Number(routingId))) {
+      try {
+        const res = await productionRoutingService.getRoutingById(Number(routingId));
+        if (res.success && res.data) {
+          setRoutingDetailsMap((prev) => ({ ...prev, [String(routingId)]: res.data! }));
+          routingName = res.data.name;
+          stepsToApply = (res.data.steps || []).map((s) => ({
+            operationId: String(s.operation_id),
+            costingMethod: s.wage_type === 'HOURLY' ? 'hourly' : 'fixed',
+            fixedLaborCost: s.wage_type === 'HOURLY' ? 0 : s.labor_cost,
+            laborCostPerHour:
+              s.wage_type === 'HOURLY' && s.duration_minutes > 0
+                ? (s.labor_cost * 60) / s.duration_minutes
+                : 0,
+            durationMinutes: s.duration_minutes,
+          }));
+        }
+      } catch (err) {
+        console.warn('Gagal memuat detail alur produksi:', err);
+      }
+    }
+
+    if (stepsToApply.length === 0) return;
 
     const updated = structuredClone(itemsState);
     const targetItem = updated[activeItemIndex];
     const targetUnit = targetItem.unitCustomProcesses?.find((u) => u.unitIndex === activeUnitIndex);
     if (!targetUnit) return;
 
-    targetUnit.customOperations = routing.steps.map((s) => ({
-      operationId: s.operationId,
-      costingMethod: s.costingMethod,
-      fixedLaborCost: s.fixedLaborCost,
-      laborCostPerHour: s.laborCostPerHour,
-      durationMinutes: s.durationMinutes,
-    }));
+    targetUnit.customOperations = stepsToApply;
     targetUnit.customOperationIds = targetUnit.customOperations.map((o) => o.operationId);
     targetUnit.isBomCustomized = checkIfUnitIsCustomized(targetItem, targetUnit);
     targetItem.isBomCustomized = targetItem.unitCustomProcesses!.some((u) => u.isBomCustomized);
     setItemsState(updated);
     setSelectedRoutingTemplateId('');
-    toast.success('Alur Produksi Diterapkan', `Alur "${routing.name}" berhasil diterapkan ke Unit ${activeUnitIndex}.`);
+    toast.success('Alur Produksi Diterapkan', `Alur "${routingName}" berhasil diterapkan ke Unit ${activeUnitIndex}.`);
   };
 
   const handleAddOperationFromMaster = () => {

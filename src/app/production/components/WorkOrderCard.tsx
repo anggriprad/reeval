@@ -71,7 +71,11 @@ interface WorkOrderCardProps {
   allWorkOrders?: WorkOrder[];
   isExpanded?: boolean;
   onToggleExpand?: (woId: string) => void;
-  canManage: boolean;
+  canKPI: boolean;
+  canCancel: boolean;
+  canAssign: boolean;
+  canOperate: boolean;
+  canComplete: boolean;
   onOpenKPI: (wo: WorkOrder) => void;
   onOpenCancel?: (wo: WorkOrder) => void;
   onAssignOperator?: (woId: string, jc: JobCard, e?: React.MouseEvent) => void;
@@ -88,7 +92,11 @@ export function WorkOrderCard({
   allWorkOrders = [],
   isExpanded = false,
   onToggleExpand,
-  canManage,
+  canKPI,
+  canCancel,
+  canAssign,
+  canOperate,
+  canComplete,
   onOpenKPI,
   onOpenCancel,
   onAssignOperator,
@@ -118,12 +126,16 @@ export function WorkOrderCard({
       );
 
     const spkActionMenuItems = [
-      {
-        label: 'Analisis KPI',
-        icon: <Info className="h-4 w-4" />,
-        onClick: () => onOpenKPI(wo),
-      },
-      ...(canManage && onOpenCancel
+      ...(canKPI
+        ? [
+            {
+              label: 'Analisis KPI',
+              icon: <Info className="h-4 w-4" />,
+              onClick: () => onOpenKPI(wo),
+            },
+          ]
+        : []),
+      ...(canCancel && onOpenCancel
         ? [
             {
               label: 'Batalkan SPK',
@@ -184,9 +196,11 @@ export function WorkOrderCard({
               </div>
 
               {/* Icon More di Pojok Kanan Card (Mobile) */}
-              <div className="md:hidden shrink-0" onClick={(e) => e.stopPropagation()}>
-                <ActionMenu align="right" triggerTitle="Opsi SPK" items={spkActionMenuItems} />
-              </div>
+              {spkActionMenuItems.length > 0 && (
+                <div className="md:hidden shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <ActionMenu align="right" triggerTitle="Opsi SPK" items={spkActionMenuItems} />
+                </div>
+              )}
             </div>
 
             <div className="flex items-start gap-3 pt-0.5">
@@ -271,9 +285,11 @@ export function WorkOrderCard({
                 {formatDateTime(wo.issuedAt)}
               </span>
 
-              <div onClick={(e) => e.stopPropagation()}>
-                <ActionMenu align="right" triggerTitle="Opsi SPK" items={spkActionMenuItems} />
-              </div>
+              {spkActionMenuItems.length > 0 && (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ActionMenu align="right" triggerTitle="Opsi SPK" items={spkActionMenuItems} />
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2 text-xs">
@@ -309,7 +325,9 @@ export function WorkOrderCard({
                   workOrderId={wo.id}
                   jobCards={wo.jobCards}
                   operations={operations}
-                  canManage={canManage}
+                  canAssign={canAssign}
+                  canOperate={canOperate}
+                  canComplete={canComplete}
                   onAssignOperator={onAssignOperator}
                   onStart={onStartJobCard}
                   onPause={onPauseJobCard}
@@ -331,7 +349,7 @@ export function WorkOrderCard({
 
     return (
       <div
-        onClick={() => onOpenKPI(wo)}
+        onClick={() => canKPI && onOpenKPI(wo)}
         className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 flex flex-col md:flex-row md:items-start justify-between gap-4 cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 transition-all"
       >
         {/* Left Block: SPK Number & Product Details */}
@@ -413,7 +431,7 @@ export function WorkOrderCard({
   // =========================================================================
   return (
     <div
-      onClick={() => onOpenKPI(wo)}
+      onClick={() => canKPI && onOpenKPI(wo)}
       className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col md:flex-row md:items-start justify-between gap-4 cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-700 transition-all opacity-80 hover:opacity-100"
     >
       {/* Left Block: SPK Number & Product Details */}

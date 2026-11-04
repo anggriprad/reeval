@@ -51,7 +51,9 @@ export default function DeliveryOrderDetailPage() {
     reportFailedDelivery: contextReportFailedDelivery,
   } = useApp();
 
-  const canDispatch = can(PERMISSIONS.DELIVERY.DISPATCH) || ['ADMIN', 'SUPER_ADMIN', 'ADMIN_DELIVERY', 'DRIVER'].includes(currentUser?.role || '');
+  const canDeliver = can(PERMISSIONS.DELIVERY.DELIVER);
+  const canFail = can(PERMISSIONS.DELIVERY.FAIL);
+  const canCall = can(PERMISSIONS.DELIVERY.CALL);
 
   // API delivery order & history state
   const [apiDeliveryOrder, setApiDeliveryOrder] = useState<ApiDeliveryOrder | null>(null);
@@ -781,7 +783,7 @@ export default function DeliveryOrderDetailPage() {
 
           {/* ACTION BUTTONS DI LUAR CONTAINER LOG RIWAYAT */}
           <div className="flex items-center gap-2 pt-1">
-            {customerPhone && (
+            {canCall && customerPhone && (
               <Button
                 variant="outline"
                 size="md"
@@ -793,40 +795,44 @@ export default function DeliveryOrderDetailPage() {
               </Button>
             )}
 
-            {isInTransit && canDispatch && (
+            {isInTransit && (canDeliver || canFail) && (
               <>
-                <Button
-                  variant="success"
-                  size="md"
-                  onClick={() => {
-                    setUploadedPhotoUrl(null);
-                    setUploadedPhotoName('');
-                    setShowProofModal(true);
-                  }}
-                  className="flex-1 justify-center shadow-xs"
-                >
-                  <CheckCircle className="h-4 w-4 mr-1.5" />
-                  <span>Selesaikan Pengiriman</span>
-                </Button>
+                {canDeliver && (
+                  <Button
+                    variant="success"
+                    size="md"
+                    onClick={() => {
+                      setUploadedPhotoUrl(null);
+                      setUploadedPhotoName('');
+                      setShowProofModal(true);
+                    }}
+                    className="flex-1 justify-center shadow-xs"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1.5" />
+                    <span>Selesaikan Pengiriman</span>
+                  </Button>
+                )}
 
-                <ActionMenu
-                  triggerSize="md"
-                  triggerTitle="Pilihan Tindakan"
-                  items={[
-                    {
-                      label: 'Laporkan Gagal Kirim',
-                      icon: <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />,
-                      variant: 'danger',
-                      onClick: () => {
-                        setFailureReason('Alamat tidak ditemukan');
-                        setFailureNote('');
-                        setUploadedFailurePhoto(null);
-                        setUploadedFailurePhotoName('');
-                        setShowFailureModal(true);
+                {canFail && (
+                  <ActionMenu
+                    triggerSize="md"
+                    triggerTitle="Pilihan Tindakan"
+                    items={[
+                      {
+                        label: 'Laporkan Gagal Kirim',
+                        icon: <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />,
+                        variant: 'danger',
+                        onClick: () => {
+                          setFailureReason('Alamat tidak ditemukan');
+                          setFailureNote('');
+                          setUploadedFailurePhoto(null);
+                          setUploadedFailurePhotoName('');
+                          setShowFailureModal(true);
+                        },
                       },
-                    },
-                  ]}
-                />
+                    ]}
+                  />
+                )}
               </>
             )}
           </div>

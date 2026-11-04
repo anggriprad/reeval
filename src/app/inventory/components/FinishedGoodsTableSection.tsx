@@ -94,11 +94,8 @@ export function FinishedGoodsTableSection({
   // Modal alokasi
   const [selectedFGForAllocation, setSelectedFGForAllocation] = useState<FinishedGoodItem | null>(null);
 
-  // PBAC Permission check for Allocation
-  const canAllocate =
-    can(PERMISSIONS.INVENTORY.UPDATE) ||
-    can(PERMISSIONS.PRODUCT.UPDATE) ||
-    canManageInventory(currentUser.role);
+  // PBAC Permission check for Allocation (Pure PBAC 1-to-1)
+  const canAllocate = can(PERMISSIONS.FINISHED_GOOD.ALLOCATE);
 
   const fetchFinishedGoods = useCallback(async () => {
     setIsLoading(true);

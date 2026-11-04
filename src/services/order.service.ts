@@ -57,6 +57,7 @@ export interface SalesOrderResponse {
   created_by_id: number;
   created_by_name: string;
   created_by_phone?: string;
+  company_phone?: string;
   sales_phone?: string;
   customer_name: string;
   customer_phone: string;
@@ -253,6 +254,14 @@ export interface SalesOrderConfigResponse {
   deadline_shipped: DeadlineSettingDTO;
   strict_so_stock_check: boolean;
   is_shipping_rate_enabled?: boolean;
+}
+
+export interface SalesOrderOption {
+  id: number;
+  order_number: string;
+  customer_name: string;
+  customer_phone: string;
+  status: string;
 }
 
 export interface SalesOrderStatusCountsResponse {
@@ -452,6 +461,7 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
     createdBy: dto.created_by_name || "Sales",
     createdById: dto.created_by_id ? String(dto.created_by_id) : undefined,
     salesPhone: dto.created_by_phone || dto.sales_phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
+    companyPhone: dto.company_phone || undefined,
     customer: {
       name: dto.customer_name || "",
       phone: dto.customer_phone || "",
@@ -747,6 +757,24 @@ export const orderService = {
       endpointUrl(`orders/complaints/${id}/reject`),
       payload,
       true
+    );
+    return response.data;
+  },
+
+  /**
+   * 18. GET /api/v1/orders/options
+   * Cross-module dropdown options for Sales Orders (auth-only, no sales:read required).
+   */
+  async getOrderOptions(params?: {
+    product_id?: number;
+    variant_id?: number;
+    status?: string;
+    search?: string;
+  }): Promise<ApiResponse<SalesOrderOption[]>> {
+    const response = await httpGet<SalesOrderOption[]>(
+      endpointUrl("orders/options"),
+      true,
+      params
     );
     return response.data;
   },

@@ -19,7 +19,11 @@ interface ProductionInfiniteListProps {
   searchTerm?: string;
   expandedWOIds: Record<string, boolean>;
   onToggleExpand: (woId: string) => void;
-  canManage: boolean;
+  canKPI: boolean;
+  canCancel: boolean;
+  canAssign: boolean;
+  canOperate: boolean;
+  canComplete: boolean;
   onOpenKPI: (wo: WorkOrder) => void;
   onOpenCancel?: (wo: WorkOrder) => void;
   onAssignOperator?: (woId: string, jc: JobCard, e?: React.MouseEvent) => void;
@@ -41,7 +45,11 @@ export function ProductionInfiniteList({
   searchTerm = '',
   expandedWOIds,
   onToggleExpand,
-  canManage,
+  canKPI,
+  canCancel,
+  canAssign,
+  canOperate,
+  canComplete,
   onOpenKPI,
   onOpenCancel,
   onAssignOperator,
@@ -138,7 +146,11 @@ export function ProductionInfiniteList({
           allWorkOrders={allWorkOrders}
           isExpanded={Boolean(expandedWOIds[wo.id])}
           onToggleExpand={onToggleExpand}
-          canManage={canManage}
+          canKPI={canKPI}
+          canCancel={canCancel}
+          canAssign={canAssign}
+          canOperate={canOperate}
+          canComplete={canComplete}
           onOpenKPI={onOpenKPI}
           onOpenCancel={onOpenCancel}
           onAssignOperator={onAssignOperator}

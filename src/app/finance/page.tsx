@@ -4,6 +4,8 @@ import React, { useState, useMemo, Suspense } from 'react';
 import { useUrlTab } from '@/lib/useUrlTab';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
 import { Card, KPICard } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -59,6 +61,13 @@ import {
 
 function FinanceContent() {
   const { toast, confirm } = useToast();
+  const { can } = usePermission();
+  const canReport = can(PERMISSIONS.FINANCE.REPORT);
+  const canPayment = can(PERMISSIONS.FINANCE.PAYMENT);
+  const canExpense = can(PERMISSIONS.FINANCE.EXPENSE);
+  const canBank = can(PERMISSIONS.FINANCE.BANK);
+  const canCoa = can(PERMISSIONS.FINANCE.COA);
+  const canPost = can(PERMISSIONS.FINANCE.POST);
   const {
     invoices,
     salesOrders,
@@ -1232,7 +1241,7 @@ function FinanceContent() {
     { key: 'cash_bank' as const, label: 'Kas & Bank', icon: Building2 },
     { key: 'invoices' as const, label: 'Tagihan & Faktur', icon: Receipt },
     { key: 'accounting' as const, label: 'Pembukuan', icon: BookOpen },
-    { key: 'reports' as const, label: 'Laporan Keuangan', icon: FileText },
+    ...(canReport ? [{ key: 'reports' as const, label: 'Laporan Keuangan', icon: FileText }] : []),
   ];
 
   // ─────────────────────────────────────────────────────────────
@@ -1244,26 +1253,28 @@ function FinanceContent() {
       <PageHeader
         title="Keuangan"
       >
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={openDividendModal}
-          >
-            <Wallet className="h-4 w-4 mr-1.5" /> Bagi Dividen
-          </Button>
-          <Button onClick={() => {
-            setTxType('outflow');
-            setTxAccountCode('');
-            setTxAmount('');
-            setTxBankId(bankAccounts[0]?.id || '');
-            setTxToBankId(bankAccounts[1]?.id || '');
-            setTxNote('');
-            setTxError('');
-            setShowTransactionModal(true);
-          }} disabled={bankAccounts.length === 0}>
-            <Plus className="h-4 w-4" /> Catat Transaksi
-          </Button>
-        </div>
+        {canExpense && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={openDividendModal}
+            >
+              <Wallet className="h-4 w-4 mr-1.5" /> Bagi Dividen
+            </Button>
+            <Button onClick={() => {
+              setTxType('outflow');
+              setTxAccountCode('');
+              setTxAmount('');
+              setTxBankId(bankAccounts[0]?.id || '');
+              setTxToBankId(bankAccounts[1]?.id || '');
+              setTxNote('');
+              setTxError('');
+              setShowTransactionModal(true);
+            }} disabled={bankAccounts.length === 0}>
+              <Plus className="h-4 w-4" /> Catat Transaksi
+            </Button>
+          </div>
+        )}
       </PageHeader>
 
       {/* Reusable Segmented Control */}
@@ -1443,18 +1454,20 @@ function FinanceContent() {
               title="Belum Ada Rekening"
               description="Tambahkan rekening untuk mulai mencatat transaksi dan mutasi keuangan."
               action={
-                <Button
-                  onClick={() => {
-                    setEditBankId(null);
-                    setBankName('');
-                    setBankNumber('');
-                    setBankInitialBalance('');
-                    setBankError('');
-                    setShowBankModal(true);
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-1.5" /> Tambah Rekening
-                </Button>
+                canBank ? (
+                  <Button
+                    onClick={() => {
+                      setEditBankId(null);
+                      setBankName('');
+                      setBankNumber('');
+                      setBankInitialBalance('');
+                      setBankError('');
+                      setShowBankModal(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-1.5" /> Tambah Rekening
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -1501,48 +1514,50 @@ function FinanceContent() {
                               <p className="text-xs text-slate-400 italic mt-0.5">Kas Fisik / Kas Kecil</p>
                             )}
                           </div>
-                          <div
-                            className="flex items-center gap-1 shrink-0"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditBankId(ba.id);
-                                setBankName(ba.name);
-                                setBankNumber(ba.accountNumber || '');
-                                setBankError('');
-                                setShowBankModal(true);
-                              }}
-                              className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                              title="Edit Rekening"
+                          {canBank && (
+                            <div
+                              className="flex items-center gap-1 shrink-0"
+                              onClick={e => e.stopPropagation()}
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const isOk = await confirm({
-                                  title: 'Hapus Rekening Bank',
-                                  message: `Apakah Anda yakin ingin menghapus rekening "${ba.name}"?`,
-                                  confirmText: 'Hapus Rekening',
-                                  variant: 'danger',
-                                });
-                                if (isOk) {
-                                  const deleted = deleteBankAccount(ba.id);
-                                  if (!deleted) {
-                                    toast.error('Gagal Menghapus Rekening', 'Rekening ini sudah memiliki riwayat transaksi.');
-                                  } else {
-                                    toast.success('Rekening Dihapus', `Rekening "${ba.name}" berhasil dihapus.`);
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditBankId(ba.id);
+                                  setBankName(ba.name);
+                                  setBankNumber(ba.accountNumber || '');
+                                  setBankError('');
+                                  setShowBankModal(true);
+                                }}
+                                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                title="Edit Rekening"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const isOk = await confirm({
+                                    title: 'Hapus Rekening Bank',
+                                    message: `Apakah Anda yakin ingin menghapus rekening "${ba.name}"?`,
+                                    confirmText: 'Hapus Rekening',
+                                    variant: 'danger',
+                                  });
+                                  if (isOk) {
+                                    const deleted = deleteBankAccount(ba.id);
+                                    if (!deleted) {
+                                      toast.error('Gagal Menghapus Rekening', 'Rekening ini sudah memiliki riwayat transaksi.');
+                                    } else {
+                                      toast.success('Rekening Dihapus', `Rekening "${ba.name}" berhasil dihapus.`);
+                                    }
                                   }
-                                }
-                              }}
-                              className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                              title="Hapus Rekening"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                                }}
+                                className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                title="Hapus Rekening"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                         <div>
                           <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
@@ -1558,24 +1573,26 @@ function FinanceContent() {
                 })}
 
                 {/* Card Action Tambah Rekening (Rightmost item, half width) */}
-                <div
-                  onClick={() => {
-                    setEditBankId(null);
-                    setBankName('');
-                    setBankNumber('');
-                    setBankInitialBalance('');
-                    setBankError('');
-                    setShowBankModal(true);
-                  }}
-                  className="w-36 shrink-0 border-2 border-dashed border-slate-200 dark:border-slate-700/80 hover:border-indigo-500 dark:hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/40 dark:bg-slate-800/40 dark:hover:bg-indigo-950/20 rounded-xl transition-all cursor-pointer p-4 flex flex-col items-center justify-center text-center group"
-                >
-                  <div className="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform mb-1.5">
-                    <Plus className="w-4 h-4" />
+                {canBank && (
+                  <div
+                    onClick={() => {
+                      setEditBankId(null);
+                      setBankName('');
+                      setBankNumber('');
+                      setBankInitialBalance('');
+                      setBankError('');
+                      setShowBankModal(true);
+                    }}
+                    className="w-36 shrink-0 border-2 border-dashed border-slate-200 dark:border-slate-700/80 hover:border-indigo-500 dark:hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/40 dark:bg-slate-800/40 dark:hover:bg-indigo-950/20 rounded-xl transition-all cursor-pointer p-4 flex flex-col items-center justify-center text-center group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform mb-1.5">
+                      <Plus className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                      Tambah Rekening
+                    </span>
                   </div>
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                    Tambah Rekening
-                  </span>
-                </div>
+                )}
               </div>
             </>
           )}
@@ -1834,17 +1851,21 @@ function FinanceContent() {
                       cell: (inv) => (
                         <div onClick={(e) => e.stopPropagation()}>
                           {inv.status !== 'PAID' ? (
-                            <Button
-                              size="sm"
-                              variant="success"
-                              onClick={() => {
-                                setShowPaymentModal(inv.id);
-                                setPayAmount(String(inv.totalAmount - inv.paidAmount));
-                                setPayAccountId(bankAccounts[0]?.id || '');
-                              }}
-                            >
-                              <CreditCard className="h-3.5 w-3.5" /> Input Bayar
-                            </Button>
+                            canPayment ? (
+                              <Button
+                                size="sm"
+                                variant="success"
+                                onClick={() => {
+                                  setShowPaymentModal(inv.id);
+                                  setPayAmount(String(inv.totalAmount - inv.paidAmount));
+                                  setPayAccountId(bankAccounts[0]?.id || '');
+                                }}
+                              >
+                                <CreditCard className="h-3.5 w-3.5" /> Input Bayar
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-slate-400">-</span>
+                            )
                           ) : (
                             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
                               <Check className="h-3.5 w-3.5" /> Lunas
@@ -1975,16 +1996,20 @@ function FinanceContent() {
                         cell: (po) => {
                           const payBank = po.bankAccountId ? bankAccounts.find(b => b.id === po.bankAccountId) : null;
                           return po.paymentStatus === 'UNPAID' ? (
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onClick={() => {
-                                setShowPOPaymentModal(po.id);
-                                setPoPayAccountId(bankAccounts[0]?.id || '');
-                              }}
-                            >
-                              <Wallet className="h-3.5 w-3.5" /> Bayar Sekarang
-                            </Button>
+                            canPayment ? (
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={() => {
+                                  setShowPOPaymentModal(po.id);
+                                  setPoPayAccountId(bankAccounts[0]?.id || '');
+                                }}
+                              >
+                                <Wallet className="h-3.5 w-3.5" /> Bayar Sekarang
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-slate-400">-</span>
+                            )
                           ) : (
                             <span className="text-[11px] text-slate-500 font-medium">
                               via <strong>{payBank?.name || 'Bank'}</strong>
@@ -2533,18 +2558,22 @@ function FinanceContent() {
                     />
                   </div>
 
-                  <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-0.5" />
+                  {canPost && (
+                    <>
+                      <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-0.5" />
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button variant="outline" size="sm" onClick={openClosingModal}>
-                      <Lock className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
-                      Tutup Buku
-                    </Button>
-                    <Button size="sm" onClick={openManualJournalModal}>
-                      <Plus className="w-3.5 h-3.5 mr-1.5" />
-                      Tambah Jurnal Manual
-                    </Button>
-                  </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button variant="outline" size="sm" onClick={openClosingModal}>
+                          <Lock className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
+                          Tutup Buku
+                        </Button>
+                        <Button size="sm" onClick={openManualJournalModal}>
+                          <Plus className="w-3.5 h-3.5 mr-1.5" />
+                          Tambah Jurnal Manual
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -2778,10 +2807,12 @@ function FinanceContent() {
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">Bagan Akun Standar (Chart of Accounts Tree)</h3>
                   <p className="text-xs text-slate-500">Struktur hierarki akun akuntansi terkonfigurasi untuk manufaktur Indonesia.</p>
                 </div>
-                <Button size="sm" onClick={openCOAModal} className="gap-2">
-                  <Plus className="w-4 h-4" />
-                  Tambah Akun
-                </Button>
+                {canCoa && (
+                  <Button size="sm" onClick={openCOAModal} className="gap-2">
+                    <Plus className="w-4 h-4" />
+                    Tambah Akun
+                  </Button>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -2832,20 +2863,22 @@ function FinanceContent() {
                           {acc.normalBalance}
                         </span>
 
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                          <button onClick={() => handleEditCOA(acc.id)} className="p-1 text-slate-400 hover:text-indigo-600 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit Akun"><Edit2 className="w-3.5 h-3.5" /></button>
-                          {acc.isSystem ? (
-                            <button
-                              onClick={() => toast.info('Akun Sistem Bawaan', `Akun "${acc.code} - ${acc.name}" merupakan Akun Sistem Bawaan yang wajib ada di setiap perusahaan dan tidak boleh dihapus.`)}
-                              className="p-1 text-slate-300 dark:text-slate-600 cursor-not-allowed rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-                              title="Akun Sistem (Permanen / Tidak dapat dihapus)"
-                            >
-                              <Lock className="w-3.5 h-3.5" />
-                            </button>
-                          ) : (
-                            <button onClick={() => handleDeleteCOA(acc.id, acc.name)} className="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" title="Hapus Akun"><Trash2 className="w-3.5 h-3.5" /></button>
-                          )}
-                        </div>
+                        {canCoa && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                            <button onClick={() => handleEditCOA(acc.id)} className="p-1 text-slate-400 hover:text-indigo-600 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit Akun"><Edit2 className="w-3.5 h-3.5" /></button>
+                            {acc.isSystem ? (
+                              <button
+                                onClick={() => toast.info('Akun Sistem Bawaan', `Akun "${acc.code} - ${acc.name}" merupakan Akun Sistem Bawaan yang wajib ada di setiap perusahaan dan tidak boleh dihapus.`)}
+                                className="p-1 text-slate-300 dark:text-slate-600 cursor-not-allowed rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title="Akun Sistem (Permanen / Tidak dapat dihapus)"
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button onClick={() => handleDeleteCOA(acc.id, acc.name)} className="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" title="Hapus Akun"><Trash2 className="w-3.5 h-3.5" /></button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

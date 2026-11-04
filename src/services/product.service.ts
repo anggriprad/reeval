@@ -146,6 +146,9 @@ export interface ProductOption {
   image_icon?: string;
   image_url?: string;
   base_price?: number;
+  min_price?: number;
+  max_price?: number;
+  variant_count?: number;
   has_variants?: boolean;
   variant_types_json?: string;
   modifier_group_ids?: number[];
@@ -267,6 +270,8 @@ export function mapProductOptionToProduct(opt: ProductOption): Product {
     imageIcon: opt.image_icon || "BedDouble",
     image: opt.image_url ? resolveProductImageUrl(opt.image_url) : undefined,
     basePrice: opt.base_price,
+    minPrice: opt.min_price,
+    maxPrice: opt.max_price,
     defaultRoutingId: opt.default_routing_id ? String(opt.default_routing_id) : undefined,
     defaultEstimatedHours: opt.default_estimated_hours,
     variantTypes,

@@ -30,7 +30,7 @@ export default function OrderConfigPage() {
     setStrictSOStockCheck,
   } = useApp();
 
-  const canUpdate = can(PERMISSIONS.SALES.UPDATE) || ['ADMIN', 'SUPER_ADMIN'].includes(currentUser.role);
+  const canUpdate = can(PERMISSIONS.SALES.CONFIG) || ['ADMIN', 'SUPER_ADMIN'].includes(currentUser.role);
 
   // Local state for the form builder schema
   const [containers, setContainers] = useState<FormContainer[]>([]);

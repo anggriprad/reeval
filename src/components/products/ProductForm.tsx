@@ -86,6 +86,7 @@ import {
 import {
   bomPresetService,
   BOMPresetOption,
+  BOMPresetItemResponse,
 } from '@/services/bom-preset.service';
 import { materialService, MaterialItem, MaterialOption } from '@/services/material.service';
 
@@ -156,6 +157,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const [materialsList, setMaterialsList] = useState<MaterialOption[]>([]);
   const [apiMaterials, setApiMaterials] = useState<MaterialItem[]>([]);
   const [bomPresetsList, setBomPresetsList] = useState<BOMPresetOption[]>([]);
+  const [presetDetailsMap, setPresetDetailsMap] = useState<Record<string, BOMPresetItemResponse[]>>({});
   const [attributeOptionsList, setAttributeOptionsList] = useState<ProductAttributeOption[]>([]);
 
   useEffect(() => {
@@ -174,12 +176,6 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
     materialService.getMaterialOptions().then(res => {
       if (res.success && res.data) {
         setMaterialsList(res.data);
-      }
-    }).catch(() => {});
-
-    materialService.getMaterials({ per_page: 100 }).then(res => {
-      if (res.success && res.data) {
-        setApiMaterials(res.data);
       }
     }).catch(() => {});
 
@@ -219,10 +215,11 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   }, [bomPresetsList, bomTemplates]);
 
   const allTemplateItems = useMemo(() => {
-    if (bomPresetsList.length > 0) {
+    if (bomPresetsList.length > 0 || Object.keys(presetDetailsMap).length > 0) {
       const items: { templateId: string; materialId: string; defaultQty: number }[] = [];
       for (const p of bomPresetsList) {
-        for (const it of (p.items || [])) {
+        const presetItems = presetDetailsMap[String(p.id)] || p.items || [];
+        for (const it of presetItems) {
           items.push({
             templateId: String(p.id),
             materialId: String(it.material_id),
@@ -230,13 +227,39 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           });
         }
       }
+      for (const [presetId, presetItems] of Object.entries(presetDetailsMap)) {
+        if (!bomPresetsList.some(p => String(p.id) === presetId)) {
+          for (const it of presetItems) {
+            items.push({
+              templateId: presetId,
+              materialId: String(it.material_id),
+              defaultQty: it.quantity,
+            });
+          }
+        }
+      }
       return items;
     }
     return bomTemplateItems;
-  }, [bomPresetsList, bomTemplateItems]);
+  }, [bomPresetsList, presetDetailsMap, bomTemplateItems]);
 
   const combinedMaterials = useMemo(() => {
     const list = [...(materials || [])];
+    for (const m of (materialsList || [])) {
+      const idStr = String(m.id);
+      if (!list.some(existing => String(existing.id) === idStr)) {
+        list.push({
+          id: idStr,
+          name: m.name,
+          code: m.code,
+          category: '',
+          unit: m.unit || 'unit',
+          unitCost: m.unit_cost ?? 0,
+          stock: m.stock ?? 0,
+          isSubAssembly: Boolean(m.is_sub_assembly),
+        } as any);
+      }
+    }
     for (const m of (apiMaterials || [])) {
       const idStr = String(m.id);
       if (!list.some(existing => String(existing.id) === idStr)) {
@@ -252,8 +275,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         } as any);
       }
     }
-    for (const p of bomPresetsList) {
-      for (const it of (p.items || [])) {
+    for (const presetItems of Object.values(presetDetailsMap)) {
+      for (const it of (presetItems || [])) {
         const mId = String(it.material_id);
         if (!list.some(existing => String(existing.id) === mId)) {
           list.push({
@@ -270,7 +293,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
       }
     }
     return list;
-  }, [materials, apiMaterials, bomPresetsList]);
+  }, [materials, materialsList, apiMaterials, presetDetailsMap]);
 
   // ── Mode Switch: Single Product vs Product with Variants ───────────────────
   const [hasVariants, setHasVariants] = useState<boolean>(() => {
@@ -554,6 +577,30 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const [bulkValPresetId, setBulkValPresetId] = useState<string>('');
   const [bulkValIsCustomBOM, setBulkValIsCustomBOM] = useState<boolean>(false);
   const [batchFeedback, setBatchFeedback] = useState<string | null>(null);
+
+  // On-select / on-demand fetch for BOM preset details (GET /product/bom-presets/:id)
+  useEffect(() => {
+    const neededPresetIds = new Set<string>();
+    if (singlePresetId && !isNaN(Number(singlePresetId))) neededPresetIds.add(String(singlePresetId));
+    if (bulkValPresetId && !isNaN(Number(bulkValPresetId))) neededPresetIds.add(String(bulkValPresetId));
+    if (modalPresetTemplateId && !isNaN(Number(modalPresetTemplateId))) neededPresetIds.add(String(modalPresetTemplateId));
+    variants.forEach(v => {
+      if (v.presetId && !isNaN(Number(v.presetId))) neededPresetIds.add(String(v.presetId));
+    });
+
+    neededPresetIds.forEach(pid => {
+      if (!presetDetailsMap[pid]) {
+        bomPresetService.getPresetById(Number(pid)).then(res => {
+          if (res.success && res.data?.items) {
+            setPresetDetailsMap(prev => ({
+              ...prev,
+              [pid]: res.data!.items || [],
+            }));
+          }
+        }).catch(() => {});
+      }
+    });
+  }, [singlePresetId, bulkValPresetId, modalPresetTemplateId, variants, presetDetailsMap]);
 
   // Filtered variants based on attrFilterSelections
   const filteredVariants = useMemo(() => {

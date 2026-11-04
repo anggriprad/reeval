@@ -147,10 +147,10 @@ async function runTests() {
   assert(typeof driverService.getDriverById === 'function', 'driverService.getDriverById must be a function');
   assert(typeof driverService.assignDriver === 'function', 'driverService.assignDriver must be a function');
   assert(typeof driverService.deleteDriver === 'function', 'driverService.deleteDriver must be a function');
-  assert(PERMISSIONS.DELIVERY.DRIVER_READ === 'driver:read', 'DRIVER_READ must be driver:read');
-  assert(PERMISSIONS.DELIVERY.DRIVER_CREATE === 'driver:create', 'DRIVER_CREATE must be driver:create');
-  assert(PERMISSIONS.DELIVERY.DRIVER_UPDATE === 'driver:update', 'DRIVER_UPDATE must be driver:update');
-  assert(PERMISSIONS.DELIVERY.DRIVER_DELETE === 'driver:delete', 'DRIVER_DELETE must be driver:delete');
+  assert(PERMISSIONS.DELIVERY.READ === 'delivery:read', 'DELIVERY.READ must be delivery:read');
+  assert(PERMISSIONS.DELIVERY.LOAD === 'delivery:load', 'DELIVERY.LOAD must be delivery:load');
+  assert(PERMISSIONS.DELIVERY.DELIVER === 'delivery:deliver', 'DELIVERY.DELIVER must be delivery:deliver');
+  assert(PERMISSIONS.DELIVERY.FAIL === 'delivery:fail', 'DELIVERY.FAIL must be delivery:fail');
   console.log('✓ driverService contract verified');
 
   // 4f. Verify shippingRateService structure & PBAC mapping
@@ -164,8 +164,8 @@ async function runTests() {
   assert(typeof shippingRateService.getProvinces === 'function', 'shippingRateService.getProvinces must be a function');
   assert(typeof shippingRateService.getRegencies === 'function', 'shippingRateService.getRegencies must be a function');
   assert(typeof shippingRateService.getDistricts === 'function', 'shippingRateService.getDistricts must be a function');
-  assert(PERMISSIONS.DELIVERY.READ === 'delivery:read', 'DELIVERY.READ must be delivery:read');
-  assert(PERMISSIONS.DELIVERY.UPDATE === 'delivery:update', 'DELIVERY.UPDATE must be delivery:update');
+  assert(PERMISSIONS.DELIVERY.SHIPPING_RATE_READ === 'shipping-rate:read', 'SHIPPING_RATE_READ must be shipping-rate:read');
+  assert(PERMISSIONS.DELIVERY.SHIPPING_RATE_UPDATE === 'shipping-rate:update', 'SHIPPING_RATE_UPDATE must be shipping-rate:update');
   console.log('✓ shippingRateService contract verified');
 
   // 4g. Verify productionOperationService structure & PBAC mapping
@@ -203,9 +203,9 @@ async function runTests() {
   assert(typeof productionOperatorService.getOperatorById === 'function', 'productionOperatorService.getOperatorById must be a function');
   assert(typeof productionOperatorService.assignOperator === 'function', 'productionOperatorService.assignOperator must be a function');
   assert(typeof productionOperatorService.deleteOperator === 'function', 'productionOperatorService.deleteOperator must be a function');
-  assert(PERMISSIONS.PRODUCTION.OPERATOR_READ === 'production-operator:read', 'OPERATOR_READ must be production-operator:read');
-  assert(PERMISSIONS.PRODUCTION.OPERATOR_CREATE === 'production-operator:create', 'OPERATOR_CREATE must be production-operator:create');
-  assert(PERMISSIONS.PRODUCTION.OPERATOR_DELETE === 'production-operator:delete', 'OPERATOR_DELETE must be production-operator:delete');
+  assert(PERMISSIONS.PRODUCTION.READ === 'production:read', 'PRODUCTION.READ must be production:read');
+  assert(PERMISSIONS.PRODUCTION.ASSIGN === 'production:assign', 'PRODUCTION.ASSIGN must be production:assign');
+  assert(PERMISSIONS.PRODUCTION.OPERATE === 'production:operate', 'PRODUCTION.OPERATE must be production:operate');
   console.log('✓ productionOperatorService contract verified');
 
   // 4j. Verify productCategoryService structure & PBAC mapping
@@ -600,15 +600,19 @@ async function runTests() {
   assert(PERMISSIONS.DELIVERY.READ === 'delivery:read', 'DELIVERY.READ must be delivery:read');
   assert(PERMISSIONS.DELIVERY.CREATE === 'delivery:create', 'DELIVERY.CREATE must be delivery:create');
   assert(PERMISSIONS.DELIVERY.UPDATE === 'delivery:update', 'DELIVERY.UPDATE must be delivery:update');
-  assert(PERMISSIONS.DELIVERY.DISPATCH === 'delivery:dispatch', 'DELIVERY.DISPATCH must be delivery:dispatch');
+  assert(PERMISSIONS.DELIVERY.LOAD === 'delivery:load', 'DELIVERY.LOAD must be delivery:load');
+  assert(PERMISSIONS.DELIVERY.DELIVER === 'delivery:deliver', 'DELIVERY.DELIVER must be delivery:deliver');
+  assert(PERMISSIONS.DELIVERY.FAIL === 'delivery:fail', 'DELIVERY.FAIL must be delivery:fail');
+  assert(PERMISSIONS.DELIVERY.RESCHEDULE === 'delivery:reschedule', 'DELIVERY.RESCHEDULE must be delivery:reschedule');
+  assert(PERMISSIONS.DELIVERY.CANCEL === 'delivery:cancel', 'DELIVERY.CANCEL must be delivery:cancel');
   console.log('✓ deliveryService contract, photo resolver & PBAC verified');
 
   // 4u. Verify finishedGoodService structure & PBAC mapping
   console.log('4u. Checking finishedGoodService contract & PBAC mapping...');
   assert(typeof finishedGoodService.getFinishedGoods === 'function', 'finishedGoodService.getFinishedGoods must be a function');
   assert(typeof finishedGoodService.allocateFinishedGood === 'function', 'finishedGoodService.allocateFinishedGood must be a function');
-  assert(PERMISSIONS.PRODUCT.READ === 'product:read', 'PRODUCT.READ must be product:read');
-  assert(PERMISSIONS.PRODUCT.UPDATE === 'product:update', 'PRODUCT.UPDATE must be product:update');
+  assert(PERMISSIONS.FINISHED_GOOD.READ === 'finished-good:read', 'FINISHED_GOOD.READ must be finished-good:read');
+  assert(PERMISSIONS.FINISHED_GOOD.ALLOCATE === 'finished-good:allocate', 'FINISHED_GOOD.ALLOCATE must be finished-good:allocate');
   console.log('✓ finishedGoodService contract & PBAC verified');
 
   // 4v. Verify companyAssetService structure & PBAC mapping
@@ -626,6 +630,7 @@ async function runTests() {
   assert(PERMISSIONS.INVENTORY.ASSET_READ === 'asset:read', 'ASSET_READ must be asset:read');
   assert(PERMISSIONS.INVENTORY.ASSET_CREATE === 'asset:create', 'ASSET_CREATE must be asset:create');
   assert(PERMISSIONS.INVENTORY.ASSET_UPDATE === 'asset:update', 'ASSET_UPDATE must be asset:update');
+  assert(PERMISSIONS.INVENTORY.ASSET_SERVICE === 'asset:service', 'ASSET_SERVICE must be asset:service');
   assert(PERMISSIONS.INVENTORY.ASSET_DELETE === 'asset:delete', 'ASSET_DELETE must be asset:delete');
   console.log('✓ companyAssetService contract & PBAC verified');
 
@@ -1020,7 +1025,11 @@ async function runTests() {
 
     // Path required permission resolution
     assert(getRequiredPermissionForPath('/order') === 'sales:read', '/order requires sales:read');
-    assert(getRequiredPermissionForPath('/order/create') === 'sales:create', '/order/create requires sales:create');
+    assert(
+      JSON.stringify(getRequiredPermissionForPath('/order/create')) ===
+        JSON.stringify(['sales:create', 'sales:update']),
+      '/order/create requires sales:create or sales:update'
+    );
     assert(getRequiredPermissionForPath('/finance') === 'finance:read', '/finance requires finance:read');
     assert(getRequiredPermissionForPath('/production') === 'production:read', '/production requires production:read');
     assert(getRequiredPermissionForPath('/') === null, '/ requires no permission');
@@ -1074,10 +1083,11 @@ async function runTests() {
     assert(canConfirmPayment('FINANCE'), 'FINANCE can confirm payment');
     assert(canViewFinance('FINANCE'), 'FINANCE can view finance');
     assert(canSeeCosts('FINANCE'), 'FINANCE can see costs');
-    assert(canSeeCosts('PRODUCTION'), 'PRODUCTION can see costs');
-    assert(canSeeCosts('INVENTORY'), 'INVENTORY can see costs');
+    assert(canSeeCosts('PURCHASING'), 'PURCHASING can see costs');
+    assert(!canSeeCosts('PRODUCTION'), 'PRODUCTION cannot see costs');
+    assert(!canSeeCosts('INVENTORY'), 'INVENTORY cannot see costs');
 
-    console.log('✓ 8 Static Baku Roles and helper functions verified');
+    console.log('✓ 9 Static Baku Roles and helper functions verified');
   }
 
   console.log('\nALL EXTENDED SERVICE, PROXY & RESILIENCE TESTS PASSED (100% GREEN)!');

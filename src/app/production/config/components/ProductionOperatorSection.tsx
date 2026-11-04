@@ -36,9 +36,9 @@ export function ProductionOperatorSection() {
   } = useApp();
 
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN' || !!currentUser?.is_superadmin;
-  const canRead = can(PERMISSIONS.PRODUCTION.OPERATOR_READ) || can(PERMISSIONS.PRODUCTION.READ) || isSuperAdmin;
-  const canCreate = can(PERMISSIONS.PRODUCTION.OPERATOR_CREATE) || isSuperAdmin;
-  const canDelete = can(PERMISSIONS.PRODUCTION.OPERATOR_DELETE) || isSuperAdmin;
+  const canRead = can(PERMISSIONS.PRODUCTION.READ) || isSuperAdmin;
+  const canCreate = can(PERMISSIONS.PRODUCTION.ASSIGN) || isSuperAdmin;
+  const canDelete = can(PERMISSIONS.PRODUCTION.ASSIGN) || isSuperAdmin;
   const canManage = canCreate || canDelete;
 
   // Accordion expansion state: default closed (false), lazy fetch when user expands

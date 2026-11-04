@@ -51,10 +51,13 @@ export function OrderListContent() {
       });
   }, [setShowAllOrdersTab]);
 
-  const canCreate = can(PERMISSIONS.SALES.CREATE) || canCreateOrder(currentUser.role);
-  const canApprove = can(PERMISSIONS.SALES.UPDATE) || can(PERMISSIONS.SALES.APPROVE) || canApproveOrder(currentUser.role);
-  const canUpdate = can(PERMISSIONS.SALES.UPDATE) || ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(currentUser.role);
-  const canDelete = can(PERMISSIONS.SALES.DELETE) || ['ADMIN', 'SUPER_ADMIN'].includes(currentUser.role);
+  const canCreate = can(PERMISSIONS.SALES.CREATE);
+  const canApprove = can(PERMISSIONS.SALES.APPROVE);
+  const canUpdate = can(PERMISSIONS.SALES.UPDATE);
+  const canCustom = can(PERMISSIONS.SALES.CUSTOM);
+  const canDelete = can(PERMISSIONS.SALES.DELETE);
+  const canConfig = can(PERMISSIONS.SALES.CONFIG);
+  const canReadComplaint = can(PERMISSIONS.COMPLAINT.READ);
 
   const searchParams = useSearchParams();
   const urlTab = searchParams.get('tab') || searchParams.get('status') || 'pending';
@@ -389,13 +392,17 @@ export function OrderListContent() {
       label: 'Dibatalkan',
       icon: XCircle,
     },
-    {
-      key: 'komplain',
-      label: 'Komplain',
-      count: statusCounts['komplain'],
-      icon: AlertCircle,
-      countColor: 'bg-red-600',
-    },
+    ...(canReadComplaint
+      ? [
+          {
+            key: 'komplain',
+            label: 'Komplain',
+            count: statusCounts['komplain'],
+            icon: AlertCircle,
+            countColor: 'bg-red-600',
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -409,12 +416,14 @@ export function OrderListContent() {
             </Button>
           </Link>
         )}
-        <Link href="/order/config">
-          <Button variant="outline">
-            <Settings className="h-4 w-4" />
-            Konfigurasi
-          </Button>
-        </Link>
+        {canConfig && (
+          <Link href="/order/config">
+            <Button variant="outline">
+              <Settings className="h-4 w-4" />
+              Konfigurasi
+            </Button>
+          </Link>
+        )}
       </PageHeader>
 
       {errorMsg && (
@@ -461,6 +470,7 @@ export function OrderListContent() {
         onToggleExpand={toggleExpandOrder}
         canApprove={canApprove}
         canUpdate={canUpdate}
+        canCustom={canCustom}
         canDelete={canDelete}
         onProcessOrder={handleProcessOrder}
         onOpenCancelModal={handleOpenCancelModal}

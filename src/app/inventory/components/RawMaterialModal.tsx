@@ -22,7 +22,11 @@ import {
   MaterialOption,
 } from '@/services/material.service';
 import { MaterialCategoryOption } from '@/services/material-category.service';
-import { ProductionRoutingOption } from '@/services/production-routing.service';
+import {
+  productionRoutingService,
+  ProductionRoutingOption,
+  ProductionRoutingStepItem,
+} from '@/services/production-routing.service';
 import { AlertTriangle, Layers, Plus, Trash2, X } from 'lucide-react';
 
 interface RawMaterialModalProps {
@@ -68,6 +72,7 @@ export function RawMaterialModal({
   const [matIsSubAssembly, setMatIsSubAssembly] = useState(false);
   const [matChildBom, setMatChildBom] = useState<BOMItem[]>([]);
   const [matRoutingId, setMatRoutingId] = useState('');
+  const [selectedRoutingSteps, setSelectedRoutingSteps] = useState<ProductionRoutingStepItem[]>([]);
   const [childMatId, setChildMatId] = useState('');
   const [childMatQty, setChildMatQty] = useState('');
   const [crudError, setCrudError] = useState('');
@@ -160,8 +165,34 @@ export function RawMaterialModal({
     );
   }, [materialOptions, editMaterial, matChildBom]);
 
+  useEffect(() => {
+    if (!isOpen || !matRoutingId || isNaN(Number(matRoutingId))) {
+      setSelectedRoutingSteps([]);
+      return;
+    }
+    let active = true;
+    productionRoutingService
+      .getRoutingById(Number(matRoutingId))
+      .then(res => {
+        if (active && res.success && res.data?.steps) {
+          setSelectedRoutingSteps(res.data.steps);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen, matRoutingId]);
+
   const selectedRoutingOperations = useMemo<{ sequence: number; name: string; laborCost: number }[]>(() => {
     if (!matRoutingId) return [];
+    if (selectedRoutingSteps.length > 0) {
+      return selectedRoutingSteps.map((s, idx) => ({
+        sequence: s.step_order ?? idx + 1,
+        name: s.operation_name,
+        laborCost: s.labor_cost ?? 0,
+      }));
+    }
     const opt = routingOptions.find(r => String(r.id) === String(matRoutingId));
     if (opt?.steps && opt.steps.length > 0) {
       return opt.steps.map((s, idx) => {
@@ -206,7 +237,7 @@ export function RawMaterialModal({
       });
     }
     return [];
-  }, [matRoutingId, routingOptions, allRoutings, allOperations]);
+  }, [matRoutingId, selectedRoutingSteps, routingOptions, allRoutings, allOperations]);
 
   const handleAddChildBomItem = () => {
     if (!childMatId) return;

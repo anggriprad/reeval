@@ -368,7 +368,7 @@ export function ShippingRateSection() {
     }
   };
 
-  const canUpdate = can(PERMISSIONS.DELIVERY.UPDATE);
+  const canUpdate = can(PERMISSIONS.DELIVERY.SHIPPING_RATE_UPDATE) || can(PERMISSIONS.DELIVERY.UPDATE);
 
   return (
     <ConfigSection

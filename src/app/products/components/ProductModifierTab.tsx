@@ -6,7 +6,6 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
-import { canManageInventory, canSeeCosts } from '@/lib/roles';
 import { Badge } from '@/components/ui/Badge';
 import { formatCurrency } from '@/lib/utils';
 import {
@@ -43,18 +42,13 @@ export function ProductModifierTab({
 }: ProductModifierTabProps) {
   const { toast, confirm } = useToast();
   const { can } = usePermission();
-  const { currentUser, setMasterModifierGroups } = useApp();
+  const { setMasterModifierGroups } = useApp();
 
-  const isInventoryManager = canManageInventory(currentUser.role);
-  const seeCosts = canSeeCosts(currentUser.role);
-  const canCreatePerm = can(PERMISSIONS.PRODUCT.MODIFIER_CREATE);
-  const canUpdatePerm = can(PERMISSIONS.PRODUCT.MODIFIER_UPDATE);
-  const canDeletePerm = can(PERMISSIONS.PRODUCT.MODIFIER_DELETE);
-
-  const canCreate = isInventoryManager || canCreatePerm;
-  const canUpdate = isInventoryManager || canUpdatePerm;
-  const canDelete = isInventoryManager || canDeletePerm;
-  const canManage = isInventoryManager || canCreate || canUpdate || canDelete;
+  const seeCosts = can(PERMISSIONS.PRODUCT.MODIFIER_READ);
+  const canCreate = can(PERMISSIONS.PRODUCT.MODIFIER_CREATE);
+  const canUpdate = can(PERMISSIONS.PRODUCT.MODIFIER_UPDATE);
+  const canDelete = can(PERMISSIONS.PRODUCT.MODIFIER_DELETE);
+  const canManage = canUpdate || canDelete;
 
   const [groups, setGroups] = useState<ProductModifierGroupResponse[]>([]);
   const [total, setTotal] = useState(0);
@@ -271,7 +265,7 @@ export function ProductModifierTab({
                         ? 'Coba gunakan kata kunci pencarian yang berbeda.'
                         : 'Tambahkan grup modifier baru untuk mulai mengelola opsi tambahan produk.'}
                     </p>
-                    {canManage && !filters.mod_search && (
+                    {canCreate && !filters.mod_search && (
                       <Button size="sm" onClick={() => setIsLocalAddModalOpen(true)}>
                         <Plus className="h-4 w-4 mr-1.5" /> Tambah Modifier
                       </Button>

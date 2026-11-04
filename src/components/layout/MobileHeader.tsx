@@ -313,7 +313,14 @@ export function MobileHeader() {
       icon: Warehouse,
       colorClass: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-900/60',
       badgeCount: lowStockCount > 0 ? lowStockCount : undefined,
-      permission: [PERMISSIONS.INVENTORY.READ, PERMISSIONS.INVENTORY.ASSET_READ, PERMISSIONS.PURCHASING.READ],
+      permission: [
+        PERMISSIONS.INVENTORY.READ,
+        PERMISSIONS.INVENTORY.ASSET_READ,
+        PERMISSIONS.PURCHASING.READ,
+        PERMISSIONS.FINISHED_GOOD.READ,
+        PERMISSIONS.RETURNED_GOOD.READ,
+        PERMISSIONS.INVENTORY.STOCK_MOVEMENT_READ,
+      ],
     },
     {
       href: '/products',

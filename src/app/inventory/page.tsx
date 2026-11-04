@@ -516,31 +516,31 @@ export function InventoryContent() {
         title="Inventaris"
       >
         <div className="flex gap-2">
-          {activeTab === 'raw' && (can(PERMISSIONS.INVENTORY.CREATE) || canManageInventory(currentUser.role)) && (
+          {activeTab === 'raw' && can(PERMISSIONS.INVENTORY.CREATE) && (
             <Button onClick={() => setShowAddMaterialModal(true)}>
               <Plus className="h-4 w-4" />
               Register Bahan
             </Button>
           )}
-          {activeTab === 'procurement' && (can(PERMISSIONS.PURCHASING.CREATE) || canRequestPO(currentUser.role)) && (
+          {activeTab === 'procurement' && can(PERMISSIONS.PURCHASING.CREATE) && (
             <Button onClick={() => openAddProcurement()}>
               <Plus className="h-4 w-4" />
               Buat Pengadaan
             </Button>
           )}
-          {activeTab === 'movements' && (can(PERMISSIONS.INVENTORY.ADJUST) || canManageInventory(currentUser.role)) && (
+          {activeTab === 'movements' && can(PERMISSIONS.INVENTORY.STOCK_MOVEMENT_ADJUST) && (
             <Button onClick={() => setShowAdjustStockModal(true)}>
               <Plus className="h-4 w-4" />
               Penyesuaian Stok
             </Button>
           )}
-          {activeTab === 'assets' && (can(PERMISSIONS.INVENTORY.ASSET_CREATE) || canManageInventory(currentUser.role)) && (
+          {activeTab === 'assets' && can(PERMISSIONS.INVENTORY.ASSET_CREATE) && (
             <Button onClick={() => setShowAssetModal(true)}>
               <Plus className="h-4 w-4 mr-1.5" />
               Register Aset Baru
             </Button>
           )}
-          {(can(PERMISSIONS.INVENTORY.CATEGORY_READ) || can(PERMISSIONS.INVENTORY.ASSET_CATEGORY_READ) || canManageInventory(currentUser.role)) && (
+          {(can(PERMISSIONS.INVENTORY.CATEGORY_READ) || can(PERMISSIONS.INVENTORY.ASSET_CATEGORY_READ)) && (
             <Link href="/inventory/config">
               <Button variant="outline">
                 <Settings className="h-4 w-4 mr-1.5" />
@@ -610,17 +610,31 @@ export function InventoryContent() {
               setRawStatusFilter('');
             }}
             options={[
-              { key: 'raw', label: 'Stok Bahan Baku', icon: Warehouse },
-              { key: 'finished', label: 'Stok Barang Jadi', icon: PackageCheck },
-              { key: 'movements', label: 'Mutasi Stok', icon: ArrowDownCircle },
-              { key: 'procurement', label: 'Pengadaan', icon: ShoppingCart },
-              { key: 'assets', label: 'Aset & Alat Kerja', icon: Wrench },
-              {
-                key: 'returns',
-                label: 'Barang Retur',
-                icon: RotateCcw,
-                count: pendingReturnsCount > 0 ? pendingReturnsCount : undefined,
-              },
+              ...(can(PERMISSIONS.INVENTORY.READ)
+                ? [{ key: 'raw' as const, label: 'Stok Bahan Baku', icon: Warehouse }]
+                : []),
+              ...(can(PERMISSIONS.FINISHED_GOOD.READ)
+                ? [{ key: 'finished' as const, label: 'Stok Barang Jadi', icon: PackageCheck }]
+                : []),
+              ...(can(PERMISSIONS.INVENTORY.STOCK_MOVEMENT_READ)
+                ? [{ key: 'movements' as const, label: 'Mutasi Stok', icon: ArrowDownCircle }]
+                : []),
+              ...(can(PERMISSIONS.PURCHASING.READ)
+                ? [{ key: 'procurement' as const, label: 'Pengadaan', icon: ShoppingCart }]
+                : []),
+              ...(can(PERMISSIONS.INVENTORY.ASSET_READ)
+                ? [{ key: 'assets' as const, label: 'Aset & Alat Kerja', icon: Wrench }]
+                : []),
+              ...(can(PERMISSIONS.RETURNED_GOOD.READ)
+                ? [
+                    {
+                      key: 'returns' as const,
+                      label: 'Barang Retur',
+                      icon: RotateCcw,
+                      count: pendingReturnsCount > 0 ? pendingReturnsCount : undefined,
+                    },
+                  ]
+                : []),
             ]}
             filters={
               activeTab === 'raw'
@@ -931,7 +945,7 @@ export function InventoryContent() {
                     );
                   },
                 },
-                ...(canManageInventory(currentUser.role)
+                ...(can(PERMISSIONS.RETURNED_GOOD.RECEIVE) || can(PERMISSIONS.RETURNED_GOOD.ACTION)
                   ? [
                     {
                       key: 'action',
@@ -954,31 +968,35 @@ export function InventoryContent() {
                         if (rg.status === 'AWAITING_RECEIVAL' || (rg.status === 'PENDING' && !rg.receivedAt)) {
                           return (
                             <div className="flex items-center justify-center gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  confirmReceiveReturnedGood(rg.id);
-                                  toast.success('Barang Diterima', 'Fisik barang retur telah dikonfirmasi tiba di gudang.');
-                                }}
-                              >
-                                Terima Fisik
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  processReturnedGoodAction(rg.id, 'CANCEL', 'Dibatalkan / tidak ditarik');
-                                  toast.info('Retur Dibatalkan', 'Barang retur ditandai batal/tidak ditarik.');
-                                }}
-                              >
-                                Batal
-                              </Button>
+                              {can(PERMISSIONS.RETURNED_GOOD.RECEIVE) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    confirmReceiveReturnedGood(rg.id);
+                                    toast.success('Barang Diterima', 'Fisik barang retur telah dikonfirmasi tiba di gudang.');
+                                  }}
+                                >
+                                  Terima Fisik
+                                </Button>
+                              )}
+                              {can(PERMISSIONS.RETURNED_GOOD.ACTION) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    processReturnedGoodAction(rg.id, 'CANCEL', 'Dibatalkan / tidak ditarik');
+                                    toast.info('Retur Dibatalkan', 'Barang retur ditandai batal/tidak ditarik.');
+                                  }}
+                                >
+                                  Batal
+                                </Button>
+                              )}
                             </div>
                           );
                         }
 
-                        if (rg.status === 'RECEIVED' || rg.status === 'PENDING') {
+                        if ((rg.status === 'RECEIVED' || rg.status === 'PENDING') && can(PERMISSIONS.RETURNED_GOOD.ACTION)) {
                           return (
                             <Button
                               size="sm"

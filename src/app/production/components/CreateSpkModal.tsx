@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/Select';
 import { useToast } from '@/context/ToastContext';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { workOrderService } from '@/services/work-order.service';
-import { productService, type ProductOption } from '@/services/product.service';
+import { productService, type ProductOption, type ProductDetail } from '@/services/product.service';
 import { materialService, type MaterialOption } from '@/services/material.service';
 import type { Product, RawMaterial } from '@/lib/types';
 
@@ -38,6 +38,7 @@ export function CreateSpkModal({
   const [spkError, setSpkError] = useState('');
 
   const [apiProducts, setApiProducts] = useState<ProductOption[]>([]);
+  const [selectedProductDetail, setSelectedProductDetail] = useState<ProductDetail | null>(null);
   const [apiMaterials, setApiMaterials] = useState<MaterialOption[]>([]);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
 
@@ -65,6 +66,28 @@ export function CreateSpkModal({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !spkProductId || isNaN(Number(spkProductId))) {
+      setSelectedProductDetail(null);
+      return;
+    }
+    let active = true;
+    productService
+      .getProductById(Number(spkProductId))
+      .then((res) => {
+        if (active && res.success && res.data) {
+          setSelectedProductDetail(res.data);
+          if (res.data.variants?.length === 1) {
+            setSpkVariantId(String(res.data.variants[0].id));
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen, spkProductId]);
+
   const effectiveProducts = useMemo(() => {
     return apiProducts;
   }, [apiProducts]);
@@ -76,6 +99,7 @@ export function CreateSpkModal({
   const resetForm = () => {
     setSpkCategory('NORMAL');
     setSpkProductId('');
+    setSelectedProductDetail(null);
     setSpkVariantId('');
     setSpkSaMaterialId('');
     setSpkTargetQty('1');
@@ -103,8 +127,8 @@ export function CreateSpkModal({
         setSpkError('Silakan pilih produk terlebih dahulu.');
         return;
       }
-      const prod = effectiveProducts.find((p) => String(p.id) === spkProductId);
-      if (prod?.variants && prod.variants.length > 1 && !spkVariantId) {
+      const variants = selectedProductDetail?.variants || [];
+      if (variants.length > 1 && !spkVariantId) {
         setSpkError('Silakan pilih varian produk.');
         return;
       }
@@ -150,7 +174,7 @@ export function CreateSpkModal({
 
   const isSubmitDisabled = isSubmitting || (
     spkCategory === 'NORMAL'
-      ? (!spkProductId || (Boolean(effectiveProducts.find((p) => String(p.id) === spkProductId)?.variants?.length) && effectiveProducts.find((p) => String(p.id) === spkProductId)!.variants!.length > 1 && !spkVariantId))
+      ? (!spkProductId || ((selectedProductDetail?.variants?.length || 0) > 1 && !spkVariantId))
       : !spkSaMaterialId
   );
 
@@ -247,12 +271,12 @@ export function CreateSpkModal({
         )}
 
         {spkCategory === 'NORMAL' && (() => {
-          const selectedProduct = effectiveProducts.find((p) => String(p.id) === spkProductId);
-          if (!selectedProduct || !selectedProduct.variants || selectedProduct.variants.length === 0) return null;
+          const variants = selectedProductDetail?.variants || [];
+          if (variants.length === 0) return null;
           return (
             <Select
               label="Varian Produk"
-              required={selectedProduct.variants.length > 1}
+              required={variants.length > 1}
               value={spkVariantId}
               onChange={(e) => {
                 setSpkVariantId(e.target.value);
@@ -260,9 +284,9 @@ export function CreateSpkModal({
               }}
               options={[
                 { value: '', label: '-- Pilih Varian --' },
-                ...selectedProduct.variants.map((v) => ({
+                ...variants.map((v) => ({
                   value: String(v.id),
-                  label: v.label || Object.values(v.combination || {}).join(', ') || v.sku,
+                  label: Object.values(v.combination || {}).join(', ') || v.sku,
                 })),
               ]}
             />
@@ -301,9 +325,9 @@ export function CreateSpkModal({
           }[] = [];
 
           if (spkCategory === 'NORMAL') {
-            const selectedProduct = effectiveProducts.find((p) => String(p.id) === spkProductId);
-            const selectedVariant = selectedProduct?.variants && selectedProduct.variants.length > 0
-              ? (selectedProduct.variants.find((v) => String(v.id) === spkVariantId) || selectedProduct.variants[0])
+            const variants = selectedProductDetail?.variants || [];
+            const selectedVariant = variants.length > 0
+              ? (variants.find((v) => String(v.id) === spkVariantId) || variants[0])
               : undefined;
             const bomItems = selectedVariant?.bom_items || [];
 

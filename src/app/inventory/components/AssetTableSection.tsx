@@ -52,12 +52,11 @@ export function AssetTableSection({
   const { can } = usePermission();
   const { currentUser, bankAccounts = [] } = useApp();
 
-  // UAC / PBAC Permissions
-  const canUpdate =
-    can(PERMISSIONS.INVENTORY.ASSET_UPDATE) || canManageInventory(currentUser.role);
-  const canDelete =
-    can(PERMISSIONS.INVENTORY.ASSET_DELETE) || canManageInventory(currentUser.role);
-  const canManage = canUpdate || canDelete;
+  // UAC / PBAC Permissions (Pure PBAC 1-to-1)
+  const canUpdate = can(PERMISSIONS.INVENTORY.ASSET_UPDATE);
+  const canService = can(PERMISSIONS.INVENTORY.ASSET_SERVICE);
+  const canDelete = can(PERMISSIONS.INVENTORY.ASSET_DELETE);
+  const canManage = canUpdate || canService || canDelete;
 
   const [assets, setAssets] = useState<CompanyAssetItem[]>([]);
   const [totalAssets, setTotalAssets] = useState(0);
@@ -242,6 +241,8 @@ export function AssetTableSection({
                   icon: <Edit2 className="h-3.5 w-3.5" />,
                   onClick: () => setEditAsset(ast),
                 });
+              }
+              if (canService) {
                 menuItems.push({
                   label: 'Catat Servis',
                   icon: <Wrench className="h-3.5 w-3.5" />,

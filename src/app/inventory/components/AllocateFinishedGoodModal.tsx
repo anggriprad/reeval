@@ -13,8 +13,8 @@ import {
 } from '@/services/finished-good.service';
 import {
   orderService,
+  SalesOrderOption,
   SalesOrderResponse,
-  SalesOrderItemResponse,
 } from '@/services/order.service';
 
 interface AllocateFinishedGoodModalProps {
@@ -32,8 +32,10 @@ export function AllocateFinishedGoodModal({
 }: AllocateFinishedGoodModalProps) {
   const { toast } = useToast();
 
-  const [orders, setOrders] = useState<SalesOrderResponse[]>([]);
+  const [orders, setOrders] = useState<SalesOrderOption[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<SalesOrderResponse | null>(null);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [isLoadingOrderDetail, setIsLoadingOrderDetail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [targetOrderId, setTargetOrderId] = useState<string>('');
@@ -44,10 +46,11 @@ export function AllocateFinishedGoodModal({
   const [notes, setNotes] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // Fetch candidate sales orders
+  // Fetch candidate sales order options (slim)
   useEffect(() => {
     if (!isOpen || !finishedGood) {
       setOrders([]);
+      setSelectedOrder(null);
       setTargetOrderId('');
       setSelectedItemId('');
       setAllocateQty(1);
@@ -62,7 +65,10 @@ export function AllocateFinishedGoodModal({
     setIsLoadingOrders(true);
 
     orderService
-      .getOrders({ per_page: 100 })
+      .getOrderOptions({
+        product_id: finishedGood.product_id,
+        variant_id: finishedGood.variant_id || undefined,
+      })
       .then((res) => {
         if (isMounted && res.data) {
           setOrders(res.data);
@@ -80,37 +86,7 @@ export function AllocateFinishedGoodModal({
     };
   }, [isOpen, finishedGood]);
 
-  // Filter Sales Orders yang membutuhkan produk/varian ini
-  const eligibleOrders = useMemo(() => {
-    if (!finishedGood) return [];
-
-    return orders.filter((so) => {
-      if (so.status === 'CANCELED' || so.status === 'DELIVERED') return false;
-
-      // Cek apakah ada komplain aktif
-      const complaints = (so.custom_fields?.complaints as any[]) || [];
-      const hasActiveComplaint = complaints.some(
-        (c) =>
-          (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
-          c.replacementStatus !== 'DELIVERED'
-      );
-
-      // Cek apakah ada item pesanan yang belum terpenuhi (produced_qty < qty)
-      const hasUnfulfilledItem = (so.items || []).some((item) => {
-        const matchesProduct = item.product_id === finishedGood.product_id;
-        const matchesVariant =
-          !finishedGood.variant_id || item.variant_id === finishedGood.variant_id;
-        return matchesProduct && matchesVariant && (item.produced_qty || 0) < item.qty;
-      });
-
-      return hasUnfulfilledItem || hasActiveComplaint;
-    });
-  }, [orders, finishedGood]);
-
-  const selectedOrder = useMemo(() => {
-    if (!targetOrderId) return null;
-    return eligibleOrders.find((so) => String(so.id) === targetOrderId) || null;
-  }, [eligibleOrders, targetOrderId]);
+  const eligibleOrders = orders;
 
   // Item pesanan yang relevan di dalam Sales Order terpilih
   const matchingItems = useMemo(() => {
@@ -139,39 +115,57 @@ export function AllocateFinishedGoodModal({
   const handleOrderChange = (soId: string) => {
     setTargetOrderId(soId);
     setErrorMessage('');
-    const so = eligibleOrders.find((o) => String(o.id) === soId);
-
-    const complaints = (so?.custom_fields?.complaints as any[]) || [];
-    const activeCmp = complaints.find(
-      (c) =>
-        (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
-        c.replacementStatus !== 'DELIVERED'
-    );
-
-    if (activeCmp) {
-      setAllocationPurpose('COMPLAINT');
-      setTargetComplaintId(String(activeCmp.id || ''));
-    } else {
-      setAllocationPurpose('REGULAR');
-      setTargetComplaintId('');
-    }
-
-    // Auto-select first matching item
-    const items = (so?.items || []).filter((item) => {
-      const matchesProduct = item.product_id === finishedGood?.product_id;
-      const matchesVariant =
-        !finishedGood?.variant_id || item.variant_id === finishedGood?.variant_id;
-      return matchesProduct && matchesVariant;
-    });
-
-    if (items.length > 0) {
-      setSelectedItemId(String(items[0].id));
-      const needed = Math.max(0, items[0].qty - (items[0].produced_qty || 0));
-      setAllocateQty(Math.min(maxAvailable, Math.max(1, needed)));
-    } else {
+    if (!soId) {
+      setSelectedOrder(null);
       setSelectedItemId('');
-      setAllocateQty(Math.min(maxAvailable, 1));
+      return;
     }
+
+    setIsLoadingOrderDetail(true);
+    orderService
+      .getOrderById(soId)
+      .then((res) => {
+        const so = res.data;
+        if (!so) return;
+        setSelectedOrder(so);
+
+        const complaints = (so.custom_fields?.complaints as any[]) || [];
+        const activeCmp = complaints.find(
+          (c) =>
+            (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
+            c.replacementStatus !== 'DELIVERED'
+        );
+
+        if (activeCmp) {
+          setAllocationPurpose('COMPLAINT');
+          setTargetComplaintId(String(activeCmp.id || ''));
+        } else {
+          setAllocationPurpose('REGULAR');
+          setTargetComplaintId('');
+        }
+
+        const items = (so.items || []).filter((item) => {
+          const matchesProduct = item.product_id === finishedGood?.product_id;
+          const matchesVariant =
+            !finishedGood?.variant_id || item.variant_id === finishedGood?.variant_id;
+          return matchesProduct && matchesVariant;
+        });
+
+        if (items.length > 0) {
+          setSelectedItemId(String(items[0].id));
+          const needed = Math.max(0, items[0].qty - (items[0].produced_qty || 0));
+          setAllocateQty(Math.min(maxAvailable, Math.max(1, needed)));
+        } else {
+          setSelectedItemId('');
+          setAllocateQty(Math.min(maxAvailable, 1));
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load order detail:', err);
+      })
+      .finally(() => {
+        setIsLoadingOrderDetail(false);
+      });
   };
 
   const handleItemChange = (itemId: string) => {
@@ -295,20 +289,10 @@ export function AllocateFinishedGoodModal({
                   ? 'Tidak ada SO aktif yang membutuhkan produk ini'
                   : '-- Pilih Sales Order --',
               },
-              ...eligibleOrders.map((so) => {
-                const complaints = (so.custom_fields?.complaints as any[]) || [];
-                const hasCmp = complaints.some(
-                  (c) =>
-                    (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
-                    c.replacementStatus !== 'DELIVERED'
-                );
-                return {
-                  value: String(so.id),
-                  label: `${so.order_number} - ${so.customer_name} (${
-                    hasCmp ? 'Komplain Aktif' : `Status: ${so.status}`
-                  })`,
-                };
-              }),
+              ...eligibleOrders.map((so) => ({
+                value: String(so.id),
+                label: `${so.order_number} - ${so.customer_name} (Status: ${so.status})`,
+              })),
             ]}
           />
           {!isLoadingOrders && eligibleOrders.length === 0 && (

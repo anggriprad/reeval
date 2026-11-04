@@ -8,7 +8,7 @@ import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { orderService, CreateSalesOrderRequest } from '@/services/order.service';
-import { productService, mapProductOptionToProduct } from '@/services/product.service';
+import { productService, mapProductOptionToProduct, mapProductDetailToProduct } from '@/services/product.service';
 import { shippingRateService } from '@/services/shipping-rate.service';
 import { productModifierService } from '@/services/product-modifier.service';
 import { Button } from '@/components/ui/Button';
@@ -398,6 +398,61 @@ export function CreateOrderContent() {
     setSelectedModifiersState({});
     setModalIsCustom(false);
     setModalCustomNotes('');
+
+    const numId = Number(product.id);
+    if (!isNaN(numId) && numId > 0) {
+      productService
+        .getProductById(numId)
+        .then((res) => {
+          if (res.success && res.data) {
+            const fullProduct = mapProductDetailToProduct(res.data);
+            setSelectedProduct(fullProduct);
+            setApiProducts((prev) =>
+              prev.map((p) => (String(p.id) === String(fullProduct.id) ? fullProduct : p))
+            );
+
+            // On-select fetch for modifier group details (GET /product/modifier-groups/:id)
+            (fullProduct.modifierGroupIds || []).forEach((gId) => {
+              const numGroupId = Number(gId);
+              if (!isNaN(numGroupId) && numGroupId > 0) {
+                productModifierService
+                  .getGroupById(numGroupId)
+                  .then((gRes) => {
+                    if (gRes.success && gRes.data) {
+                      const g = gRes.data;
+                      const groupOptions = g.options || [];
+                      const mappedGroup: ProductModifierGroup = {
+                        id: String(g.id),
+                        name: g.name,
+                        selectType: g.select_type as 'SINGLE' | 'MULTI',
+                        options: groupOptions.map((opt) => ({
+                          id: String(opt.id),
+                          name: opt.name,
+                          additionalPrice: opt.additional_price,
+                          bom: (opt.bom || []).map((b) => ({
+                            materialId: String(b.material_id),
+                            qty: b.quantity,
+                          })),
+                        })),
+                      };
+                      setApiModifierGroups((prev) => {
+                        const exists = prev.some((existing) => String(existing.id) === String(mappedGroup.id));
+                        if (exists) {
+                          return prev.map((existing) =>
+                            String(existing.id) === String(mappedGroup.id) ? mappedGroup : existing
+                          );
+                        }
+                        return [...prev, mappedGroup];
+                      });
+                    }
+                  })
+                  .catch(() => {});
+              }
+            });
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   const isAllAttributesSelected = React.useMemo(() => {
@@ -1238,9 +1293,12 @@ export function CreateOrderContent() {
               ) : (
                 filteredProducts.map(prod => {
                   const IconComp = iconMap[prod.imageIcon || 'BedDouble'] || BedDouble;
-                  const minPrice = Math.min(...prod.variants.map(v => v.price));
-                  const maxPrice = Math.max(...prod.variants.map(v => v.price));
-                  const priceStr = minPrice === maxPrice
+                  const variantPrices = (prod.variants || []).filter(v => v.price > 0).map(v => v.price);
+                  const minPrice = prod.minPrice ?? (variantPrices.length > 0 ? Math.min(...variantPrices) : (prod.basePrice || 0));
+                  const maxPrice = prod.maxPrice ?? (variantPrices.length > 0 ? Math.max(...variantPrices) : (prod.basePrice || 0));
+                  const priceStr = minPrice === 0 && maxPrice === 0
+                    ? (prod.basePrice && prod.basePrice > 0 ? formatCurrency(prod.basePrice) : '-')
+                    : minPrice === maxPrice
                     ? formatCurrency(minPrice)
                     : `${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)}`;
 

@@ -10,7 +10,9 @@ interface JobCardTrackerProps {
   workOrderId: string;
   jobCards: JobCard[];
   operations?: ProductionOperation[];
-  canManage: boolean;
+  canAssign: boolean;
+  canOperate: boolean;
+  canComplete: boolean;
   onAssignOperator: (woId: string, jc: JobCard, e?: React.MouseEvent) => void;
   onStart: (woId: string, jcId: string, e?: React.MouseEvent) => void;
   onPause: (woId: string, jcId: string, e?: React.MouseEvent) => void;
@@ -34,7 +36,9 @@ export function JobCardTracker({
   workOrderId,
   jobCards,
   operations = [],
-  canManage,
+  canAssign,
+  canOperate,
+  canComplete,
   onAssignOperator,
   onStart,
   onPause,
@@ -172,7 +176,7 @@ export function JobCardTracker({
                 </div>
               )}
 
-              {hasOperator && !isCompleted && canManage && (
+              {hasOperator && !isCompleted && canAssign && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -188,25 +192,27 @@ export function JobCardTracker({
             </div>
 
             {/* Aksi Operasi */}
-            {!isCompleted && canManage && (
+            {!isCompleted && (canAssign || canOperate || canComplete) && (
               <div>
                 {!hasOperator ? (
-                  <Button
-                    type="button"
-                    size="lg"
-                    variant="outline"
-                    className="w-full h-11 md:h-10 text-sm font-semibold bg-white dark:bg-slate-900"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAssignOperator(workOrderId, jc, e);
-                    }}
-                  >
-                    <Plus className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                    Pilih Operator
-                  </Button>
+                  canAssign ? (
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="outline"
+                      className="w-full h-11 md:h-10 text-sm font-semibold bg-white dark:bg-slate-900"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAssignOperator(workOrderId, jc, e);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                      Pilih Operator
+                    </Button>
+                  ) : null
                 ) : (
                   <>
-                    {isPending && (
+                    {isPending && canOperate && (
                       <Button
                         type="button"
                         size="lg"
@@ -219,7 +225,7 @@ export function JobCardTracker({
                       </Button>
                     )}
 
-                    {isPaused && (
+                    {isPaused && canOperate && (
                       <Button
                         type="button"
                         size="lg"
@@ -232,27 +238,31 @@ export function JobCardTracker({
                       </Button>
                     )}
 
-                    {isInProgress && (
+                    {isInProgress && (canOperate || canComplete) && (
                       <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="lg"
-                          className="h-11 md:h-10 text-sm font-semibold text-white border-0"
-                          onClick={(e) => onPause(workOrderId, jc.id, e)}
-                        >
-                          <Pause className="h-4 w-4 md:h-3.5 md:w-3.5 fill-white" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="success"
-                          size="lg"
-                          className="flex-1 h-11 md:h-10 text-sm font-semibold"
-                          onClick={(e) => onComplete(workOrderId, jc, e)}
-                        >
-                          <Check className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                          Selesai
-                        </Button>
+                        {canOperate && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="lg"
+                            className="h-11 md:h-10 text-sm font-semibold text-white border-0"
+                            onClick={(e) => onPause(workOrderId, jc.id, e)}
+                          >
+                            <Pause className="h-4 w-4 md:h-3.5 md:w-3.5 fill-white" />
+                          </Button>
+                        )}
+                        {canComplete && (
+                          <Button
+                            type="button"
+                            variant="success"
+                            size="lg"
+                            className="flex-1 h-11 md:h-10 text-sm font-semibold"
+                            onClick={(e) => onComplete(workOrderId, jc, e)}
+                          >
+                            <Check className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                            Selesai
+                          </Button>
+                        )}
                       </div>
                     )}
                   </>

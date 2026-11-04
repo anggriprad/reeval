@@ -78,6 +78,7 @@ interface OrderCardProps {
   onToggleExpand?: (orderId: string) => void;
   canApprove?: boolean;
   canUpdate?: boolean;
+  canCustom?: boolean;
   canDelete?: boolean;
   onProcessOrder?: (orderId: string) => void;
   onOpenCancelModal?: (orderId: string) => void;
@@ -91,6 +92,7 @@ export function OrderCard({
   onToggleExpand,
   canApprove = false,
   canUpdate = false,
+  canCustom = false,
   canDelete = false,
   onProcessOrder,
   onOpenCancelModal,
@@ -99,12 +101,14 @@ export function OrderCard({
   const router = useRouter();
 
   const actionMenuItems = [];
-  if (canUpdate && onOpenCustomProcessModal) {
+  if (canCustom && onOpenCustomProcessModal) {
     actionMenuItems.push({
       label: 'Kustom Proses',
       icon: <Sliders className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,
       onClick: () => onOpenCustomProcessModal(order),
     });
+  }
+  if (canUpdate) {
     actionMenuItems.push({
       label: 'Edit Pesanan',
       icon: <Edit className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,

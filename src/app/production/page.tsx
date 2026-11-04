@@ -42,7 +42,7 @@ import {
 
 function ProductionContent() {
   const { toast } = useToast();
-  const { can } = usePermission();
+  const { can, canAny } = usePermission();
   const {
     currentUser,
     products = [],
@@ -65,8 +65,16 @@ function ProductionContent() {
 
   const activeTab = (filters.status || 'active') as 'active' | 'completed' | 'canceled' | 'analytics';
 
-  const canCreate = can(PERMISSIONS.PRODUCTION.CREATE) || canManageProduction(currentUser.role);
-  const canManage = can(PERMISSIONS.PRODUCTION.UPDATE) || canManageProduction(currentUser.role);
+  const canCreate = can(PERMISSIONS.PRODUCTION.CREATE);
+  const canKPI = can(PERMISSIONS.PRODUCTION.KPI);
+  const canCancel = can(PERMISSIONS.PRODUCTION.DELETE);
+  const canAssign = can(PERMISSIONS.PRODUCTION.ASSIGN);
+  const canOperate = can(PERMISSIONS.PRODUCTION.OPERATE);
+  const canComplete = can(PERMISSIONS.PRODUCTION.COMPLETE);
+  const canConfig = canAny([
+    PERMISSIONS.PRODUCTION.OPERATION_READ,
+    PERMISSIONS.PRODUCTION.ROUTING_READ,
+  ]);
 
   // Debounced search input (600ms)
   const [searchInput, setSearchInput] = useState(filters.search || '');
@@ -83,20 +91,19 @@ function ProductionContent() {
     return () => clearTimeout(timer);
   }, [searchInput, filters.search, setFilter]);
 
-  // Synchronize master operations from API
+  // Synchronize master operations from /options API (auth-only)
   useEffect(() => {
     productionOperationService
-      .getOperations({ per_page: 100 })
+      .getOperationOptions()
       .then((res) => {
         if (res && Array.isArray(res.data)) {
           const mapped: ProductionOperation[] = res.data.map((op) => ({
             id: String(op.id),
             name: op.name,
             costingMethod: op.wage_type === 'HOURLY' ? 'hourly' : 'fixed',
-            durationMinutes: op.standard_duration_minutes,
-            laborCostPerHour: op.cost_per_hour,
-            fixedLaborCost: op.fixed_cost,
-            description: op.description,
+            durationMinutes: op.standard_duration_minutes || 0,
+            laborCostPerHour: op.calculated_labor_cost || 0,
+            fixedLaborCost: op.calculated_labor_cost || 0,
           }));
           setOperationsList(mapped);
         }
@@ -106,17 +113,17 @@ function ProductionContent() {
       });
   }, [setOperationsList]);
 
-  // Synchronize master operators from API
+  // Synchronize master operators from /options API (auth-only)
   useEffect(() => {
     productionOperatorService
-      .getOperators({ per_page: 100 })
+      .getOperatorOptions()
       .then((res) => {
         if (res && Array.isArray(res.data)) {
           const mapped: ProductionOperator[] = res.data.map((op) => ({
             id: String(op.id),
-            name: op.user_name || op.user_email || `Operator #${op.id}`,
+            name: op.name || `Operator #${op.id}`,
             skills: [],
-            status: op.is_active ? 'ACTIVE' : 'INACTIVE',
+            status: op.is_ready ? 'ACTIVE' : 'INACTIVE',
           }));
           setOperatorsList(mapped);
         }
@@ -349,11 +356,13 @@ function ProductionContent() {
             Buat SPK Baru
           </Button>
         )}
-        <Link href="/production/config">
-          <Button variant="outline">
-            <Settings className="h-4 w-4" /> Konfigurasi
-          </Button>
-        </Link>
+        {canConfig && (
+          <Link href="/production/config">
+            <Button variant="outline">
+              <Settings className="h-4 w-4" /> Konfigurasi
+            </Button>
+          </Link>
+        )}
       </PageHeader>
 
       <SegmentedControl
@@ -371,20 +380,22 @@ function ProductionContent() {
           {
             key: 'completed',
             label: 'Selesai',
-            // count: statusCounts?.completed && statusCounts.completed > 0 ? statusCounts.completed : undefined,
             icon: CheckCircle,
           },
           {
             key: 'canceled',
             label: 'Dibatalkan',
-            // count: statusCounts?.canceled && statusCounts.canceled > 0 ? statusCounts.canceled : undefined,
             icon: XCircle,
           },
-          {
-            key: 'analytics',
-            label: 'Analitik Kinerja',
-            icon: BarChart3,
-          },
+          ...(canKPI
+            ? [
+                {
+                  key: 'analytics',
+                  label: 'Analitik Kinerja',
+                  icon: BarChart3,
+                },
+              ]
+            : []),
         ]}
         filterValue={filters.spk_type}
         onFilterChange={(val) => setFilter('spk_type', val)}
@@ -421,7 +432,11 @@ function ProductionContent() {
           searchTerm={filters.search}
           expandedWOIds={expandedWOIds}
           onToggleExpand={toggleExpand}
-          canManage={canManage}
+          canKPI={canKPI}
+          canCancel={canCancel}
+          canAssign={canAssign}
+          canOperate={canOperate}
+          canComplete={canComplete}
           onOpenKPI={(wo) => setSelectedWO(wo)}
           onOpenCancel={(wo) => setCancelTargetWO(wo)}
           onAssignOperator={(woId, jc) => setAssignTarget({ woId, jc })}
@@ -467,9 +482,13 @@ function ProductionContent() {
         selectedWO={selectedWO}
         products={products}
         operations={operations}
-        onOpenEditOperator={(woId, jc) => {
-          setAssignTarget({ woId, jc });
-        }}
+        onOpenEditOperator={
+          canAssign
+            ? (woId, jc) => {
+                setAssignTarget({ woId, jc });
+              }
+            : undefined
+        }
       />
 
       <AssignOperatorModal

@@ -50,11 +50,10 @@ export default function AssetDetailPage() {
     bankAccounts = [],
   } = useApp();
 
-  const canUpdate =
-    can(PERMISSIONS.INVENTORY.ASSET_UPDATE) || canManageInventory(currentUser?.role);
-  const canDelete =
-    can(PERMISSIONS.INVENTORY.ASSET_DELETE) || canManageInventory(currentUser?.role);
-  const canManage = canUpdate || canDelete;
+  const canUpdate = can(PERMISSIONS.INVENTORY.ASSET_UPDATE);
+  const canService = can(PERMISSIONS.INVENTORY.ASSET_SERVICE);
+  const canDelete = can(PERMISSIONS.INVENTORY.ASSET_DELETE);
+  const canManage = canUpdate || canService || canDelete;
 
   const [asset, setAsset] = useState<CompanyAssetDetail | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<AssetCategoryOption[]>([]);
@@ -473,7 +472,7 @@ export default function AssetDetailPage() {
               Riwayat Pemeliharaan & Servis
             </h2>
           </div>
-          {canManage && (
+          {canService && (
             <Button size="sm" variant="outline" onClick={openAddService}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               Tambah Catatan

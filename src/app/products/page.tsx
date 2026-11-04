@@ -20,7 +20,8 @@ import {
   Armchair, Sofa, Package, Lamp, Tv, Coffee, Hammer, Wrench, Frame, Palette, Scissors, Shield,
   ShoppingBag, Archive, FolderTree, Sparkles,
 } from 'lucide-react';
-import { canManageInventory } from '@/lib/roles';
+import { usePermission } from '@/hooks/usePermission';
+import { PERMISSIONS } from '@/lib/permissions';
 import { ProductSection } from './components/ProductSection';
 import { ProductModifierTab } from './components/ProductModifierTab';
 import { productCategoryService, ProductCategoryOption } from '@/services/product-category.service';
@@ -72,8 +73,16 @@ function ProductsContent() {
   } = useApp();
 
   const router = useRouter();
+  const { can, canAny } = usePermission();
   const [activeTab, setActiveTab] = useUrlTab(['products', 'modifiers', 'bom_templates', 'attributes'] as const, 'products');
-  const canSeeCosts = ['ADMIN', 'SUPER_ADMIN'].includes(currentUser.role);
+  const canSeeCosts = can(PERMISSIONS.PRODUCT.READ);
+  const canCreateProduct = can(PERMISSIONS.PRODUCT.CREATE);
+  const canCreateModifier = can(PERMISSIONS.PRODUCT.MODIFIER_CREATE);
+  const canConfig = canAny([
+    PERMISSIONS.PRODUCT.CATEGORY_READ,
+    PERMISSIONS.PRODUCT.BOM_READ,
+    PERMISSIONS.PRODUCT.ATTRIBUTE_READ,
+  ]);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [productFilter, setProductFilter] = useState('');
@@ -334,20 +343,24 @@ function ProductsContent() {
     const min = Math.min(...prices), max = Math.max(...prices);
     return min === max ? formatCurrency(min) : `${formatCurrency(min)} - ${formatCurrency(max)}`;
   };
-  const canManage = canManageInventory(currentUser.role);
+  const canManage = canAny([
+    PERMISSIONS.PRODUCT.CREATE,
+    PERMISSIONS.PRODUCT.UPDATE,
+    PERMISSIONS.PRODUCT.DELETE,
+  ]);
 
   return (
     <div className='space-y-3'>
       <PageHeader title="Katalog Produk & BOM">
-        {canManage && activeTab === 'products' && (
+        {canCreateProduct && activeTab === 'products' && (
           <Link href="/products/create">
             <Button><Plus className="h-4 w-4" /> Tambah Produk</Button>
           </Link>
         )}
-        {canManage && activeTab === 'modifiers' && (
+        {canCreateModifier && activeTab === 'modifiers' && (
           <Button onClick={() => setShowAddModifierModal(true)}><Plus className="h-4 w-4" /> Tambah Modifier</Button>
         )}
-        {canManage && (
+        {canConfig && (
           <Link href="/products/config">
             <Button variant="outline">
               <Settings className="h-4 w-4" /> Konfigurasi

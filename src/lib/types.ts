@@ -235,6 +235,8 @@ export interface Product {
   variantTypes?: VariantType[];
   productAttributes?: ProductAttribute[];  // Which attributes apply to this product
   basePrice?: number;                      // Base price before surcharges
+  minPrice?: number;                       // Minimum price for display
+  maxPrice?: number;                       // Maximum price for display
   pricingRules?: PricingRule[];            // Conditional surcharge rules
   bomTemplates?: any[];                    // Legacy conditional material list
   defaultRoutingId?: string;              // Default production routing for all variants
@@ -369,6 +371,7 @@ export interface SalesOrder {
   confirmedAt?: string;     // When admin approved
   spkIssuedAt?: string;     // When admin issued SPK
   salesPhone?: string;     // Phone of sales for contact (e.g. 6281234567890)
+  companyPhone?: string;   // Phone of company / admin for contact
   updatedAt?: string;      // Last update timestamp (ISO)
   updatedBy?: string;      // Name/role of user who last updated this order
   deliveredAt?: string;
