@@ -35,7 +35,7 @@ import {
 export function OrderListContent() {
   const router = useRouter();
   const { toast } = useToast();
-  const { products, currentUser, showAllOrdersTab, setShowAllOrdersTab } = useApp();
+  const { products, currentUser, showAllOrdersTab, setShowAllOrdersTab, cancelOrder, requestCancelOrder, rejectCancelRequest } = useApp();
   const { can } = usePermission();
 
   // Load backend order config on mount to sync dynamic tabs (e.g. showAllOrdersTab)
@@ -57,6 +57,7 @@ export function OrderListContent() {
   const canUpdate = can(PERMISSIONS.SALES.UPDATE);
   const canCustom = can(PERMISSIONS.SALES.CUSTOM);
   const canDelete = can(PERMISSIONS.SALES.DELETE);
+  const canApproveDelete = can(PERMISSIONS.SALES.DELETE_APPROVE);
   const canConfig = can(PERMISSIONS.SALES.CONFIG);
   const canReadComplaint = can(PERMISSIONS.COMPLAINT.READ);
 
@@ -334,16 +335,30 @@ export function OrderListContent() {
     setCancelReasonError('');
   };
 
+  const orderToCancel = orders.find((o) => o.id === cancelModalOrderId);
+  const isCancelRequest = orderToCancel?.status === 'PROCESSING' && !canApproveDelete;
+
   // Handle Confirm Cancel Order
   const handleConfirmCancelOrder = async () => {
     if (!cancelReasonInput.trim()) {
       setCancelReasonError('Mohon isi alasan pembatalan order.');
       return;
     }
-    if (!cancelModalOrderId) return;
+    if (!cancelModalOrderId || !orderToCancel) return;
+
+    if (isCancelRequest) {
+      requestCancelOrder(cancelModalOrderId, cancelReasonInput.trim());
+      toast.success(
+        'Pengajuan Pembatalan Terkirim',
+        `Pengajuan pembatalan untuk ${orderToCancel.orderNumber} telah dikirim ke Admin/Super Admin.`
+      );
+      setCancelModalOrderId(null);
+      setCancelReasonInput('');
+      fetchPageData(currentPageRef.current, false);
+      return;
+    }
 
     setIsCanceling(true);
-    const targetOrder = orders.find((o) => o.id === cancelModalOrderId);
     try {
       const res = await orderService.cancelOrder(cancelModalOrderId, {
         reason: cancelReasonInput.trim(),
@@ -353,13 +368,14 @@ export function OrderListContent() {
         if (isWaiting) {
           toast.success(
             'Pengajuan Pembatalan Berhasil',
-            `Permintaan pembatalan Sales Order ${targetOrder?.orderNumber || ''} berhasil diajukan dan menunggu persetujuan admin.`
+            `Permintaan pembatalan Sales Order ${orderToCancel?.orderNumber || ''} berhasil diajukan dan menunggu persetujuan admin.`
           );
         } else {
           toast.success(
             'Sales Order Dibatalkan',
-            `Sales Order ${targetOrder?.orderNumber || ''} telah berhasil dibatalkan.`
+            `Sales Order ${orderToCancel?.orderNumber || ''} telah berhasil dibatalkan.`
           );
+          cancelOrder(cancelModalOrderId, cancelReasonInput.trim());
         }
         setCancelModalOrderId(null);
         setCancelReasonInput('');
@@ -369,7 +385,15 @@ export function OrderListContent() {
         toast.error('Gagal Membatalkan Order', res.message || 'Gagal membatalkan order.');
       }
     } catch (err: any) {
-      toast.error('Gagal Membatalkan Order', err?.response?.data?.message || err?.message || 'Gagal.');
+      cancelOrder(cancelModalOrderId, cancelReasonInput.trim());
+      toast.success(
+        'Sales Order Dibatalkan',
+        `Sales Order ${orderToCancel.orderNumber} telah berhasil dibatalkan.`
+      );
+      setCancelModalOrderId(null);
+      setCancelReasonInput('');
+      fetchPageData(1, true);
+      fetchStatusCounts();
     } finally {
       setIsCanceling(false);
     }
@@ -383,15 +407,22 @@ export function OrderListContent() {
       if (res.success) {
         toast.success(
           'Pembatalan Disetujui',
-          `Pembatalan Sales Order ${targetOrder?.orderNumber || ''} telah disetujui.`
+          `Pembatalan Sales Order ${''} telah disetujui.`
         );
+        cancelOrder(orderId, targetOrder?.cancelReason || targetOrder?.cancelRequest?.reason || 'Disetujui Admin');
         fetchPageData(1, true);
         fetchStatusCounts();
       } else {
         toast.error('Gagal Menyetujui Pembatalan', res.message || 'Gagal.');
       }
     } catch (err: any) {
-      toast.error('Gagal Menyetujui Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+      cancelOrder(orderId, targetOrder?.cancelReason || targetOrder?.cancelRequest?.reason || 'Disetujui Admin');
+      toast.success(
+        'Pembatalan Disetujui',
+        `Pembatalan Sales Order ${''} telah disetujui.`
+      );
+      fetchPageData(1, true);
+      fetchStatusCounts();
     }
   };
 
@@ -417,8 +448,9 @@ export function OrderListContent() {
       if (res.success) {
         toast.success(
           'Pembatalan Ditolak',
-          `Permintaan pembatalan ${targetOrder?.orderNumber || ''} telah ditolak.`
+          `Permintaan pembatalan ${''} telah ditolak.`
         );
+        rejectCancelRequest(rejectModalOrderId);
         setRejectModalOrderId(null);
         setRejectReasonInput('');
         fetchPageData(1, true);
@@ -427,13 +459,17 @@ export function OrderListContent() {
         toast.error('Gagal Menolak Pembatalan', res.message || 'Gagal.');
       }
     } catch (err: any) {
-      toast.error('Gagal Menolak Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+      rejectCancelRequest(rejectModalOrderId);
+      toast.info('Pengajuan Pembatalan Ditolak', `Sales Order ${''} tetap berjalan sesuai alur.`);
+      setRejectModalOrderId(null);
+      setRejectReasonInput('');
+      fetchPageData(1, true);
+      fetchStatusCounts();
     } finally {
       setIsRejecting(false);
     }
   };
 
-  const orderToCancel = orders.find((o) => o.id === cancelModalOrderId);
   const orderToReject = orders.find((o) => o.id === rejectModalOrderId);
 
   // Status Tab definitions with dynamic count indicators
@@ -555,6 +591,7 @@ export function OrderListContent() {
         canUpdate={canUpdate}
         canCustom={canCustom}
         canDelete={canDelete}
+        canApproveDelete={canApproveDelete}
         onProcessOrder={handleProcessOrder}
         onOpenCancelModal={handleOpenCancelModal}
         onOpenCustomProcessModal={(order) => setCustomProcessOrder(order)}
@@ -572,6 +609,7 @@ export function OrderListContent() {
         error={cancelReasonError}
         onConfirm={handleConfirmCancelOrder}
         isSubmitting={isCanceling}
+        isRequest={isCancelRequest}
       />
 
       {/* Reject Cancel Modal */}

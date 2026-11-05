@@ -14,6 +14,7 @@ interface CancelOrderModalProps {
   error?: string;
   onConfirm: () => void;
   isSubmitting?: boolean;
+  isRequest?: boolean;
 }
 
 export function CancelOrderModal({
@@ -25,12 +26,13 @@ export function CancelOrderModal({
   error = '',
   onConfirm,
   isSubmitting = false,
+  isRequest = false,
 }: CancelOrderModalProps) {
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Batalkan Sales Order — ${orderNumber}`}
+      title={isRequest ? `Ajukan Pembatalan Sales Order — ${orderNumber}` : `Batalkan Sales Order — ${orderNumber}`}
       size="md"
       actions={
         <>
@@ -38,14 +40,18 @@ export function CancelOrderModal({
             Batal
           </Button>
           <Button variant="danger" onClick={onConfirm} disabled={isSubmitting}>
-            {isSubmitting ? 'Membatalkan...' : 'Konfirmasi Pembatalan'}
+            {isSubmitting
+              ? (isRequest ? 'Mengirim...' : 'Membatalkan...')
+              : (isRequest ? 'Kirim Pengajuan' : 'Konfirmasi Pembatalan')}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-          Mohon masukkan alasan pembatalan untuk pesanan ini. Catatan pembatalan ini akan tersimpan pada riwayat pesanan.
+          {isRequest
+            ? 'Pesanan sedang dalam proses produksi. Pengajuan pembatalan membutuhkan persetujuan Admin/Super Admin sebelum diproses.'
+            : 'Mohon masukkan alasan pembatalan untuk pesanan ini. Catatan pembatalan ini akan tersimpan pada riwayat pesanan.'}
         </p>
 
         <Textarea

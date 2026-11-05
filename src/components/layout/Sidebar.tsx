@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -135,13 +136,19 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
 
       {/* Brand Header */}
       <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-4 dark:border-slate-800">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white shadow-sm">
-          R
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+          <Image
+            src="/images/reeval-logo.png"
+            alt="Reeval ERP"
+            width={32}
+            height={32}
+            className="h-8 w-8 object-contain"
+            priority
+          />
         </div>
         {!collapsed && (
           <div className="overflow-hidden">
             <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white leading-none">Reeval ERP</h1>
-            <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-wider">Manufacturing System</p>
           </div>
         )}
       </div>

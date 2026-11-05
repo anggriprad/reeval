@@ -34,6 +34,15 @@ export function CancelSpkModal({
 
   const handleConfirmCancel = async () => {
     if (!targetWO) return;
+    const isFromSO = Boolean(
+      (targetWO.salesOrderId && targetWO.salesOrderId !== 'INTERNAL-SA' && targetWO.salesOrderId !== 'INTERNAL-PROD') ||
+      (targetWO.salesOrderNumber && targetWO.salesOrderNumber !== 'INTERNAL-SA' && targetWO.salesOrderNumber !== 'INTERNAL-PROD')
+    );
+    const isFromComplaint = Boolean(targetWO.isComplaintReplacement || targetWO.complaintId);
+    if (isFromSO || isFromComplaint) {
+      toast.error('Hanya SPK manual/langsung yang dapat dibatalkan dari modul produksi.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const res = await workOrderService.cancelWorkOrder(Number(targetWO.id), {

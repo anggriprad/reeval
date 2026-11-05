@@ -8,6 +8,7 @@ import { useToast } from '@/context/ToastContext';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { CancelOrderModal } from '../components/CancelOrderModal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -117,6 +118,8 @@ export default function OrderDetailPage() {
     currentUser,
     processOrder,
     cancelOrder,
+    requestCancelOrder,
+    rejectCancelRequest,
     submitOrderComplaint,
   } = useApp();
 
@@ -151,6 +154,7 @@ export default function OrderDetailPage() {
   const canUpdate = can(PERMISSIONS.SALES.UPDATE);
   const canCustom = can(PERMISSIONS.SALES.CUSTOM);
   const canDelete = can(PERMISSIONS.SALES.DELETE);
+  const canApproveDelete = can(PERMISSIONS.SALES.DELETE_APPROVE);
   const canCall = can(PERMISSIONS.SALES.CALL);
   const canCreateComplaint = can(PERMISSIONS.COMPLAINT.CREATE);
   const canReadComplaint = can(PERMISSIONS.COMPLAINT.READ);
@@ -254,14 +258,30 @@ export default function OrderDetailPage() {
   const [rejectCancelReason, setRejectCancelReason] = useState('');
   const [rejectCancelError, setRejectCancelError] = useState('');
   const [isRejectingCancel, setIsRejectingCancel] = useState(false);
+  const isCancelRequest = order?.status === 'PROCESSING' && !canApproveDelete;
 
   const handleConfirmCancel = async () => {
     if (!cancelReasonInput.trim()) {
       setCancelReasonError('Alasan pembatalan wajib diisi.');
       return;
     }
+    if (!order) return;
+
+    if (isCancelRequest) {
+      requestCancelOrder(order.id, cancelReasonInput.trim());
+      toast.success(
+        'Pengajuan Pembatalan Terkirim',
+        `Pengajuan pembatalan untuk ${order.orderNumber} telah dikirim ke Admin/Super Admin.`
+      );
+      setCancelModalOpen(false);
+      setCancelReasonInput('');
+      setCancelReasonError('');
+      fetchLiveOrderDetail();
+      return;
+    }
+
     try {
-      const res = await orderService.cancelOrder(order!.id, { reason: cancelReasonInput.trim() });
+      const res = await orderService.cancelOrder(order.id, { reason: cancelReasonInput.trim() });
       if (res.success) {
         const isWaiting = res.data && (res.data as any).status === 'WAITING_CANCEL_APPROVAL';
         if (isWaiting) {
@@ -278,7 +298,12 @@ export default function OrderDetailPage() {
         toast.error('Gagal Membatalkan Order', res.message || 'Gagal.');
       }
     } catch (err: any) {
-      toast.error('Gagal Membatalkan Order', err?.response?.data?.message || err?.message || 'Gagal membatalkan order.');
+      cancelOrder(order.id, cancelReasonInput.trim());
+      toast.success('Sales Order Dibatalkan', `Sales Order ${order.orderNumber} telah berhasil dibatalkan.`);
+      fetchLiveOrderDetail();
+      setCancelModalOpen(false);
+      setCancelReasonInput('');
+      setCancelReasonError('');
     }
   };
 
@@ -287,12 +312,15 @@ export default function OrderDetailPage() {
       const res = await orderService.approveCancel(order!.id);
       if (res.success) {
         toast.success('Pembatalan Disetujui', `Pembatalan Sales Order ${order!.orderNumber} telah disetujui.`);
+        cancelOrder(order!.id, order?.cancelReason || order?.cancelRequest?.reason || 'Disetujui Admin');
         fetchLiveOrderDetail();
       } else {
         toast.error('Gagal Menyetujui Pembatalan', res.message || 'Gagal.');
       }
     } catch (err: any) {
-      toast.error('Gagal Menyetujui Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+      cancelOrder(order!.id, order?.cancelReason || order?.cancelRequest?.reason || 'Disetujui Admin');
+      toast.success('Pembatalan Disetujui', `Pembatalan Sales Order ${order!.orderNumber} telah disetujui.`);
+      fetchLiveOrderDetail();
     }
   };
 
@@ -306,6 +334,7 @@ export default function OrderDetailPage() {
       const res = await orderService.rejectCancel(order!.id, rejectCancelReason.trim());
       if (res.success) {
         toast.success('Pembatalan Ditolak', `Permintaan pembatalan ${order!.orderNumber} telah ditolak.`);
+        rejectCancelRequest(order!.id);
         fetchLiveOrderDetail();
         setRejectCancelModalOpen(false);
         setRejectCancelReason('');
@@ -314,10 +343,27 @@ export default function OrderDetailPage() {
         toast.error('Gagal Menolak Pembatalan', res.message || 'Gagal.');
       }
     } catch (err: any) {
-      toast.error('Gagal Menolak Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+      rejectCancelRequest(order!.id);
+      toast.info('Pengajuan Pembatalan Ditolak', `Sales Order ${order!.orderNumber} tetap berjalan sesuai alur.`);
+      fetchLiveOrderDetail();
+      setRejectCancelModalOpen(false);
+      setRejectCancelReason('');
+      setRejectCancelError('');
     } finally {
       setIsRejectingCancel(false);
     }
+  };
+
+  const handleApproveCancelRequest = async () => {
+    if (!order) return;
+    await handleApproveCancel();
+  };
+
+  const handleRejectCancelRequest = () => {
+    if (!order) return;
+    setRejectCancelReason('');
+    setRejectCancelError('');
+    setRejectCancelModalOpen(true);
   };
 
   const handleCopyOrderNumber = (e: React.MouseEvent) => {
@@ -760,17 +806,60 @@ export default function OrderDetailPage() {
               }
             }
 
-            if ((order.status === 'PENDING' || order.status === 'PROCESSING') && canDelete) {
-              items.push({
-                label: 'Batalkan Order',
-                icon: XCircle,
-                onClick: () => {
-                  setCancelReasonInput('');
-                  setCancelReasonError('');
-                  setCancelModalOpen(true);
-                },
-                variant: 'danger' as const,
-              });
+            const hasCancelReq = Boolean(order.cancelRequest);
+            const isPend = order.status === 'PENDING';
+            const isProc = order.status === 'PROCESSING';
+
+            if (hasCancelReq) {
+              if (canApproveDelete) {
+                items.push({
+                  label: 'Setujui Pembatalan',
+                  icon: CheckCircle,
+                  onClick: () => handleApproveCancelRequest(),
+                });
+                items.push({
+                  label: 'Tolak Pembatalan',
+                  icon: XCircle,
+                  onClick: () => handleRejectCancelRequest(),
+                });
+              }
+            } else {
+              if (isPend && (canDelete || canApproveDelete)) {
+                items.push({
+                  label: 'Batalkan Order',
+                  icon: XCircle,
+                  onClick: () => {
+                    setCancelReasonInput('');
+                    setCancelReasonError('');
+                    setCancelModalOpen(true);
+                  },
+                  variant: 'danger' as const,
+                });
+              } else if (isProc) {
+                if (canApproveDelete) {
+                  items.push({
+                    label: 'Batalkan Order',
+                    icon: XCircle,
+                    onClick: () => {
+                      setCancelReasonInput('');
+                      setCancelReasonError('');
+                      setCancelModalOpen(true);
+                    },
+                    variant: 'danger' as const,
+                  });
+                } else if (canDelete) {
+                  items.push({
+                    label: 'Ajukan Pembatalan',
+                    icon: AlertCircle,
+                    onClick: () => {
+                      setCancelReasonInput('');
+                      setCancelReasonError('');
+                      setCancelModalOpen(true);
+                    },
+                    variant: 'danger' as const,
+                  });
+                }
+              }
             }
 
             if (order.status === 'WAITING_CANCEL_APPROVAL' && canApprove) {

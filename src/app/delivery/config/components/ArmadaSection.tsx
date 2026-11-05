@@ -6,7 +6,7 @@ import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { vehicleService, Vehicle } from '@/services/vehicle.service';
-import { ConfigSection } from './ConfigSection';
+import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Truck, Plus, Trash2, Edit2, X } from 'lucide-react';
@@ -175,7 +175,7 @@ export function ArmadaSection() {
       title="Daftar Armada"
       description="Kelola kendaraan operasional pengiriman barang."
       icon={Truck}
-      iconWrapperClass="bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"
+
       defaultExpanded={false}
       isControlled={true}
       isExpandedControlled={isExpanded}

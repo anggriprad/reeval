@@ -195,6 +195,8 @@ interface AppContextType extends AppState {
   updateOrderCustomProcess: (orderId: string, updatedItems: SalesOrderItem[]) => { success: boolean; error?: string };
   processOrder: (orderId: string) => { success: boolean; error?: string };
   cancelOrder: (orderId: string, cancelReason: string) => void;
+  requestCancelOrder: (orderId: string, reason: string) => void;
+  rejectCancelRequest: (orderId: string) => void;
   submitOrderComplaint: (orderId: string, complaint: Omit<OrderComplaint, 'id' | 'status' | 'createdAt'>) => void;
   resolveOrderComplaint: (
     orderId: string,
@@ -2357,6 +2359,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             status: 'CANCELED' as const,
             cancelReason,
             cancelledByRole: roleLabel,
+            cancelRequest: undefined,
             updatedAt: now,
             updatedBy: user.name,
           }
@@ -2374,7 +2377,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           wo.jobCards.some(jc => jc.status === 'IN_PROGRESS' || jc.status === 'PAUSED' || jc.status === 'COMPLETED' || (jc.completedQty && jc.completedQty > 0));
 
         if (!hasAnyWorkStarted) {
-          // Kasus 1: Belum dikerjakan sama sekali -> Bahan baku kembali ke stok gudang
+          // Kasus 1: Belum dikerjakan sama sekali -> Bahan baku kembali ke stok gudang, SPK dibatalkan
           wo.materialsConsumed.forEach(b => {
             const mIdx = nextMaterials.findIndex(m => m.id === b.materialId);
             if (mIdx >= 0) {
@@ -2393,80 +2396,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
               });
             }
           });
+
+          return {
+            ...wo,
+            status: 'CANCELED' as const,
+            canceledAt: now,
+            cancelReason: `SO ${order.orderNumber} dibatalkan`,
+          };
         } else {
-          // Kasus 2: Sudah ada yang dikerjakan -> Dianggap selesai semuanya dan masuk ke stok barang jadi / WIP
-          if (wo.isSubAssembly && wo.subAssemblyId) {
-            const targetQty = wo.jobCards[0]?.targetQty || 1;
-            const subIdx = nextMaterials.findIndex(m => m.id === wo.subAssemblyId);
-            if (subIdx >= 0) {
-              const subMat = nextMaterials[subIdx];
-              nextMaterials[subIdx] = { ...subMat, stock: subMat.stock + targetQty };
-              nextMovements.unshift({
-                id: generateId(),
-                materialId: subMat.id,
-                materialName: subMat.name,
-                type: 'IN',
-                qty: targetQty,
-                date: now,
-                reference: `Batal SO-${order.orderNumber} (Stok Setengah Jadi ${wo.spkNumber})`,
-              });
-            }
-          } else {
-            // Produk Jadi
-            const matchingItem = order.items.find(item =>
-              wo.productName === item.productName ||
-              wo.productName.includes(item.productName) ||
-              item.productName.includes(wo.productName)
-            );
-
-            const prodId = matchingItem?.productId || `prod-auto-${generateId()}`;
-            const varId = matchingItem?.variantId;
-            const pName = matchingItem?.productName || wo.productName;
-            const varLabel = matchingItem?.variantLabel || wo.variantName;
-
-            const fgIndex = nextFinishedGoods.findIndex(fg =>
-              fg.productId === prodId && (fg.variantId || '') === (varId || '')
-            );
-
-            let targetFGId = '';
-            if (fgIndex >= 0) {
-              targetFGId = nextFinishedGoods[fgIndex].id;
-              nextFinishedGoods[fgIndex] = {
-                ...nextFinishedGoods[fgIndex],
-                stock: nextFinishedGoods[fgIndex].stock + 1,
-              };
-            } else {
-              targetFGId = `fg-${generateId()}`;
-              nextFinishedGoods.unshift({
-                id: targetFGId,
-                productId: prodId,
-                variantId: varId,
-                productName: pName,
-                variantLabel: varLabel,
-                stock: 1,
-                minStock: 0,
-                unit: 'unit',
-              });
-            }
-
-            nextMovements.unshift({
-              id: generateId(),
-              materialId: targetFGId,
-              materialName: `${pName}${varLabel ? ` (${varLabel})` : ''}`,
-              type: 'IN',
-              qty: 1,
-              reference: `Batal SO-${order.orderNumber} (Alihkan ke Stok Jadi ${wo.spkNumber})`,
-              date: now,
-              stockCategory: 'FINISHED',
-            });
-          }
+          // Kasus 2: Sudah mulai dikerjakan -> SPK TIDAK BATAL, tetap berjalan normal sampai selesai.
+          // Alihkan ke stok barang jadi bebas (INTERNAL-PROD) agar saat selesai tidak masuk antrean kirim SO.
+          return {
+            ...wo,
+            salesOrderId: 'INTERNAL-PROD',
+            salesOrderNumber: '',
+            customNotes: wo.customNotes
+              ? `${wo.customNotes} • Alih stok bebas (SO ${order.orderNumber} dibatalkan)`
+              : `Alih stok bebas (SO ${order.orderNumber} dibatalkan)`,
+          };
         }
-
-        // Semua SPK terkait otomatis berubah status menjadi CANCELED
-        return {
-          ...wo,
-          status: 'CANCELED' as const,
-        };
       });
 
       return {
@@ -2479,6 +2427,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
     });
   }, [state.currentUserId, state.salesOrders]);
+
+  const requestCancelOrder = useCallback((orderId: string, reason: string) => {
+    const user = getUserById(state.currentUserId || DEFAULT_USER_ID);
+    const now = new Date().toISOString();
+    setState(prev => ({
+      ...prev,
+      salesOrders: prev.salesOrders.map(so =>
+        so.id === orderId
+          ? {
+              ...so,
+              cancelRequest: {
+                requestedBy: user.name || 'Sales',
+                requestedAt: now,
+                reason: reason.trim(),
+              },
+              updatedAt: now,
+              updatedBy: user.name,
+            }
+          : so
+      ),
+    }));
+  }, [state.currentUserId]);
+
+  const rejectCancelRequest = useCallback((orderId: string) => {
+    const user = getUserById(state.currentUserId || DEFAULT_USER_ID);
+    const now = new Date().toISOString();
+    setState(prev => ({
+      ...prev,
+      salesOrders: prev.salesOrders.map(so =>
+        so.id === orderId
+          ? {
+              ...so,
+              cancelRequest: undefined,
+              updatedAt: now,
+              updatedBy: user.name,
+            }
+          : so
+      ),
+    }));
+  }, [state.currentUserId]);
 
   const submitOrderComplaint = useCallback((orderId: string, complaint: Omit<OrderComplaint, 'id' | 'status' | 'createdAt'>) => {
     setState(prev => ({
@@ -4258,6 +4246,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return prev;
       }
 
+      // Validasi: hanya SPK manual
+      const isFromSO = Boolean(
+        (wo.salesOrderId && wo.salesOrderId !== 'INTERNAL-SA' && wo.salesOrderId !== 'INTERNAL-PROD') ||
+        (wo.salesOrderNumber && wo.salesOrderNumber !== 'INTERNAL-SA' && wo.salesOrderNumber !== 'INTERNAL-PROD')
+      );
+      const isFromComplaint = Boolean(wo.isComplaintReplacement || wo.complaintId);
+      if (isFromSO || isFromComplaint) {
+        result = { success: false, error: 'Hanya SPK manual/langsung yang dapat dibatalkan dari modul produksi.' };
+        return prev;
+      }
+
       // Validasi: belum ada operasi yang dikerjakan
       const hasStarted = wo.jobCards.some(
         jc => jc.status !== 'PENDING' || (jc.completedQty || 0) > 0 || Boolean(jc.startedAt) || (jc.actualMinutes || 0) > 0
@@ -5698,6 +5697,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateOrderCustomProcess,
     processOrder,
     cancelOrder,
+    requestCancelOrder,
+    rejectCancelRequest,
     submitOrderComplaint,
     resolveOrderComplaint,
     rejectOrderComplaint,

@@ -356,6 +356,12 @@ export interface OrderComplaint {
 
 // --- Sales Order ---
 
+export interface CancelRequest {
+  requestedBy: string;
+  requestedAt: string;
+  reason: string;
+}
+
 export interface SalesOrder {
   id: string;
   orderNumber: string;
@@ -372,6 +378,7 @@ export interface SalesOrder {
   cancelRequestedBy?: string;
   cancelRequestedAt?: string;
   previousStatus?: string;
+  cancelRequest?: CancelRequest;
   createdAt: string;
   submittedAt?: string;     // When sales submitted to admin
   confirmedAt?: string;     // When admin approved

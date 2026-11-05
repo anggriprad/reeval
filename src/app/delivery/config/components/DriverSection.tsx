@@ -7,7 +7,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { driverService, DriverItem } from '@/services/driver.service';
 import { userService, UserOption } from '@/services/user.service';
-import { ConfigSection } from './ConfigSection';
+import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -235,7 +235,7 @@ export function DriverSection() {
       title="Daftar Driver"
       description="Kelola karyawan sopir pengiriman."
       icon={User}
-      iconWrapperClass="bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400"
+
       defaultExpanded={false}
       isControlled={true}
       isExpandedControlled={isExpanded}

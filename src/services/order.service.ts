@@ -484,6 +484,13 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
     cancelRequestedBy: (dto as any).cancel_requested_by || undefined,
     cancelRequestedAt: (dto as any).cancel_requested_at || undefined,
     previousStatus: (dto as any).previous_status || undefined,
+    cancelRequest: (dto as any).cancel_request || (dto as any).cancelRequest || (
+      (dto as any).cancel_requested_by ? {
+        requestedBy: (dto as any).cancel_requested_by,
+        requestedAt: (dto as any).cancel_requested_at || dto.updated_at || new Date().toISOString(),
+        reason: dto.cancel_reason || ''
+      } : undefined
+    ),
     createdAt: dto.created_at || new Date().toISOString(),
     submittedAt: dto.submitted_at || undefined,
     confirmedAt: dto.confirmed_at || undefined,
