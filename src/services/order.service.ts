@@ -21,6 +21,7 @@ export interface SalesOrderItemResponse {
   selected_modifiers?: any;
   is_custom?: boolean;
   custom_notes?: string;
+  image_url?: string;
   produced_qty: number;
   shipped_qty: number;
   delivered_qty: number;
@@ -99,6 +100,8 @@ export interface CreateSalesOrderItemRequest {
   selected_modifiers?: any;
   is_custom?: boolean;
   custom_notes?: string;
+  image_url?: string;
+  image_file?: File;
 }
 
 export interface CreateSalesOrderRequest {
@@ -444,6 +447,7 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
       selectedModifiers: Array.isArray(mods) ? mods : [],
       isCustom: Boolean(itm.is_custom),
       customNotes: itm.custom_notes || "",
+      imageUrl: itm.image_url || "",
       producedQty: itm.produced_qty || 0,
       shippedQty: itm.shipped_qty || 0,
       deliveredQty: itm.delivered_qty || 0,
@@ -461,6 +465,7 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
     createdBy: dto.created_by_name || "Sales",
     createdById: dto.created_by_id ? String(dto.created_by_id) : undefined,
     salesPhone: dto.created_by_phone || dto.sales_phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
+    createdByPhone: dto.created_by_phone || dto.sales_phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
     companyPhone: dto.company_phone || undefined,
     customer: {
       name: dto.customer_name || "",
@@ -476,6 +481,9 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
     orderNotes: dto.order_notes || "",
     cancelReason: dto.cancel_reason || "",
     cancelledByRole: dto.cancelled_by || undefined,
+    cancelRequestedBy: (dto as any).cancel_requested_by || undefined,
+    cancelRequestedAt: (dto as any).cancel_requested_at || undefined,
+    previousStatus: (dto as any).previous_status || undefined,
     createdAt: dto.created_at || new Date().toISOString(),
     submittedAt: dto.submitted_at || undefined,
     confirmedAt: dto.confirmed_at || undefined,
@@ -584,9 +592,38 @@ export const orderService = {
 
   /**
    * 4. POST /api/v1/orders
-   * Create a new Sales Order.
+   * Create a new Sales Order. Supports multipart/form-data if any item contains an image_file.
    */
   async createOrder(payload: CreateSalesOrderRequest): Promise<ApiResponse<SalesOrderResponse>> {
+    const hasFiles = payload.items && payload.items.some(it => it.image_file instanceof File);
+    if (hasFiles) {
+      const formData = new FormData();
+      const cleanedItems = payload.items.map(it => {
+        const { image_file, ...rest } = it;
+        return rest;
+      });
+      const jsonPayload = { ...payload, items: cleanedItems };
+      formData.append("payload", JSON.stringify(jsonPayload));
+
+      payload.items.forEach((it, idx) => {
+        if (it.image_file instanceof File) {
+          formData.append(`item_image_${idx}`, it.image_file, it.image_file.name);
+        }
+      });
+
+      const response = await httpPost<SalesOrderResponse>(
+        endpointUrl("orders"),
+        formData,
+        true,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+      return response.data;
+    }
+
     const response = await httpPost<SalesOrderResponse>(
       endpointUrl("orders"),
       payload,
@@ -597,9 +634,38 @@ export const orderService = {
 
   /**
    * 5. PUT /api/v1/orders/:id
-   * Update an existing Sales Order.
+   * Update an existing Sales Order. Supports multipart/form-data if any item contains an image_file.
    */
   async updateOrder(id: number | string, payload: UpdateSalesOrderRequest): Promise<ApiResponse<SalesOrderResponse>> {
+    const hasFiles = payload.items && payload.items.some(it => it.image_file instanceof File);
+    if (hasFiles) {
+      const formData = new FormData();
+      const cleanedItems = payload.items.map(it => {
+        const { image_file, ...rest } = it;
+        return rest;
+      });
+      const jsonPayload = { ...payload, items: cleanedItems };
+      formData.append("payload", JSON.stringify(jsonPayload));
+
+      payload.items.forEach((it, idx) => {
+        if (it.image_file instanceof File) {
+          formData.append(`item_image_${idx}`, it.image_file, it.image_file.name);
+        }
+      });
+
+      const response = await httpPut<SalesOrderResponse>(
+        endpointUrl(`orders/${id}`),
+        formData,
+        true,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+      return response.data;
+    }
+
     const response = await httpPut<SalesOrderResponse>(
       endpointUrl(`orders/${id}`),
       payload,
@@ -629,6 +695,32 @@ export const orderService = {
     const response = await httpPut<SalesOrderResponse>(
       endpointUrl(`orders/${id}/cancel`),
       payload,
+      true
+    );
+    return response.data;
+  },
+
+  /**
+   * 7a. PUT /api/v1/orders/:id/approve-cancel
+   * Admin approves cancellation of a Sales Order.
+   */
+  async approveCancel(id: number | string): Promise<ApiResponse<SalesOrderResponse>> {
+    const response = await httpPut<SalesOrderResponse>(
+      endpointUrl(`orders/${id}/approve-cancel`),
+      {},
+      true
+    );
+    return response.data;
+  },
+
+  /**
+   * 7b. PUT /api/v1/orders/:id/reject-cancel
+   * Admin rejects cancellation of a Sales Order.
+   */
+  async rejectCancel(id: number | string, reason: string): Promise<ApiResponse<SalesOrderResponse>> {
+    const response = await httpPut<SalesOrderResponse>(
+      endpointUrl(`orders/${id}/reject-cancel`),
+      { reason },
       true
     );
     return response.data;

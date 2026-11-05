@@ -60,6 +60,9 @@ import {
   Archive,
   FolderTree,
   Sparkles,
+  Camera,
+  Loader2,
+  X,
   Image as ImageIcon
 } from 'lucide-react';
 
@@ -280,6 +283,7 @@ export function CreateOrderContent() {
   const [selectedModifiersState, setSelectedModifiersState] = useState<Record<string, string[]>>({});
   const [modalIsCustom, setModalIsCustom] = useState<boolean>(false);
   const [modalCustomNotes, setModalCustomNotes] = useState<string>('');
+  const [previewItemImage, setPreviewItemImage] = useState<string | null>(null);
 
   // Derived state for Delivery Configuration Dropdowns
   const availableRegencies = React.useMemo(() => {
@@ -356,6 +360,7 @@ export function CreateOrderContent() {
             selectedModifiers: typeof itm.selected_modifiers === 'string' ? JSON.parse(itm.selected_modifiers) : (itm.selected_modifiers || []),
             isCustom: Boolean(itm.is_custom),
             customNotes: itm.custom_notes || '',
+            imageUrl: itm.image_url || '',
           }));
           populateForm({
             customer: {
@@ -577,6 +582,44 @@ export function CreateOrderContent() {
     }));
   };
 
+  const handleItemImageChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Format Tidak Didukung', 'Harap pilih file gambar (JPG, PNG, atau WebP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File Terlalu Besar', 'Ukuran gambar maksimal adalah 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setOrderItems(prev => prev.map((item, idx) => {
+        if (idx === index) {
+          return { ...item, imageUrl: dataUrl, imageFile: file };
+        }
+        return item;
+      }));
+      toast.success('Foto Dipilih', 'Foto produk telah dilampirkan.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveItemImage = (index: number) => {
+    setOrderItems(prev => prev.map((item, idx) => {
+      if (idx === index) {
+        return { ...item, imageUrl: '', imageFile: undefined };
+      }
+      return item;
+    }));
+  };
+
   const handleItemQtyChange = (index: number, qty: number) => {
     if (qty <= 0) return;
     setOrderItems(prev => prev.map((item, idx) => {
@@ -678,6 +721,8 @@ export function CreateOrderContent() {
       selected_modifiers: item.selectedModifiers || [],
       is_custom: Boolean(item.isCustom),
       custom_notes: item.customNotes || '',
+      image_url: item.imageUrl || '',
+      image_file: item.imageFile,
     }));
 
     const orderPayload: CreateSalesOrderRequest = {
@@ -718,6 +763,12 @@ export function CreateOrderContent() {
         }
       }
     } catch (err: any) {
+      const backendError = err?.response?.data?.message || err?.message;
+      if (backendError && backendError !== 'Network Error') {
+        setFormError(backendError);
+        toast.error('Gagal Menyimpan Pesanan', backendError);
+        return;
+      }
       console.warn('Backend order call failed, syncing local mock:', err);
       if (editId) {
         updateSalesOrder(editId, customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
@@ -927,15 +978,75 @@ export function CreateOrderContent() {
                 </div>
 
                 {/* Always display Catatan Kustom Produk (Opsional) */}
-                <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
-                  <Textarea
-                    autoResize
-                    rows={1}
-                    inputSize="sm"
-                    placeholder="Catatan produk (opsional)"
-                    value={item.customNotes || ''}
-                    onChange={e => handleItemNotesChange(idx, e.target.value)}
-                  />
+                <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Textarea
+                        autoResize
+                        rows={1}
+                        inputSize="sm"
+                        placeholder="Catatan produk (opsional)"
+                        value={item.customNotes || ''}
+                        onChange={e => handleItemNotesChange(idx, e.target.value)}
+                      />
+                    </div>
+
+                    <label
+                      className={`h-9 px-2.5 rounded-lg border flex items-center gap-1.5 text-xs font-medium cursor-pointer transition-all shrink-0 ${
+                        item.imageUrl
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                          : 'border-dashed border-slate-300 dark:border-slate-700 hover:border-slate-400 bg-slate-50/60 hover:bg-slate-100 dark:bg-slate-800/40 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                      title={item.imageUrl ? 'Ganti foto item' : 'Upload foto item (opsional)'}
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span className="hidden sm:inline">
+                        {item.imageUrl ? 'Ganti Foto' : 'Foto'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={e => handleItemImageChange(idx, e)}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Thumbnail Preview jika ada foto terunggah */}
+                  {item.imageUrl && (
+                    <div className="flex items-center gap-2.5 p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 w-fit">
+                      <div className="relative w-11 h-11 rounded-md overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shrink-0">
+                        <img
+                          src={item.imageUrl}
+                          alt="Foto produk"
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => setPreviewItemImage(item.imageUrl || null)}
+                        />
+                      </div>
+                      <div className="text-xs pr-1">
+                        <span className="font-medium text-slate-700 dark:text-slate-300 block">
+                          Foto produk terlampir
+                        </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewItemImage(item.imageUrl || null)}
+                            className="text-primary-600 dark:text-primary-400 hover:underline text-[11px] font-medium cursor-pointer"
+                          >
+                            Lihat
+                          </button>
+                          <span className="text-slate-300 dark:text-slate-600">•</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItemImage(idx)}
+                            className="text-red-500 hover:text-red-600 hover:underline text-[11px] font-medium cursor-pointer"
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
             </div>
           );
@@ -1496,6 +1607,33 @@ export function CreateOrderContent() {
           </div>
         )}
       </Modal>
+
+      {/* Modal Preview Foto SKU */}
+      {previewItemImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setPreviewItemImage(null)}
+        >
+          <div
+            className="relative max-w-2xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl p-2"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewItemImage(null)}
+              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/60 text-white hover:bg-black transition-colors cursor-pointer"
+              title="Tutup"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={previewItemImage}
+              alt="Preview Foto SKU"
+              className="w-full max-h-[80vh] object-contain rounded-xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

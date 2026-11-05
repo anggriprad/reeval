@@ -171,6 +171,7 @@ export function getStockLevelTextColor(level: StockLevel | 'Menipis' | string): 
 export function getOrderStatusColor(status: string): string {
   switch (status) {
     case 'PENDING': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+    case 'WAITING_CANCEL_APPROVAL': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
     case 'PROCESSING': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'PARTIALLY_READY': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'READY': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
@@ -184,6 +185,7 @@ export function getOrderStatusColor(status: string): string {
 export function getOrderStatusVariant(status: string): 'warning' | 'info' | 'purple' | 'success' | 'danger' | 'default' {
   switch (status) {
     case 'PENDING': return 'warning';
+    case 'WAITING_CANCEL_APPROVAL': return 'warning';
     case 'PROCESSING': return 'info';
     case 'PARTIALLY_READY': return 'info';
     case 'READY': return 'purple';
@@ -197,6 +199,7 @@ export function getOrderStatusVariant(status: string): 'warning' | 'info' | 'pur
 export function getOrderStatusLabel(status: string, cancelledByRole?: string): string {
   switch (status) {
     case 'PENDING': return 'Menunggu';
+    case 'WAITING_CANCEL_APPROVAL': return 'Menunggu Approval Pembatalan';
     case 'PROCESSING': return 'Diproses';
     case 'PARTIALLY_READY': return 'Sebagian Siap';
     case 'READY': return 'Siap Kirim';

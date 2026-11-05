@@ -9,7 +9,7 @@ import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
-import { orderService } from '@/services/order.service';
+import { orderService, OrderCustomProcessItemDetail } from '@/services/order.service';
 import { materialService, MaterialOption } from '@/services/material.service';
 import { productionRoutingService, ProductionRoutingOption, ProductionRoutingItem } from '@/services/production-routing.service';
 import { productionOperationService, ProductionOperationOption } from '@/services/production-operation.service';
@@ -48,14 +48,75 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
   const [apiRoutings, setApiRoutings] = useState<ProductionRoutingOption[]>([]);
   const [apiOperations, setApiOperations] = useState<ProductionOperationOption[]>([]);
   const [routingDetailsMap, setRoutingDetailsMap] = useState<Record<string, ProductionRoutingItem>>({});
+  const [customDetailMap, setCustomDetailMap] = useState<Record<string, OrderCustomProcessItemDetail>>({});
 
   // Accordion toggle states
   const [isMaterialOpen, setIsMaterialOpen] = useState(true);
   const [isRoutingOpen, setIsRoutingOpen] = useState(true);
 
-  // Fetch live options on modal open
+  // Fetch live options and order custom process detail on modal open
   useEffect(() => {
     if (isOpen) {
+      if (order?.id && Number(order.id) > 0) {
+        orderService
+          .getCustomProcessDetail(order.id)
+          .then((res) => {
+            if (res.success && res.data) {
+              const map: Record<string, OrderCustomProcessItemDetail> = {};
+              (res.data.items || []).forEach((it) => {
+                if (it.id) map[String(it.id)] = it;
+                map[`${it.productId}_${it.variantId || ''}`] = it;
+              });
+              setCustomDetailMap(map);
+
+              if (Array.isArray(res.data.available_materials) && res.data.available_materials.length > 0) {
+                setApiMaterials((prev) => {
+                  const existing = new Set(prev.map((m) => m.id));
+                  const merged = [...prev];
+                  res.data.available_materials.forEach((am) => {
+                    if (!existing.has(am.id)) {
+                      merged.push({
+                        id: am.id,
+                        name: am.name,
+                        code: am.code,
+                        unit: am.unit,
+                        stock: am.stock,
+                        unit_cost: am.unit_cost,
+                        is_sub_assembly: am.is_sub_assembly,
+                        category_name: am.category_name,
+                      } as any);
+                    }
+                  });
+                  return merged;
+                });
+              }
+
+              if (Array.isArray(res.data.available_operations) && res.data.available_operations.length > 0) {
+                setApiOperations((prev) => {
+                  const existing = new Set(prev.map((o) => o.id));
+                  const merged = [...prev];
+                  res.data.available_operations.forEach((ao) => {
+                    if (!existing.has(ao.id)) {
+                      merged.push({
+                        id: ao.id,
+                        name: ao.name,
+                        cost_per_hour: ao.cost_per_hour,
+                        fixed_cost: ao.fixed_cost,
+                        standard_duration_minutes: ao.standard_duration_minutes,
+                        wage_type: ao.wage_type,
+                      } as any);
+                    }
+                  });
+                  return merged;
+                });
+              }
+            }
+          })
+          .catch((err) => {
+            console.warn('Gagal memuat detail custom process dari backend:', err);
+          });
+      }
+
       materialService
         .getMaterialOptions()
         .then((res) => {
@@ -189,6 +250,15 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
 
   // Helper to build default master BOM for a single unit of a SalesOrderItem
   const getDefaultBomForItem = (item: SalesOrderItem): CustomBomItem[] => {
+    const detail = (item.id ? customDetailMap[String(item.id)] : null) || customDetailMap[`${item.productId}_${item.variantId || ''}`];
+    if (detail && Array.isArray(detail.defaultBom) && detail.defaultBom.length > 0) {
+      return detail.defaultBom.map((b) => ({
+        materialId: String(b.materialId),
+        qty: typeof b.qty === 'string' ? parseFloat(b.qty) || 1 : b.qty,
+        itemType: (b.itemType as any) || 'RAW_MATERIAL',
+      }));
+    }
+
     const product = products.find(p => p.id === item.productId);
     const variant = item.variantId
       ? product?.variants.find(v => v.id === item.variantId)
@@ -222,6 +292,17 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
 
   // Helper to build default operation items for a single unit of a SalesOrderItem
   const getDefaultOperationsForItem = (item: SalesOrderItem): CustomOperationItem[] => {
+    const detail = (item.id ? customDetailMap[String(item.id)] : null) || customDetailMap[`${item.productId}_${item.variantId || ''}`];
+    if (detail && Array.isArray(detail.defaultOperations) && detail.defaultOperations.length > 0) {
+      return detail.defaultOperations.map((o) => ({
+        operationId: String(o.operationId),
+        costingMethod: (o.costingMethod as any) || 'fixed',
+        fixedLaborCost: o.fixedLaborCost ?? 0,
+        laborCostPerHour: o.laborCostPerHour ?? 0,
+        durationMinutes: o.durationMinutes ?? 0,
+      }));
+    }
+
     const product = products.find(p => p.id === item.productId);
     const variant = item.variantId
       ? product?.variants.find(v => v.id === item.variantId)
@@ -293,16 +374,27 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
 
   // Helper to build the initial UnitCustomProcess[] for an item
   const getInitialUnitsForItem = (item: SalesOrderItem): UnitCustomProcess[] => {
+    const detail = (item.id ? customDetailMap[String(item.id)] : null) || customDetailMap[`${item.productId}_${item.variantId || ''}`];
     const defaultBom = getDefaultBomForItem(item);
     const defaultOps = getDefaultOperationsForItem(item);
     const units: UnitCustomProcess[] = [];
 
+    const existingUnitProcesses = (item.unitCustomProcesses && item.unitCustomProcesses.length > 0)
+      ? item.unitCustomProcesses
+      : (detail?.unitCustomProcesses && detail.unitCustomProcesses.length > 0)
+      ? (detail.unitCustomProcesses as any)
+      : null;
+
+    const itemIsCustomized = item.isBomCustomized || Boolean(detail?.isBomCustomized);
+    const itemCustomBom = (item.customBom && item.customBom.length > 0) ? item.customBom : (detail?.customBom as any);
+    const itemCustomOps = (item.customOperations && item.customOperations.length > 0) ? item.customOperations : (detail?.customOperations as any);
+
     for (let u = 1; u <= item.qty; u++) {
-      const existing = item.unitCustomProcesses?.find(x => x.unitIndex === u);
+      const existing = existingUnitProcesses?.find((x: any) => x.unitIndex === u);
       if (existing) {
         const ops: CustomOperationItem[] = existing.customOperations
           ? structuredClone(existing.customOperations)
-          : (existing.customOperationIds || []).map(opId => {
+          : (existing.customOperationIds || []).map((opId: string) => {
               const op = operations.find(o => o.id === opId);
               return {
                 operationId: opId,
@@ -324,9 +416,9 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
           customOperationIds: customOperations.map(o => o.operationId),
           customOperations,
         });
-      } else if (item.isBomCustomized) {
-        const ops: CustomOperationItem[] = item.customOperations
-          ? structuredClone(item.customOperations)
+      } else if (itemIsCustomized) {
+        const ops: CustomOperationItem[] = itemCustomOps
+          ? structuredClone(itemCustomOps)
           : (item.customOperationIds || []).map(opId => {
               const op = operations.find(o => o.id === opId);
               return {
@@ -338,7 +430,7 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
               };
             });
 
-        const customBom = item.customBom ? structuredClone(item.customBom) : structuredClone(defaultBom);
+        const customBom = (itemCustomBom && itemCustomBom.length > 0) ? structuredClone(itemCustomBom) : structuredClone(defaultBom);
         const customOperations = ops.length > 0 ? ops : structuredClone(defaultOps);
         const isCustom = checkIfUnitIsCustomized(item, { customBom, customOperations });
 
@@ -388,7 +480,7 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
 
       setItemsState(clonedItems);
     }
-  }, [isOpen, order]);
+  }, [isOpen, order, customDetailMap]);
 
   const activeItem = itemsState[activeItemIndex];
 

@@ -369,6 +369,7 @@ async function runTests() {
         shipped_qty: 2,
         delivered_qty: 0,
         is_bom_customized: false,
+        image_url: 'https://storage.reeval.id/orders/1/so_item.png',
       }
     ]
   };
@@ -379,6 +380,7 @@ async function runTests() {
   assert(mappedOrder.items.length === 1, 'mappedOrder.items length must be 1');
   assert(mappedOrder.items[0].producedQty === 5, 'producedQty must map correctly');
   assert(mappedOrder.items[0].id === '1', 'item.id must be string "1"');
+  assert(mappedOrder.items[0].imageUrl === 'https://storage.reeval.id/orders/1/so_item.png', 'item.imageUrl must map correctly');
 
   const mockComplaintDto: any = {
     id: 99,

@@ -5,13 +5,14 @@
 // --- Enums ---
 
 export type OrderStatus =
-  | 'PENDING'            // Menunggu (Order masuk)
-  | 'PROCESSING'         // Diproses (SPK terbit, produksi berjalan)
-  | 'PARTIALLY_READY'    // Sebagian item selesai produksi, bisa mulai kirim
-  | 'READY'              // Semua item selesai produksi
-  | 'PARTIALLY_SHIPPED'  // Sebagian item sudah dikirim
-  | 'SENT'               // Semua item diterima pelanggan
-  | 'CANCELED';          // Dibatalkan
+  | 'PENDING'                  // Menunggu (Order masuk)
+  | 'WAITING_CANCEL_APPROVAL'  // Menunggu Approval Pembatalan
+  | 'PROCESSING'               // Diproses (SPK terbit, produksi berjalan)
+  | 'PARTIALLY_READY'          // Sebagian item selesai produksi, bisa mulai kirim
+  | 'READY'                    // Semua item selesai produksi
+  | 'PARTIALLY_SHIPPED'        // Sebagian item sudah dikirim
+  | 'SENT'                     // Semua item diterima pelanggan
+  | 'CANCELED';                // Dibatalkan
 
 export type SPKStatus = 'PENDING' | 'PROCESSING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED';
 
@@ -295,6 +296,8 @@ export interface SalesOrderItem {
   selectedModifiers?: SelectedModifierGroup[];
   isCustom: boolean;
   customNotes?: string;
+  imageUrl?: string;
+  imageFile?: File;
   // Fulfillment tracking counters
   producedQty?: number;      // Jumlah unit yang sudah selesai produksi
   shippedQty?: number;       // Jumlah unit yang sudah masuk Surat Jalan
@@ -366,11 +369,15 @@ export interface SalesOrder {
   orderNotes?: string;      // Optional overall order notes
   cancelReason?: string;    // Mandatory note when order is canceled
   cancelledByRole?: string; // Role label of user who canceled (e.g. "admin" | "sales")
+  cancelRequestedBy?: string;
+  cancelRequestedAt?: string;
+  previousStatus?: string;
   createdAt: string;
   submittedAt?: string;     // When sales submitted to admin
   confirmedAt?: string;     // When admin approved
   spkIssuedAt?: string;     // When admin issued SPK
   salesPhone?: string;     // Phone of sales for contact (e.g. 6281234567890)
+  createdByPhone?: string; // Phone of user who created this order
   companyPhone?: string;   // Phone of company / admin for contact
   updatedAt?: string;      // Last update timestamp (ISO)
   updatedBy?: string;      // Name/role of user who last updated this order
@@ -425,6 +432,8 @@ export interface WorkOrder {
   completedAt?: string;
   isCustom: boolean;
   customNotes?: string;
+  imageUrl?: string;
+  imageFile?: File;
   isSubAssembly?: boolean;
   subAssemblyId?: string;
   isComplaintReplacement?: boolean;

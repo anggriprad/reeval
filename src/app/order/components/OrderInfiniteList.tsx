@@ -26,6 +26,8 @@ interface OrderInfiniteListProps {
   onProcessOrder: (orderId: string) => void;
   onOpenCancelModal: (orderId: string) => void;
   onOpenCustomProcessModal: (order: SalesOrder) => void;
+  onApproveCancel?: (orderId: string) => void;
+  onRejectCancel?: (orderId: string) => void;
 }
 
 export function OrderInfiniteList({
@@ -46,6 +48,8 @@ export function OrderInfiniteList({
   onProcessOrder,
   onOpenCancelModal,
   onOpenCustomProcessModal,
+  onApproveCancel,
+  onRejectCancel,
 }: OrderInfiniteListProps) {
   const observerTarget = useRef<HTMLDivElement | null>(null);
 
@@ -163,6 +167,8 @@ export function OrderInfiniteList({
             onProcessOrder={onProcessOrder}
             onOpenCancelModal={onOpenCancelModal}
             onOpenCustomProcessModal={onOpenCustomProcessModal}
+            onApproveCancel={onApproveCancel}
+            onRejectCancel={onRejectCancel}
           />
         ))}
       </div>

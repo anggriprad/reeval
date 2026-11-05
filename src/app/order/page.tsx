@@ -18,6 +18,7 @@ import { userService, UserOption } from '@/services/user.service';
 import { CustomProcessModal } from '@/components/order/CustomProcessModal';
 import { OrderInfiniteList } from './components/OrderInfiniteList';
 import { CancelOrderModal } from './components/CancelOrderModal';
+import { RejectCancelModal } from './components/RejectCancelModal';
 import type { ComplaintCardData } from './components/ComplaintCard';
 import {
   Plus,
@@ -59,6 +60,16 @@ export function OrderListContent() {
   const canConfig = can(PERMISSIONS.SALES.CONFIG);
   const canReadComplaint = can(PERMISSIONS.COMPLAINT.READ);
 
+  const userRoleList = (
+    currentUser?.roles && currentUser.roles.length > 0
+      ? currentUser.roles
+      : [currentUser?.role]
+  ).map((r) => String(r || '').toUpperCase());
+  const isAdminOrSuperAdmin =
+    Boolean(currentUser?.is_superadmin) ||
+    userRoleList.includes('SUPER_ADMIN') ||
+    userRoleList.includes('ADMIN');
+
   const searchParams = useSearchParams();
   const urlTab = searchParams.get('tab') || searchParams.get('status') || 'pending';
 
@@ -89,6 +100,7 @@ export function OrderListContent() {
   // 3. Sales users dropdown options from backend
   const [salesUsers, setSalesUsers] = useState<UserOption[]>([]);
   useEffect(() => {
+    if (!isAdminOrSuperAdmin) return;
     userService
       .getUserOptions({ role: 'SALES' })
       .then((res) => {
@@ -99,7 +111,7 @@ export function OrderListContent() {
       .catch((err) => {
         console.warn('Failed to load user options for sales filter:', err);
       });
-  }, []);
+  }, [isAdminOrSuperAdmin]);
 
   const salesFilterOptions = [
     { value: '', label: 'Semua Sales' },
@@ -130,6 +142,10 @@ export function OrderListContent() {
   const [cancelReasonInput, setCancelReasonInput] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState('');
   const [isCanceling, setIsCanceling] = useState(false);
+  const [rejectModalOrderId, setRejectModalOrderId] = useState<string | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('');
+  const [rejectReasonError, setRejectReasonError] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
   const [customProcessOrder, setCustomProcessOrder] = useState<SalesOrder | null>(null);
 
   const toggleExpandOrder = (id: string) => {
@@ -333,10 +349,18 @@ export function OrderListContent() {
         reason: cancelReasonInput.trim(),
       });
       if (res.success) {
-        toast.success(
-          'Sales Order Dibatalkan',
-          `Sales Order ${targetOrder?.orderNumber || ''} telah berhasil dibatalkan.`
-        );
+        const isWaiting = res.data && (res.data as any).status === 'WAITING_CANCEL_APPROVAL';
+        if (isWaiting) {
+          toast.success(
+            'Pengajuan Pembatalan Berhasil',
+            `Permintaan pembatalan Sales Order ${targetOrder?.orderNumber || ''} berhasil diajukan dan menunggu persetujuan admin.`
+          );
+        } else {
+          toast.success(
+            'Sales Order Dibatalkan',
+            `Sales Order ${targetOrder?.orderNumber || ''} telah berhasil dibatalkan.`
+          );
+        }
         setCancelModalOrderId(null);
         setCancelReasonInput('');
         fetchPageData(1, true);
@@ -351,7 +375,66 @@ export function OrderListContent() {
     }
   };
 
+  // Handle Approve Cancel Order
+  const handleApproveCancelOrder = async (orderId: string) => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+    try {
+      const res = await orderService.approveCancel(orderId);
+      if (res.success) {
+        toast.success(
+          'Pembatalan Disetujui',
+          `Pembatalan Sales Order ${targetOrder?.orderNumber || ''} telah disetujui.`
+        );
+        fetchPageData(1, true);
+        fetchStatusCounts();
+      } else {
+        toast.error('Gagal Menyetujui Pembatalan', res.message || 'Gagal.');
+      }
+    } catch (err: any) {
+      toast.error('Gagal Menyetujui Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+    }
+  };
+
+  // Handle Open Reject Cancel Modal
+  const handleOpenRejectCancelModal = (orderId: string) => {
+    setRejectModalOrderId(orderId);
+    setRejectReasonInput('');
+    setRejectReasonError('');
+  };
+
+  // Handle Confirm Reject Cancel Order
+  const handleConfirmRejectCancelOrder = async () => {
+    if (!rejectReasonInput.trim()) {
+      setRejectReasonError('Mohon isi alasan penolakan pembatalan.');
+      return;
+    }
+    if (!rejectModalOrderId) return;
+
+    setIsRejecting(true);
+    const targetOrder = orders.find((o) => o.id === rejectModalOrderId);
+    try {
+      const res = await orderService.rejectCancel(rejectModalOrderId, rejectReasonInput.trim());
+      if (res.success) {
+        toast.success(
+          'Pembatalan Ditolak',
+          `Permintaan pembatalan ${targetOrder?.orderNumber || ''} telah ditolak.`
+        );
+        setRejectModalOrderId(null);
+        setRejectReasonInput('');
+        fetchPageData(1, true);
+        fetchStatusCounts();
+      } else {
+        toast.error('Gagal Menolak Pembatalan', res.message || 'Gagal.');
+      }
+    } catch (err: any) {
+      toast.error('Gagal Menolak Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
   const orderToCancel = orders.find((o) => o.id === cancelModalOrderId);
+  const orderToReject = orders.find((o) => o.id === rejectModalOrderId);
 
   // Status Tab definitions with dynamic count indicators
   const statusTabOptions: SegmentOption<string>[] = [
@@ -447,9 +530,9 @@ export function OrderListContent() {
         options={statusTabOptions}
         value={activeStatus}
         onChange={(val) => setFilter('status', val)}
-        filterValue={filters.sales_id || ''}
-        onFilterChange={(val) => setFilter('sales_id', val)}
-        filterOptions={salesFilterOptions}
+        filterValue={isAdminOrSuperAdmin ? (filters.sales_id || '') : undefined}
+        onFilterChange={isAdminOrSuperAdmin ? (val) => setFilter('sales_id', val) : undefined}
+        filterOptions={isAdminOrSuperAdmin ? salesFilterOptions : undefined}
         filterPlaceholder="Semua Sales"
         searchValue={searchInput}
         onSearchChange={setSearchInput}
@@ -475,6 +558,8 @@ export function OrderListContent() {
         onProcessOrder={handleProcessOrder}
         onOpenCancelModal={handleOpenCancelModal}
         onOpenCustomProcessModal={(order) => setCustomProcessOrder(order)}
+        onApproveCancel={handleApproveCancelOrder}
+        onRejectCancel={handleOpenRejectCancelModal}
       />
 
       {/* Cancel Order Modal */}
@@ -487,6 +572,18 @@ export function OrderListContent() {
         error={cancelReasonError}
         onConfirm={handleConfirmCancelOrder}
         isSubmitting={isCanceling}
+      />
+
+      {/* Reject Cancel Modal */}
+      <RejectCancelModal
+        isOpen={Boolean(rejectModalOrderId)}
+        onClose={() => setRejectModalOrderId(null)}
+        orderNumber={orderToReject?.orderNumber}
+        reason={rejectReasonInput}
+        onReasonChange={setRejectReasonInput}
+        error={rejectReasonError}
+        onConfirm={handleConfirmRejectCancelOrder}
+        isSubmitting={isRejecting}
       />
 
       {/* Custom Process Modal */}

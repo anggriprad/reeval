@@ -46,6 +46,7 @@ import {
   Archive,
   FolderTree,
   Sparkles,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ElementType> = {
@@ -83,6 +84,8 @@ interface OrderCardProps {
   onProcessOrder?: (orderId: string) => void;
   onOpenCancelModal?: (orderId: string) => void;
   onOpenCustomProcessModal?: (order: SalesOrder) => void;
+  onApproveCancel?: (orderId: string) => void;
+  onRejectCancel?: (orderId: string) => void;
 }
 
 export function OrderCard({
@@ -97,31 +100,52 @@ export function OrderCard({
   onProcessOrder,
   onOpenCancelModal,
   onOpenCustomProcessModal,
+  onApproveCancel,
+  onRejectCancel,
 }: OrderCardProps) {
   const router = useRouter();
 
   const actionMenuItems = [];
-  if (canCustom && onOpenCustomProcessModal) {
-    actionMenuItems.push({
-      label: 'Kustom Proses',
-      icon: <Sliders className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,
-      onClick: () => onOpenCustomProcessModal(order),
-    });
+  if (order.status === 'PENDING') {
+    if (canCustom && onOpenCustomProcessModal) {
+      actionMenuItems.push({
+        label: 'Kustom Proses',
+        icon: <Sliders className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,
+        onClick: () => onOpenCustomProcessModal(order),
+      });
+    }
+    if (canUpdate) {
+      actionMenuItems.push({
+        label: 'Edit Pesanan',
+        icon: <Edit className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,
+        onClick: () => router.push(`/order/create?edit=${order.id}`),
+      });
+    }
   }
-  if (canUpdate) {
-    actionMenuItems.push({
-      label: 'Edit Pesanan',
-      icon: <Edit className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />,
-      onClick: () => router.push(`/order/create?edit=${order.id}`),
-    });
-  }
-  if (canDelete && onOpenCancelModal) {
+  if ((order.status === 'PENDING' || order.status === 'PROCESSING') && canDelete && onOpenCancelModal) {
     actionMenuItems.push({
       label: 'Batalkan Order',
       icon: <XCircle className="h-3.5 w-3.5" />,
       variant: 'danger' as const,
       onClick: () => onOpenCancelModal(order.id),
     });
+  }
+  if (order.status === 'WAITING_CANCEL_APPROVAL' && canApprove) {
+    if (onApproveCancel) {
+      actionMenuItems.push({
+        label: 'Setujui Pembatalan',
+        icon: <CheckCircle className="h-3.5 w-3.5 text-red-600" />,
+        variant: 'danger' as const,
+        onClick: () => onApproveCancel(order.id),
+      });
+    }
+    if (onRejectCancel) {
+      actionMenuItems.push({
+        label: 'Tolak Pembatalan',
+        icon: <XCircle className="h-3.5 w-3.5 text-slate-600" />,
+        onClick: () => onRejectCancel(order.id),
+      });
+    }
   }
 
   return (
@@ -269,6 +293,14 @@ export function OrderCard({
                   {item.customNotes}
                 </div>
               )}
+
+              {/* Indikator Foto SKU */}
+              {item.imageUrl && (
+                <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                  <ImageIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                  <span>Ada Foto SKU</span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -358,6 +390,47 @@ export function OrderCard({
               {actionMenuItems.length > 0 && (
                 <ActionMenu align="right" triggerTitle="Opsi Pesanan" items={actionMenuItems} />
               )}
+            </div>
+          )}
+
+          {order.status === 'WAITING_CANCEL_APPROVAL' && (
+            <div
+              className="flex items-center gap-2 border-l border-slate-200 dark:border-slate-700 pl-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {canApprove && onApproveCancel && (
+                <Button
+                  variant="danger"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onApproveCancel(order.id);
+                  }}
+                >
+                  <CheckCircle className="h-4 w-4 mr-1.5" />
+                  Setujui Batal
+                </Button>
+              )}
+              {canApprove && onRejectCancel && (
+                <Button
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRejectCancel(order.id);
+                  }}
+                >
+                  <XCircle className="h-4 w-4 mr-1.5" />
+                  Tolak Batal
+                </Button>
+              )}
+            </div>
+          )}
+
+          {order.status === 'PROCESSING' && actionMenuItems.length > 0 && (
+            <div
+              className="flex items-center gap-2 border-l border-slate-200 dark:border-slate-700 pl-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ActionMenu align="right" triggerTitle="Opsi Pesanan" items={actionMenuItems} />
             </div>
           )}
         </div>

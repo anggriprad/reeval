@@ -221,6 +221,7 @@ export default function OrderDetailPage() {
 
   const salesPhone =
     order!.salesPhone ||
+    order!.createdByPhone ||
     (order as any)!.created_by_phone ||
     (order as any)!.sales_phone ||
     USER_ACCOUNTS.find(u => u.name === order!.createdBy)?.phone ||
@@ -249,6 +250,11 @@ export default function OrderDetailPage() {
     }
   };
 
+  const [rejectCancelModalOpen, setRejectCancelModalOpen] = useState(false);
+  const [rejectCancelReason, setRejectCancelReason] = useState('');
+  const [rejectCancelError, setRejectCancelError] = useState('');
+  const [isRejectingCancel, setIsRejectingCancel] = useState(false);
+
   const handleConfirmCancel = async () => {
     if (!cancelReasonInput.trim()) {
       setCancelReasonError('Alasan pembatalan wajib diisi.');
@@ -257,7 +263,12 @@ export default function OrderDetailPage() {
     try {
       const res = await orderService.cancelOrder(order!.id, { reason: cancelReasonInput.trim() });
       if (res.success) {
-        toast.success('Sales Order Dibatalkan', `Sales Order ${order!.orderNumber} telah berhasil dibatalkan.`);
+        const isWaiting = res.data && (res.data as any).status === 'WAITING_CANCEL_APPROVAL';
+        if (isWaiting) {
+          toast.success('Pengajuan Pembatalan Berhasil', `Permintaan pembatalan Sales Order ${order!.orderNumber} berhasil diajukan dan menunggu persetujuan admin.`);
+        } else {
+          toast.success('Sales Order Dibatalkan', `Sales Order ${order!.orderNumber} telah berhasil dibatalkan.`);
+        }
         cancelOrder(order!.id, cancelReasonInput.trim());
         fetchLiveOrderDetail();
         setCancelModalOpen(false);
@@ -268,6 +279,44 @@ export default function OrderDetailPage() {
       }
     } catch (err: any) {
       toast.error('Gagal Membatalkan Order', err?.response?.data?.message || err?.message || 'Gagal membatalkan order.');
+    }
+  };
+
+  const handleApproveCancel = async () => {
+    try {
+      const res = await orderService.approveCancel(order!.id);
+      if (res.success) {
+        toast.success('Pembatalan Disetujui', `Pembatalan Sales Order ${order!.orderNumber} telah disetujui.`);
+        fetchLiveOrderDetail();
+      } else {
+        toast.error('Gagal Menyetujui Pembatalan', res.message || 'Gagal.');
+      }
+    } catch (err: any) {
+      toast.error('Gagal Menyetujui Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+    }
+  };
+
+  const handleConfirmRejectCancel = async () => {
+    if (!rejectCancelReason.trim()) {
+      setRejectCancelError('Alasan penolakan wajib diisi.');
+      return;
+    }
+    setIsRejectingCancel(true);
+    try {
+      const res = await orderService.rejectCancel(order!.id, rejectCancelReason.trim());
+      if (res.success) {
+        toast.success('Pembatalan Ditolak', `Permintaan pembatalan ${order!.orderNumber} telah ditolak.`);
+        fetchLiveOrderDetail();
+        setRejectCancelModalOpen(false);
+        setRejectCancelReason('');
+        setRejectCancelError('');
+      } else {
+        toast.error('Gagal Menolak Pembatalan', res.message || 'Gagal.');
+      }
+    } catch (err: any) {
+      toast.error('Gagal Menolak Pembatalan', err?.response?.data?.message || err?.message || 'Gagal.');
+    } finally {
+      setIsRejectingCancel(false);
     }
   };
 
@@ -724,6 +773,24 @@ export default function OrderDetailPage() {
               });
             }
 
+            if (order.status === 'WAITING_CANCEL_APPROVAL' && canApprove) {
+              items.push({
+                label: 'Setujui Pembatalan',
+                icon: CheckCircle,
+                onClick: handleApproveCancel,
+                variant: 'danger' as const,
+              });
+              items.push({
+                label: 'Tolak Pembatalan',
+                icon: XCircle,
+                onClick: () => {
+                  setRejectCancelReason('');
+                  setRejectCancelError('');
+                  setRejectCancelModalOpen(true);
+                },
+              });
+            }
+
             // Hanya bisa mengajukan komplain jika pesanan berstatus TERKIRIM (SENT) dan tidak ada komplain aktif
             const hasActiveComplaint = order.complaints?.some(c => c.status !== 'SELESAI' && c.status !== 'DITOLAK');
             if (order.status === 'SENT' && !hasActiveComplaint && canCreateComplaint) {
@@ -777,6 +844,49 @@ export default function OrderDetailPage() {
               </div>
             ))}
         </div>
+      )}
+
+      {/* WAITING CANCEL APPROVAL ALERT */}
+      {order.status === 'WAITING_CANCEL_APPROVAL' && (
+        <Alert
+          variant="warning"
+          title="Menunggu Persetujuan Pembatalan"
+          description={
+            <div className="space-y-3 mt-1">
+              <div>
+                <span className="font-medium text-slate-700 dark:text-slate-300">Diajukan oleh: </span>
+                <span>{order.cancelRequestedBy || order.createdBy || 'Sales'}</span>
+                {order.cancelReason && (
+                  <>
+                    <br />
+                    <span className="font-medium text-slate-700 dark:text-slate-300">Alasan: </span>
+                    <span>{order.cancelReason}</span>
+                  </>
+                )}
+              </div>
+              {canApprove && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Button size="sm" variant="danger" onClick={handleApproveCancel}>
+                    <CheckCircle className="h-4 w-4 mr-1.5" />
+                    Setujui Pembatalan
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setRejectCancelReason('');
+                      setRejectCancelError('');
+                      setRejectCancelModalOpen(true);
+                    }}
+                  >
+                    <XCircle className="h-4 w-4 mr-1.5" />
+                    Tolak Pembatalan
+                  </Button>
+                </div>
+              )}
+            </div>
+          }
+        />
       )}
 
       {/* CANCELED ORDER REASON ALERT */}
@@ -915,6 +1025,29 @@ export default function OrderDetailPage() {
                       <p className="text-[13.5px] sm:text-xs text-amber-800 dark:text-amber-300 font-normal leading-relaxed">
                         {item.customNotes}
                       </p>
+                    )}
+
+                    {/* Lampiran Foto SKU Opsional */}
+                    {item.imageUrl && (
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProofPhoto(item.imageUrl || null)}
+                          className="group relative flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer text-left"
+                          title="Klik untuk melihat foto"
+                        >
+                          <div className="w-8 h-8 rounded-md overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shrink-0">
+                            <img
+                              src={item.imageUrl}
+                              alt="Foto produk"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 group-hover:text-primary-600 dark:group-hover:text-primary-400">
+                            Foto Terlampir
+                          </span>
+                        </button>
+                      </div>
                     )}
 
                     {/* BAGIAN BAWAH: Info QTY dan Harga berada di baris setelah gambar visual, nama produk, varian, dan catatan produk */}
@@ -1280,6 +1413,39 @@ export default function OrderDetailPage() {
             value={cancelReasonInput}
             onChange={e => setCancelReasonInput(e.target.value)}
             error={cancelReasonError}
+          />
+        </div>
+      </Modal>
+
+      {/* REJECT CANCEL ORDER MODAL */}
+      <Modal
+        isOpen={rejectCancelModalOpen}
+        onClose={() => setRejectCancelModalOpen(false)}
+        title={`Tolak Pembatalan Sales Order — ${order.orderNumber}`}
+        size="md"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setRejectCancelModalOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="danger" onClick={handleConfirmRejectCancel} disabled={!rejectCancelReason.trim() || isRejectingCancel}>
+              {isRejectingCancel ? 'Memproses...' : 'Tolak Pembatalan'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm">
+            Masukkan alasan penolakan pembatalan. Pesanan akan dikembalikan ke status aktif sebelumnya.
+          </p>
+          <Textarea
+            label="Alasan Penolakan"
+            required
+            rows={3}
+            placeholder="Contoh: Barang sudah selesai diproduksi dan siap dikirim"
+            value={rejectCancelReason}
+            onChange={e => setRejectCancelReason(e.target.value)}
+            error={rejectCancelError}
           />
         </div>
       </Modal>
