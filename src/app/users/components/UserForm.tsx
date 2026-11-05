@@ -80,6 +80,7 @@ export function UserForm({
   const [errors, setErrors] = useState<{
     full_name?: string;
     email?: string;
+    phone?: string;
     password?: string;
     role?: string;
   }>({});
@@ -95,18 +96,22 @@ export function UserForm({
     e.preventDefault();
     if (isReadOnly || !onSubmit) return;
 
-    const newErrors: { full_name?: string; email?: string; password?: string; role?: string } = {};
+    const newErrors: { full_name?: string; email?: string; phone?: string; password?: string; role?: string } = {};
 
     if (!fullName.trim()) {
       newErrors.full_name = 'Nama lengkap wajib diisi.';
     }
 
-    if (!isEditing) {
-      if (!email.trim()) {
-        newErrors.email = 'Email wajib diisi.';
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-        newErrors.email = 'Format email tidak valid.';
-      }
+    if (!email.trim()) {
+      newErrors.email = 'Email wajib diisi.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      newErrors.email = 'Format email tidak valid.';
+    }
+
+    if (!phone.trim()) {
+      newErrors.phone = 'Nomor telepon wajib diisi.';
+    } else if (phone.trim().length < 8) {
+      newErrors.phone = 'Nomor telepon minimal 8 digit.';
     }
 
     if (selectedRoleIds.length === 0) {
@@ -124,7 +129,7 @@ export function UserForm({
       email: email.trim(),
       password: null,
       full_name: fullName.trim(),
-      phone: phone.trim() || undefined,
+      phone: phone.trim(),
       is_active: isActive,
       is_ready: isReady,
       role_ids: selectedRoleIds,
@@ -189,7 +194,7 @@ export function UserForm({
                 type="email"
                 placeholder="hendra@perusahaan.com"
                 value={email}
-                disabled={isReadOnly || isEditing}
+                disabled={isReadOnly}
                 onChange={e => {
                   setEmail(e.target.value);
                   if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
@@ -202,16 +207,17 @@ export function UserForm({
                 <AlertCircle className="h-3 w-3" /> {errors.email}
               </p>
             )}
-            {isEditing && (
-              <p className="text-[11px] text-slate-400">Email identitas login tidak dapat diubah.</p>
+            {isEditing && email.trim() !== (initialData?.email || '') && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                Mengubah alamat email akan otomatis mengakhiri sesi aktif pengguna tersebut (logout).
+              </p>
             )}
           </div>
-
 
           {/* Phone */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Nomor WhatsApp / Telepon
+              Nomor WhatsApp / Telepon <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -220,10 +226,18 @@ export function UserForm({
                 placeholder="cth. 08123456789"
                 value={phone}
                 disabled={isReadOnly}
-                onChange={e => setPhone(e.target.value)}
-                className="pl-9 text-sm"
+                onChange={e => {
+                  setPhone(e.target.value);
+                  if (errors.phone) setErrors(prev => ({ ...prev, phone: undefined }));
+                }}
+                className={cn('pl-9 text-sm', errors.phone && 'border-red-500 dark:border-red-500')}
               />
             </div>
+            {errors.phone && (
+              <p className="text-xs text-red-500 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" /> {errors.phone}
+              </p>
+            )}
           </div>
         </div>
 

@@ -95,9 +95,7 @@ function getAuthHeaders(withAuth: boolean, customHeaders: Record<string, any> = 
 
 axiosInstance.interceptors.request.use((reqConfig) => {
   if (typeof FormData !== "undefined" && reqConfig.data instanceof FormData) {
-    if (!reqConfig.headers["Content-Type"] || reqConfig.headers["Content-Type"] === "application/json") {
-      reqConfig.headers["Content-Type"] = "multipart/form-data";
-    }
+    delete reqConfig.headers["Content-Type"];
   }
   if (typeof window !== "undefined" && !(reqConfig as any)?.skipLoadingBar) {
     loadingBarManager.start();

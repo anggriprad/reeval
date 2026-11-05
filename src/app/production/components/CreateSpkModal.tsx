@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/context/ToastContext';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { workOrderService } from '@/services/work-order.service';
+import { workOrderService, type WorkOrderResponse } from '@/services/work-order.service';
 import { productService, type ProductOption, type ProductDetail } from '@/services/product.service';
 import { materialService, type MaterialOption } from '@/services/material.service';
 import type { Product, RawMaterial } from '@/lib/types';
@@ -15,7 +15,7 @@ import type { Product, RawMaterial } from '@/lib/types';
 interface CreateSpkModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (newWO?: WorkOrderResponse) => void;
   products?: Product[];
   materials?: RawMaterial[];
 }
@@ -159,9 +159,10 @@ export function CreateSpkModal({
           : `SPK untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name || ''}" berhasil dibuat.`;
 
         toast.success('SPK Berhasil Diterbitkan', label);
+        const createdWO = res.data;
         resetForm();
         onClose();
-        onSuccess();
+        onSuccess(createdWO);
       } else {
         setSpkError(res.message || 'Gagal menerbitkan SPK.');
       }

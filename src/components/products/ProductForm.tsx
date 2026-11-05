@@ -67,6 +67,7 @@ import {
   Archive,
   FolderTree,
   Sparkles,
+  Camera,
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -89,6 +90,18 @@ import {
   BOMPresetItemResponse,
 } from '@/services/bom-preset.service';
 import { materialService, MaterialItem, MaterialOption } from '@/services/material.service';
+import {
+  productionRoutingService,
+  ProductionRoutingOption,
+} from '@/services/production-routing.service';
+import {
+  productionOperationService,
+  ProductionOperationOption,
+} from '@/services/production-operation.service';
+import {
+  productModifierService,
+  ProductModifierGroupOption,
+} from '@/services/product-modifier.service';
 
 function dataURLtoFile(dataurl: string, filename: string): File {
   const arr = dataurl.split(',');
@@ -135,20 +148,25 @@ interface ProductFormProps {
   initialProduct?: Product;
 }
 
+interface CombinedMaterialItem {
+  id: string;
+  name: string;
+  code: string;
+  category: string;
+  unit: string;
+  unitCost: number;
+  stock: number;
+  isSubAssembly: boolean;
+  routingId?: string;
+  childBom?: { materialId: string; qty: number }[];
+}
+
 export function ProductForm({ initialProduct }: ProductFormProps) {
   const router = useRouter();
   const { toast, confirm } = useToast();
   const {
-    materials,
-    attributes,
-    bomTemplates,
-    bomTemplateItems,
-    routings,
-    operations = [],
-    masterModifierGroups,
     addProduct,
     updateProduct,
-    productCategories,
   } = useApp();
 
   const isEditMode = !!initialProduct;
@@ -159,6 +177,9 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
   const [bomPresetsList, setBomPresetsList] = useState<BOMPresetOption[]>([]);
   const [presetDetailsMap, setPresetDetailsMap] = useState<Record<string, BOMPresetItemResponse[]>>({});
   const [attributeOptionsList, setAttributeOptionsList] = useState<ProductAttributeOption[]>([]);
+  const [routingsList, setRoutingsList] = useState<ProductionRoutingOption[]>([]);
+  const [operationsList, setOperationsList] = useState<ProductionOperationOption[]>([]);
+  const [modifierGroupsList, setModifierGroupsList] = useState<ProductModifierGroupOption[]>([]);
 
   useEffect(() => {
     productCategoryService.getCategoryOptions().then(res => {
@@ -179,87 +200,77 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
       }
     }).catch(() => {});
 
+    materialService.getMaterials({ per_page: 500 }).then(res => {
+      if (res.success && res.data) {
+        setApiMaterials(res.data);
+      }
+    }).catch(() => {});
+
     bomPresetService.getBOMOptions().then(res => {
       if (res.success && res.data && res.data.length > 0) {
         setBomPresetsList(res.data);
       }
-    }).catch(() => {
-      bomPresetService.getBOMOptions().then(res => {
-        if (res.success && res.data) {
-          setBomPresetsList(res.data);
-        }
-      }).catch(() => {});
-    });
+    }).catch(() => {});
+
+    productionRoutingService.getRoutingOptions().then(res => {
+      if (res.success && res.data) {
+        setRoutingsList(res.data);
+      }
+    }).catch(() => {});
+
+    productionOperationService.getOperationOptions().then(res => {
+      if (res.success && res.data) {
+        setOperationsList(res.data);
+      }
+    }).catch(() => {});
+
+    productModifierService.getGroupOptions().then(res => {
+      if (res.success && res.data) {
+        setModifierGroupsList(res.data);
+      }
+    }).catch(() => {});
   }, []);
 
   const availableAttributes = useMemo(() => {
-    if (attributeOptionsList.length > 0) {
-      return attributeOptionsList.map(a => ({
-        id: String(a.id),
-        name: a.name,
-        values: a.values || [],
-      }));
-    }
-    return (attributes || []).map(a => ({
+    return (attributeOptionsList || []).map(a => ({
       id: String(a.id),
       name: a.name,
-      values: Array.isArray(a.values) ? a.values : [],
+      values: a.values || [],
     }));
-  }, [attributeOptionsList, attributes]);
+  }, [attributeOptionsList]);
 
   const availablePresets = useMemo(() => {
-    if (bomPresetsList.length > 0) {
-      return bomPresetsList.map(p => ({ id: String(p.id), name: p.name }));
-    }
-    return bomTemplates.map(t => ({ id: String(t.id), name: t.name }));
-  }, [bomPresetsList, bomTemplates]);
+    return (bomPresetsList || []).map(p => ({ id: String(p.id), name: p.name }));
+  }, [bomPresetsList]);
 
   const allTemplateItems = useMemo(() => {
-    if (bomPresetsList.length > 0 || Object.keys(presetDetailsMap).length > 0) {
-      const items: { templateId: string; materialId: string; defaultQty: number }[] = [];
-      for (const p of bomPresetsList) {
-        const presetItems = presetDetailsMap[String(p.id)] || p.items || [];
+    const items: { templateId: string; materialId: string; defaultQty: number }[] = [];
+    for (const p of bomPresetsList) {
+      const presetItems = presetDetailsMap[String(p.id)] || p.items || [];
+      for (const it of presetItems) {
+        items.push({
+          templateId: String(p.id),
+          materialId: String(it.material_id),
+          defaultQty: it.quantity,
+        });
+      }
+    }
+    for (const [presetId, presetItems] of Object.entries(presetDetailsMap)) {
+      if (!bomPresetsList.some(p => String(p.id) === presetId)) {
         for (const it of presetItems) {
           items.push({
-            templateId: String(p.id),
+            templateId: presetId,
             materialId: String(it.material_id),
             defaultQty: it.quantity,
           });
         }
       }
-      for (const [presetId, presetItems] of Object.entries(presetDetailsMap)) {
-        if (!bomPresetsList.some(p => String(p.id) === presetId)) {
-          for (const it of presetItems) {
-            items.push({
-              templateId: presetId,
-              materialId: String(it.material_id),
-              defaultQty: it.quantity,
-            });
-          }
-        }
-      }
-      return items;
     }
-    return bomTemplateItems;
-  }, [bomPresetsList, presetDetailsMap, bomTemplateItems]);
+    return items;
+  }, [bomPresetsList, presetDetailsMap]);
 
-  const combinedMaterials = useMemo(() => {
-    const list = [...(materials || [])];
-    for (const m of (materialsList || [])) {
-      const idStr = String(m.id);
-      if (!list.some(existing => String(existing.id) === idStr)) {
-        list.push({
-          id: idStr,
-          name: m.name,
-          code: m.code,
-          category: '',
-          unit: m.unit || 'unit',
-          unitCost: m.unit_cost ?? 0,
-          stock: m.stock ?? 0,
-          isSubAssembly: Boolean(m.is_sub_assembly),
-        } as any);
-      }
-    }
+  const combinedMaterials = useMemo<CombinedMaterialItem[]>(() => {
+    const list: CombinedMaterialItem[] = [];
     for (const m of (apiMaterials || [])) {
       const idStr = String(m.id);
       if (!list.some(existing => String(existing.id) === idStr)) {
@@ -272,7 +283,27 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           unitCost: m.unit_cost ?? 0,
           stock: m.stock ?? 0,
           isSubAssembly: Boolean(m.is_sub_assembly),
-        } as any);
+          routingId: m.routing_id ? String(m.routing_id) : undefined,
+          childBom: m.child_bom?.map(c => ({
+            materialId: String(c.child_material_id),
+            qty: c.qty,
+          })),
+        });
+      }
+    }
+    for (const m of (materialsList || [])) {
+      const idStr = String(m.id);
+      if (!list.some(existing => String(existing.id) === idStr)) {
+        list.push({
+          id: idStr,
+          name: m.name,
+          code: m.code,
+          category: '',
+          unit: m.unit || 'unit',
+          unitCost: m.unit_cost ?? 0,
+          stock: m.stock ?? 0,
+          isSubAssembly: Boolean(m.is_sub_assembly),
+        });
       }
     }
     for (const presetItems of Object.values(presetDetailsMap)) {
@@ -288,12 +319,32 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
             unitCost: it.unit_cost ?? 0,
             stock: 0,
             isSubAssembly: false,
-          } as any);
+          });
         }
       }
     }
     return list;
-  }, [materials, materialsList, apiMaterials, presetDetailsMap]);
+  }, [apiMaterials, materialsList, presetDetailsMap]);
+
+  const mappedRoutings = useMemo(() => {
+    return (routingsList || []).map(r => ({
+      id: String(r.id),
+      name: r.name,
+      steps: (r.steps || []).map(s => ({
+        operationId: String(s.operation_id),
+      })),
+    }));
+  }, [routingsList]);
+
+  const mappedOperations = useMemo(() => {
+    return (operationsList || []).map(o => ({
+      id: String(o.id),
+      costingMethod: (o.wage_type?.toLowerCase() === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
+      fixedLaborCost: o.calculated_labor_cost ?? 0,
+      laborCostPerHour: 0,
+      durationMinutes: o.standard_duration_minutes ?? 0,
+    }));
+  }, [operationsList]);
 
   // ── Mode Switch: Single Product vs Product with Variants ───────────────────
   const [hasVariants, setHasVariants] = useState<boolean>(() => {
@@ -978,7 +1029,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
   // ── Helper: Calculate BOM Cost (with recursive Bahan Setengah Jadi rollup including labor) ──────
   const calculateBOMCost = (bom: BOMItem[]): number => {
-    return calculateRollupBOMCost(bom, combinedMaterials, routings, operations);
+    return calculateRollupBOMCost(bom, combinedMaterials, mappedRoutings, mappedOperations);
   };
 
   // ── Save Handler ───────────────────────────────────────────────────────────
@@ -1055,7 +1106,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
 
         finalVariants = [{
           id: initialProduct?.variants?.[0]?.id || `var-${generateId()}`,
-          sku: singleSku.trim() || generateSKU(name, {}),
+          sku: isEditMode ? singleSku.trim() : (singleSku.trim() || ''),
+          image: visualType === 'image' && image ? image : undefined,
           combination: {},
           price: singlePrice,
           estimatedHours: singleEstimatedHours || 0,
@@ -1078,7 +1130,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
             : structuredClone(effectiveBom);
           return {
             ...v,
-            sku: v.sku.trim() || generateSKU(name, v.combination),
+            sku: isEditMode ? v.sku.trim() : (v.sku.trim() || ''),
             bom: resolvedBom,
           };
         });
@@ -1130,8 +1182,26 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           };
         });
 
+        let variantImgUrl: string | undefined = undefined;
+        let variantImgFile: File | Blob | undefined = v.imageFile;
+
+        if (v.image) {
+          if (v.image.startsWith('data:image/') && !variantImgFile) {
+            variantImgFile = dataURLtoFile(v.image, `${(v.sku || 'variant').toLowerCase().replace(/[^a-z0-9]/g, '-')}.jpg`);
+          } else if (!v.image.startsWith('data:image/') && !v.image.startsWith('blob:')) {
+            const idx = v.image.indexOf('/products/');
+            if (idx !== -1) {
+              variantImgUrl = v.image.slice(idx);
+            } else {
+              variantImgUrl = v.image;
+            }
+          }
+        }
+
         const req: ProductVariantRequest = {
           sku: v.sku.trim(),
+          image_url: variantImgUrl,
+          image_file: variantImgFile,
           combination: v.combination || {},
           price: Number(v.price) || 0,
           estimated_hours: Number(v.estimatedHours) || 0,
@@ -1299,8 +1369,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     className="w-full"
                   >
                     <option value="">-- Pilih Kategori --</option>
-                    {(categoriesList.length > 0 ? categoriesList.map(c => c.name) : (productCategories || [])).map((c: string) => (
-                      <option key={c} value={c}>{c}</option>
+                    {categoriesList.map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
                     ))}
                   </Select>
                 </div>
@@ -1658,22 +1728,34 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                   </div>
 
                   {/* SKU Single Product */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Kode SKU <span className="text-[10px] font-normal text-slate-400">(Opsional)</span>
-                    </label>
-                    <Input
-                      type="text"
-                      value={singleSku}
-                      onChange={e => {
-                        setSkuManuallyEdited(true);
-                        setSingleSku(e.target.value);
-                      }}
-                      placeholder={generateSKU(name || 'PROD', {})}
-                      inputSize="sm"
-                      className="font-mono uppercase font-bold"
-                    />
-                  </div>
+                  {isEditMode ? (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Kode SKU <span className="text-[10px] font-normal text-slate-400">(Opsional)</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={singleSku}
+                        onChange={e => {
+                          setSkuManuallyEdited(true);
+                          setSingleSku(e.target.value);
+                        }}
+                        placeholder={generateSKU(name || 'PROD', {})}
+                        inputSize="sm"
+                        className="font-mono uppercase font-bold"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Kode SKU
+                      </label>
+                      <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                        <span>Auto-generated oleh sistem</span>
+                        <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300 font-sans font-medium">AUTO</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Stok Awal Single Product (Hanya saat Tambah Produk Baru) */}
                   {!isEditMode && (
@@ -1703,8 +1785,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                       inputSize="sm"
                     >
                       <option value="">Tanpa Alur Produksi (Non-SPK)</option>
-                      {routings.map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
+                      {routingsList.map(r => (
+                        <option key={r.id} value={String(r.id)}>{r.name}</option>
                       ))}
                     </Select>
                   </div>
@@ -2179,8 +2261,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                         containerClassName="w-auto min-w-[170px]"
                       >
                         <option value="">-- Tanpa Alur Produksi --</option>
-                        {routings.map(r => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
+                        {routingsList.map(r => (
+                          <option key={r.id} value={String(r.id)}>{r.name}</option>
                         ))}
                       </Select>
                     )}
@@ -2248,6 +2330,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                             size="sm"
                           />
                         </th>
+                        <th className="py-2.5 px-2.5 w-14 text-center">Foto</th>
                         <th className="py-2.5 px-3 min-w-[130px]">Varian</th>
                         <th className="py-2.5 px-3 min-w-[130px]">Kode SKU</th>
                         <th className="py-2.5 px-3 min-w-[140px]">Harga Jual</th>
@@ -2261,7 +2344,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
                       {filteredVariants.length === 0 ? (
                         <tr>
-                          <td colSpan={!isEditMode ? 9 : 8} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                          <td colSpan={!isEditMode ? 10 : 9} className="py-8 text-center text-slate-500 dark:text-slate-400">
                             <p className="text-xs font-medium">Tidak ada varian yang sesuai dengan filter atribut.</p>
                             <Button
                               type="button"
@@ -2299,6 +2382,56 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                 />
                               </td>
 
+                              {/* Col: Foto Varian */}
+                              <td className="py-2 px-2 align-middle text-center">
+                                <div className="relative group w-8 h-8 mx-auto rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center justify-center overflow-hidden hover:border-indigo-500 transition-colors">
+                                  {variant.image ? (
+                                    <>
+                                      <img
+                                        src={variant.image.startsWith('data:') || variant.image.startsWith('blob:') ? variant.image : resolveProductImageUrl(variant.image)}
+                                        alt="Foto Varian"
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <Camera className="w-3.5 h-3.5 text-white" />
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-indigo-600">
+                                      <Camera className="w-3.5 h-3.5" />
+                                    </div>
+                                  )}
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    title="Upload foto varian"
+                                    onChange={e => {
+                                      const file = e.target.files?.[0];
+                                      if (file) {
+                                        if (!file.type.startsWith('image/')) {
+                                          toast.error('Format Tidak Didukung', 'Harap pilih file gambar.');
+                                          return;
+                                        }
+                                        if (file.size > 5 * 1024 * 1024) {
+                                          toast.error('File Terlalu Besar', 'Maksimal 5MB.');
+                                          return;
+                                        }
+                                        const reader = new FileReader();
+                                        reader.onload = loadEvent => {
+                                          const dataUrl = loadEvent.target?.result as string;
+                                          setVariants(prev =>
+                                            prev.map(v => (v.id === variant.id ? { ...v, image: dataUrl, imageFile: file } : v))
+                                          );
+                                        };
+                                        reader.readAsDataURL(file);
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </td>
+
                               {/* Col 2: Varian Combination Chips */}
                               <td className="py-2 px-3 align-middle">
                                 <div className="flex flex-wrap items-center gap-1">
@@ -2331,7 +2464,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                   type="text"
                                   value={variant.sku}
                                   onChange={e => updateVariantField(variant.id, 'sku', e.target.value)}
-                                  placeholder="SKU"
+                                  placeholder={!isEditMode ? "(Auto Sistem)" : "SKU"}
                                   inputSize="sm"
                                   className="font-mono text-xs font-semibold uppercase"
                                 />
@@ -2387,8 +2520,8 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                                   inputSize="sm"
                                 >
                                   <option value="">Tanpa Alur Produksi</option>
-                                  {routings.map(r => (
-                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                  {routingsList.map(r => (
+                                    <option key={r.id} value={String(r.id)}>{r.name}</option>
                                   ))}
                                 </Select>
                               </td>
@@ -2473,7 +2606,7 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
         </>
       )}
       {/* CARD: Modifier & Add-on Opsional (Full Width) */}
-      {masterModifierGroups && masterModifierGroups.length > 0 && (
+      {modifierGroupsList && modifierGroupsList.length > 0 && (
         <Card className="space-y-3">
           <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
@@ -2485,8 +2618,9 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {masterModifierGroups.map(group => {
-              const isChecked = modifierGroupIds.includes(group.id);
+            {modifierGroupsList.map(group => {
+              const gId = String(group.id);
+              const isChecked = modifierGroupIds.includes(gId);
               return (
                 <label
                   key={group.id}
@@ -2499,15 +2633,15 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
                   <Checkbox
                     checked={isChecked}
                     onChange={checked => {
-                      if (checked) setModifierGroupIds(prev => [...prev, group.id]);
-                      else setModifierGroupIds(prev => prev.filter(id => id !== group.id));
+                      if (checked) setModifierGroupIds(prev => [...prev, gId]);
+                      else setModifierGroupIds(prev => prev.filter(id => id !== gId));
                     }}
                     size="sm"
                     className="mt-0.5"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">{group.name}</div>
-                    <div className="text-[10px] text-slate-500">{group.options.length} opsi</div>
+                    <div className="text-[10px] text-slate-500">{(group.options || []).length} opsi</div>
                   </div>
                 </label>
               );

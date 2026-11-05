@@ -33,6 +33,7 @@ import {
   Shield,
   Tag,
   ShoppingBag,
+  User,
   Archive,
   FolderTree,
   Sparkles,
@@ -58,6 +59,7 @@ const productIconMap: Record<string, React.ElementType> = {
   Shield,
   Tag,
   ShoppingBag,
+  User,
   Archive,
   FolderTree,
   Sparkles,
@@ -200,6 +202,17 @@ export function WorkOrderCard({
                   )}
                 </span>
                 {wo.isSubAssembly && <Badge variant="purple">WIP</Badge>}
+                {(() => {
+                  const unassignedCount = wo.jobCards.filter((j) => !j.picName || !j.picName.trim()).length;
+                  if (unassignedCount > 0 && canAssign && wo.status !== 'COMPLETED' && wo.status !== 'CANCELED') {
+                    return (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+                        <User className="w-3 h-3" /> {unassignedCount} Perlu Penugasan
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               {/* Icon More di Pojok Kanan Card (Mobile) */}
@@ -245,16 +258,29 @@ export function WorkOrderCard({
                 )}
                 {wo.selectedModifiers && wo.selectedModifiers.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {wo.selectedModifiers.map((mGroup) =>
-                      mGroup.selectedOptions.map((opt) => (
-                        <span
-                          key={opt.optionId}
-                          className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium"
-                        >
-                          +{opt.name}
-                        </span>
-                      ))
-                    )}
+                    {wo.selectedModifiers.map((mGroup: any, gIdx: number) => {
+                      if (Array.isArray(mGroup.selectedOptions)) {
+                        return mGroup.selectedOptions.map((opt: any, oIdx: number) => (
+                          <span
+                            key={opt.optionId || `${gIdx}-${oIdx}`}
+                            className="text-xs bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium"
+                          >
+                            +{opt.name || opt.label}
+                          </span>
+                        ));
+                      }
+                      if (mGroup.name || mGroup.label) {
+                        return (
+                          <span
+                            key={mGroup.id || gIdx}
+                            className="text-xs bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium"
+                          >
+                            +{mGroup.name || mGroup.label}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })}
                   </div>
                 )}
                 {wo.customNotes && (
@@ -399,16 +425,29 @@ export function WorkOrderCard({
               )}
               {wo.selectedModifiers && wo.selectedModifiers.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {wo.selectedModifiers.map((mGroup) =>
-                    mGroup.selectedOptions.map((opt) => (
-                      <span
-                        key={opt.optionId}
-                        className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium"
-                      >
-                        +{opt.name}
-                      </span>
-                    ))
-                  )}
+                  {wo.selectedModifiers.map((mGroup: any, gIdx: number) => {
+                    if (Array.isArray(mGroup.selectedOptions)) {
+                      return mGroup.selectedOptions.map((opt: any, oIdx: number) => (
+                        <span
+                          key={opt.optionId || `${gIdx}-${oIdx}`}
+                          className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium"
+                        >
+                          +{opt.name || opt.label}
+                        </span>
+                      ));
+                    }
+                    if (mGroup.name || mGroup.label) {
+                      return (
+                        <span
+                          key={mGroup.id || gIdx}
+                          className="text-sm bg-slate-100 text-slate-600 dark:bg-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md font-medium"
+                        >
+                          +{mGroup.name || mGroup.label}
+                        </span>
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               )}
               {wo.customNotes && (

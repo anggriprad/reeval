@@ -16,12 +16,17 @@ import {
   MaterialOption,
 } from '@/services/material.service';
 import {
+  productionOperationService,
+  ProductionOperationOption,
+} from '@/services/production-operation.service';
+import {
   Plus,
   AlertTriangle,
   Loader2,
   ChevronDown,
   ChevronUp,
   X,
+  Wrench,
 } from 'lucide-react';
 
 export interface ProductModifierModalProps {
@@ -44,6 +49,7 @@ interface LocalOption {
   name: string;
   additional_price: number;
   bom: LocalBOMItem[];
+  operation_ids: number[];
 }
 
 export function ProductModifierModal({
@@ -65,14 +71,18 @@ export function ProductModifierModal({
   const [materialOptions, setMaterialOptions] = useState<MaterialOption[]>([]);
   const [isLoadingMaterials, setIsLoadingMaterials] = useState(false);
 
-  // Expanded BOM option states
-  const [expandedOptionId, setExpandedOptionId] = useState<string | null>(null);
+  // Operation options from API for production operations
+  const [operationOptions, setOperationOptions] = useState<ProductionOperationOption[]>([]);
+  const [isLoadingOperations, setIsLoadingOperations] = useState(false);
+
+  // Expanded tab per option: 'bom' | 'operations' | null
+  const [expandedOptionTab, setExpandedOptionTab] = useState<Record<string, 'bom' | 'operations' | null>>({});
 
   // Inputs for adding BOM to an option: keyed by option id
   const [newBOMMatId, setNewBOMMatId] = useState<Record<string, string>>({});
   const [newBOMQty, setNewBOMQty] = useState<Record<string, string>>({});
 
-  // Fetch materials for dropdown
+  // Fetch materials and operations for dropdowns
   useEffect(() => {
     if (!isOpen) return;
 
@@ -91,7 +101,22 @@ export function ProductModifierModal({
       }
     };
 
+    const fetchOperations = async () => {
+      setIsLoadingOperations(true);
+      try {
+        const res = await productionOperationService.getOperationOptions();
+        if (isMounted && res?.data && Array.isArray(res.data)) {
+          setOperationOptions(res.data);
+        }
+      } catch (err) {
+        console.warn('Gagal memuat opsi operasi produksi:', err);
+      } finally {
+        if (isMounted) setIsLoadingOperations(false);
+      }
+    };
+
     fetchMaterials();
+    fetchOperations();
 
     return () => {
       isMounted = false;
@@ -105,7 +130,7 @@ export function ProductModifierModal({
       setSelectType('MULTI');
       setOptions([]);
       setErrorMessage('');
-      setExpandedOptionId(null);
+      setExpandedOptionTab({});
       setNewBOMMatId({});
       setNewBOMQty({});
       return;
@@ -133,6 +158,9 @@ export function ProductModifierModal({
                 unit_cost: b.unit_cost || 0,
                 quantity: b.quantity,
               })),
+              operation_ids:
+                opt.operation_ids ||
+                (opt.operations ? opt.operations.map((o) => o.operation_id) : []),
             }))
           );
         } catch (err) {
@@ -150,6 +178,9 @@ export function ProductModifierModal({
                 unit_cost: b.unit_cost || 0,
                 quantity: b.quantity,
               })),
+              operation_ids:
+                opt.operation_ids ||
+                (opt.operations ? opt.operations.map((o) => o.operation_id) : []),
             }))
           );
         } finally {
@@ -167,10 +198,11 @@ export function ProductModifierModal({
           name: '',
           additional_price: 0,
           bom: [],
+          operation_ids: [],
         },
       ]);
       setErrorMessage('');
-      setExpandedOptionId(null);
+      setExpandedOptionTab({});
       setNewBOMMatId({});
       setNewBOMQty({});
     }
@@ -186,6 +218,7 @@ export function ProductModifierModal({
         name: '',
         additional_price: 0,
         bom: [],
+        operation_ids: [],
       },
     ]);
   };
@@ -200,9 +233,26 @@ export function ProductModifierModal({
   // Remove option
   const handleRemoveOption = (optionId: string) => {
     setOptions((prev) => prev.filter((opt) => opt.id !== optionId));
-    if (expandedOptionId === optionId) {
-      setExpandedOptionId(null);
-    }
+    setExpandedOptionTab((prev) => {
+      const copy = { ...prev };
+      delete copy[optionId];
+      return copy;
+    });
+  };
+
+  // Toggle production operation selection for an option
+  const handleToggleOperation = (optionId: string, operationId: number) => {
+    setOptions((prev) =>
+      prev.map((opt) => {
+        if (opt.id !== optionId) return opt;
+        const currentOps = opt.operation_ids || [];
+        const exists = currentOps.includes(operationId);
+        const nextOps = exists
+          ? currentOps.filter((id) => id !== operationId)
+          : [...currentOps, operationId];
+        return { ...opt, operation_ids: nextOps };
+      })
+    );
   };
 
   // Add BOM item into option
@@ -318,6 +368,7 @@ export function ProductModifierModal({
               quantity: Number(b.quantity),
             }))
           : [],
+      operation_ids: opt.operation_ids || [],
     }));
 
     setIsSubmitting(true);
@@ -464,7 +515,8 @@ export function ProductModifierModal({
               <div className="space-y-3">
                 {options.map((opt) => {
                   const bomCost = calculateBOMCost(opt.bom);
-                  const isBOMExpanded = expandedOptionId === opt.id;
+                  const isBOMExpanded = expandedOptionTab[opt.id] === 'bom';
+                  const isOpExpanded = expandedOptionTab[opt.id] === 'operations';
 
                   return (
                     <div
@@ -502,18 +554,40 @@ export function ProductModifierModal({
                             disabled={isSubmitting}
                           />
                         </div>
-                        <div className="flex items-center justify-between md:justify-end gap-2 pt-3 md:pt-0">
+                        <div className="flex items-center justify-between md:justify-end gap-1.5 pt-3 md:pt-0">
                           <Button
-                            variant="outline"
+                            variant={isBOMExpanded ? 'secondary' : 'outline'}
                             size="sm"
                             type="button"
                             onClick={() =>
-                              setExpandedOptionId(isBOMExpanded ? null : opt.id)
+                              setExpandedOptionTab((prev) => ({
+                                ...prev,
+                                [opt.id]: prev[opt.id] === 'bom' ? null : 'bom',
+                              }))
                             }
                             className="text-xs"
                           >
                             BOM ({opt.bom.length}){' '}
                             {isBOMExpanded ? (
+                              <ChevronUp className="h-3 w-3 ml-1" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3 ml-1" />
+                            )}
+                          </Button>
+                          <Button
+                            variant={isOpExpanded ? 'secondary' : 'outline'}
+                            size="sm"
+                            type="button"
+                            onClick={() =>
+                              setExpandedOptionTab((prev) => ({
+                                ...prev,
+                                [opt.id]: prev[opt.id] === 'operations' ? null : 'operations',
+                              }))
+                            }
+                            className="text-xs"
+                          >
+                            <Wrench className="h-3 w-3 mr-1" /> Operasi ({opt.operation_ids.length}){' '}
+                            {isOpExpanded ? (
                               <ChevronUp className="h-3 w-3 ml-1" />
                             ) : (
                               <ChevronDown className="h-3 w-3 ml-1" />
@@ -530,6 +604,100 @@ export function ProductModifierModal({
                         </div>
                       </div>
 
+                      {/* Quick preview of selected operations when collapsed */}
+                      {opt.operation_ids.length > 0 && !isOpExpanded && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                          <span className="text-[10px] text-slate-400 font-semibold uppercase">
+                            Operasi:
+                          </span>
+                          {opt.operation_ids.map((opId) => {
+                            const op = operationOptions.find((o) => o.id === opId);
+                            return (
+                              <span
+                                key={opId}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                              >
+                                {op?.name || `Operasi #${opId}`}
+                                {op?.standard_duration_minutes ? (
+                                  <span className="text-slate-400">({op.standard_duration_minutes}m)</span>
+                                ) : null}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Section: Operasi Produksi Multi-Select */}
+                      {isOpExpanded && (
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 bg-indigo-50/20 dark:bg-slate-800/40 p-3 rounded-md">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                              <Wrench className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                              Pilih Operasi Produksi (Bisa lebih dari 1):
+                            </p>
+                            <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                              {opt.operation_ids.length} Operasi Terpilih
+                            </span>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                if (val) handleToggleOperation(opt.id, val);
+                              }}
+                              className="flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              disabled={isSubmitting || isLoadingOperations}
+                            >
+                              <option value="">-- Tambah Operasi Produksi --</option>
+                              {operationOptions
+                                .filter((op) => !opt.operation_ids.includes(op.id))
+                                .map((op) => (
+                                  <option key={op.id} value={op.id}>
+                                    {op.name} ({op.wage_type === 'HOURLY' ? 'Per Jam' : 'Borongan'}) — Durasi: {op.standard_duration_minutes || 0} mnt
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+
+                          {opt.operation_ids.length > 0 ? (
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {opt.operation_ids.map((opId) => {
+                                const op = operationOptions.find((o) => o.id === opId);
+                                return (
+                                  <span
+                                    key={opId}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 shadow-xs"
+                                  >
+                                    <span>{op?.name || `Operasi #${opId}`}</span>
+                                    {op?.standard_duration_minutes ? (
+                                      <span className="text-[10px] text-slate-400">
+                                        ({op.standard_duration_minutes}m)
+                                      </span>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleOperation(opt.id, opId)}
+                                      className="text-slate-400 hover:text-red-500 transition-colors ml-0.5"
+                                      disabled={isSubmitting}
+                                      title="Hapus Operasi"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-slate-400 italic">
+                              Belum ada operasi produksi yang dipilih untuk opsi ini.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Section: BOM Items */}
                       {isBOMExpanded && (
                         <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 bg-slate-50/50 dark:bg-slate-800/30 p-3 rounded-md">
                           <div className="flex items-center justify-between">

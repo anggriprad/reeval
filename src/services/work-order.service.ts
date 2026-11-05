@@ -61,6 +61,7 @@ export interface WorkOrderResponse {
   planned_labor_cost: number;
   actual_labor_cost: number;
   materials_consumed: any;
+  selected_modifiers?: any;
   is_custom: boolean;
   custom_notes?: string;
   is_sub_assembly: boolean;
@@ -170,6 +171,8 @@ export interface GetWorkOrdersParams {
   status?: string;
   spk_type?: string;
   search?: string;
+  sort_by?: string;
+  order?: string;
 }
 
 export interface CreateManualWorkOrderPayload {
@@ -250,6 +253,20 @@ export function mapWorkOrderResponseToWorkOrder(dto: WorkOrderResponse): WorkOrd
     }
   }
 
+  let parsedModifiers: any = undefined;
+  if (dto.selected_modifiers) {
+    if (Array.isArray(dto.selected_modifiers)) {
+      parsedModifiers = dto.selected_modifiers;
+    } else if (typeof dto.selected_modifiers === 'string') {
+      try {
+        const decoded = JSON.parse(dto.selected_modifiers);
+        if (Array.isArray(decoded)) parsedModifiers = decoded;
+      } catch {
+        parsedModifiers = undefined;
+      }
+    }
+  }
+
   return {
     id: String(dto.id),
     spkNumber: dto.spk_number,
@@ -260,6 +277,7 @@ export function mapWorkOrderResponseToWorkOrder(dto: WorkOrderResponse): WorkOrd
     unitIndex: dto.unit_index || 1,
     productName: dto.product_name,
     variantName: dto.variant_name || undefined,
+    selectedModifiers: parsedModifiers,
     status: dto.status,
     jobCards: (dto.job_cards || []).map(mapJobCardResponseToJobCard),
     materialsConsumed: parsedMaterials,

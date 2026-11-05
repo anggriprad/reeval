@@ -154,8 +154,8 @@ export function ProductionRoutingSection() {
   }, [isExpanded, fetchRoutings]);
 
   // Fetch Operation Options for step dropdown from /production/operations/options
-  const fetchOperationOptions = useCallback(async () => {
-    if (hasFetchedOptionsRef.current) return;
+  const fetchOperationOptions = useCallback(async (force = false) => {
+    if (hasFetchedOptionsRef.current && !force) return;
     try {
       const res = await productionOperationService.getOperationOptions();
       if (res && Array.isArray(res.data) && res.data.length > 0) {
@@ -180,6 +180,19 @@ export function ProductionRoutingSection() {
       );
     }
   }, [appOperations]);
+
+  // Listen for live operation updates from ProductionOperationSection
+  useEffect(() => {
+    const handleOpsUpdate = () => {
+      fetchOperationOptions(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('production-operations-updated', handleOpsUpdate);
+      return () => {
+        window.removeEventListener('production-operations-updated', handleOpsUpdate);
+      };
+    }
+  }, [fetchOperationOptions]);
 
   // Lazy Fetch when accordion expanded
   useEffect(() => {
@@ -215,7 +228,7 @@ export function ProductionRoutingSection() {
     setRtSteps([]);
     setRtError('');
     setShowRtModal(true);
-    await fetchOperationOptions();
+    await fetchOperationOptions(true);
   };
 
   const openEditRt = async (rt: ProductionRoutingItem) => {
@@ -223,6 +236,7 @@ export function ProductionRoutingSection() {
     setRtName(rt.name);
     setRtDesc(rt.description || '');
     setRtError('');
+    await fetchOperationOptions(true);
 
     // If steps are already loaded on the item
     if (Array.isArray(rt.steps) && rt.steps.length > 0) {
@@ -307,25 +321,14 @@ export function ProductionRoutingSection() {
 
       if (editRtId) {
         const updatePayload: UpdateProductionRoutingPayload = { ...payload };
-        const res = await productionRoutingService.updateRouting(editRtId, updatePayload);
-        const updatedItem = res?.data;
-
-        const next = routings.map((r) => (r.id === editRtId ? (updatedItem || { ...r, ...payload }) : r));
-        setRoutings(next);
-        syncToAppContext(next);
-
+        await productionRoutingService.updateRouting(editRtId, updatePayload);
         toast.success('Alur Diperbarui', `Alur produksi "${payload.name}" berhasil diperbarui.`);
       } else {
-        const res = await productionRoutingService.createRouting(payload);
-        const newItem = res?.data;
-
-        const next = newItem ? [newItem, ...routings] : routings;
-        setRoutings(next);
-        syncToAppContext(next);
-
+        await productionRoutingService.createRouting(payload);
         toast.success('Alur Ditambahkan', `Alur produksi "${payload.name}" berhasil ditambahkan.`);
       }
 
+      await fetchRoutings();
       setShowRtModal(false);
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Gagal menyimpan template alur produksi.';

@@ -173,17 +173,29 @@ export function ProductionOperationSection() {
       return;
     }
 
+    if (addCostingMethod === 'fixed') {
+      if (addFixedLaborCost === '' || isNaN(Number(addFixedLaborCost))) {
+        toast.error('Tarif Wajib Diisi', 'Nominal upah borongan wajib diisi (boleh 0).');
+        return;
+      }
+      if (Number(addFixedLaborCost) < 0) {
+        toast.error('Tarif Tidak Valid', 'Nominal upah borongan tidak boleh bernilai negatif.');
+        return;
+      }
+    }
+    if (addCostingMethod === 'hourly') {
+      if (addLaborCost === '' || isNaN(Number(addLaborCost))) {
+        toast.error('Tarif Wajib Diisi', 'Tarif upah per jam wajib diisi (boleh 0).');
+        return;
+      }
+      if (Number(addLaborCost) < 0) {
+        toast.error('Tarif Tidak Valid', 'Tarif upah per jam tidak boleh bernilai negatif.');
+        return;
+      }
+    }
+
     const fixedVal = Number(addFixedLaborCost) || 0;
     const hourlyVal = Number(addLaborCost) || 0;
-
-    if (addCostingMethod === 'fixed' && fixedVal <= 0) {
-      toast.error('Tarif Tidak Valid', 'Nominal upah borongan harus lebih besar dari 0.');
-      return;
-    }
-    if (addCostingMethod === 'hourly' && hourlyVal <= 0) {
-      toast.error('Tarif Tidak Valid', 'Tarif upah per jam harus lebih besar dari 0.');
-      return;
-    }
 
     const payload: CreateProductionOperationPayload = {
       name: trimmed,
@@ -201,6 +213,9 @@ export function ProductionOperationSection() {
       const next = newItem ? [...operations, newItem] : operations;
       setOperations(next);
       syncToAppContext(next);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('production-operations-updated'));
+      }
 
       toast.success('Operasi Ditambahkan', `Operasi "${trimmed}" berhasil ditambahkan.`);
       cancelAdd();
@@ -234,17 +249,29 @@ export function ProductionOperationSection() {
       return;
     }
 
+    if (editCostingMethod === 'fixed') {
+      if (editFixedLaborCost === '' || isNaN(Number(editFixedLaborCost))) {
+        toast.error('Tarif Wajib Diisi', 'Nominal upah borongan wajib diisi (boleh 0).');
+        return;
+      }
+      if (Number(editFixedLaborCost) < 0) {
+        toast.error('Tarif Tidak Valid', 'Nominal upah borongan tidak boleh bernilai negatif.');
+        return;
+      }
+    }
+    if (editCostingMethod === 'hourly') {
+      if (editLaborCost === '' || isNaN(Number(editLaborCost))) {
+        toast.error('Tarif Wajib Diisi', 'Tarif upah per jam wajib diisi (boleh 0).');
+        return;
+      }
+      if (Number(editLaborCost) < 0) {
+        toast.error('Tarif Tidak Valid', 'Tarif upah per jam tidak boleh bernilai negatif.');
+        return;
+      }
+    }
+
     const fixedVal = Number(editFixedLaborCost) || 0;
     const hourlyVal = Number(editLaborCost) || 0;
-
-    if (editCostingMethod === 'fixed' && fixedVal <= 0) {
-      toast.error('Tarif Tidak Valid', 'Nominal upah borongan harus lebih besar dari 0.');
-      return;
-    }
-    if (editCostingMethod === 'hourly' && hourlyVal <= 0) {
-      toast.error('Tarif Tidak Valid', 'Tarif upah per jam harus lebih besar dari 0.');
-      return;
-    }
 
     const existingOp = operations.find((o) => o.id === editingId);
     const payload: UpdateProductionOperationPayload = {
@@ -264,6 +291,9 @@ export function ProductionOperationSection() {
       const next = operations.map((o) => (o.id === editingId ? (updatedItem || { ...o, ...payload }) : o));
       setOperations(next);
       syncToAppContext(next);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('production-operations-updated'));
+      }
 
       toast.success('Operasi Diperbarui', `Operasi "${trimmed}" berhasil diperbarui.`);
       setEditingId(null);
@@ -288,6 +318,9 @@ export function ProductionOperationSection() {
         const next = operations.filter((o) => o.id !== id);
         setOperations(next);
         syncToAppContext(next);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('production-operations-updated'));
+        }
         toast.success('Operasi Dihapus', `Operasi "${name}" berhasil dihapus.`);
         if (editingId === id) {
           cancelEdit();

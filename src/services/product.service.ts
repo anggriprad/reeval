@@ -15,7 +15,9 @@ export interface VariantBOMItemRequest {
 
 export interface ProductVariantRequest {
   id?: number;
-  sku: string;
+  sku?: string;
+  image_url?: string;
+  image_file?: File | Blob;
   combination: Record<string, string>;
   price: number;
   estimated_hours?: number;
@@ -59,6 +61,7 @@ export interface VariantBOMItemResponse {
 export interface ProductVariantResponse {
   id: number;
   sku: string;
+  image_url?: string;
   combination: Record<string, string>;
   price: number;
   estimated_hours: number;
@@ -181,17 +184,26 @@ export function resolveProductImageUrl(url?: string | null): string {
     "https://s3.reeval.tech"
   ).replace(/\/+$/, "");
 
-  let pathOnly = trimmed;
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    if (trimmed.includes("minio.reeval.tech/products/")) {
-      const idx = trimmed.indexOf("/products/");
-      pathOnly = trimmed.slice(idx);
-    } else {
-      return trimmed;
-    }
+  // If it's an external URL (e.g. Unsplash, CDN) without local IP/ports
+  if (
+    trimmed.startsWith("https://") &&
+    !trimmed.includes("187.77.116.231") &&
+    !trimmed.includes(":9000") &&
+    !trimmed.includes("minio.reeval.tech")
+  ) {
+    return trimmed;
   }
 
-  const cleanPath = pathOnly.replace(/^\/+/, "");
+  let cleanPath = trimmed;
+  if (cleanPath.includes("/products/")) {
+    const idx = cleanPath.indexOf("/products/");
+    cleanPath = cleanPath.slice(idx + 1);
+  } else if (cleanPath.startsWith("products/")) {
+    // already "products/..."
+  } else {
+    cleanPath = cleanPath.replace(/^\/+/, "");
+  }
+
   return `${base}/${cleanPath}`;
 }
 
@@ -206,6 +218,7 @@ export function mapProductDetailToProduct(detail: ProductDetail): Product {
   const variants = (detail.variants || []).map((v) => ({
     id: String(v.id),
     sku: v.sku,
+    image: v.image_url ? resolveProductImageUrl(v.image_url) : undefined,
     combination: v.combination || {},
     price: v.price,
     estimatedHours: v.estimated_hours,
@@ -250,6 +263,7 @@ export function mapProductOptionToProduct(opt: ProductOption): Product {
   const variants = (opt.variants || []).map((v) => ({
     id: String(v.id),
     sku: v.sku,
+    image: (v as any).image_url ? resolveProductImageUrl((v as any).image_url) : undefined,
     combination: v.combination || {},
     price: v.price,
     estimatedHours: v.estimated_hours || 0,
@@ -313,20 +327,27 @@ export const productService = {
     payload: CreateProductPayload,
     imageFile?: File | Blob
   ): Promise<ApiResponse<ProductDetail>> {
-    if (imageFile) {
+    const hasVariantImage = payload.variants.some((v) => Boolean(v.image_file));
+    if (imageFile || hasVariantImage) {
       const formData = new FormData();
       formData.append("payload", JSON.stringify(payload));
-      formData.append("image", imageFile, (imageFile as File).name || "product.jpg");
+      if (imageFile) {
+        formData.append("image", imageFile, (imageFile as File).name || "product.jpg");
+      }
+      payload.variants.forEach((v, idx) => {
+        if (v.image_file) {
+          formData.append(
+            `variant_image_${idx}`,
+            v.image_file,
+            (v.image_file as File).name || `variant_${idx}.jpg`
+          );
+        }
+      });
 
       const response = await httpPost<ProductDetail>(
         endpointUrl("product/products"),
         formData,
-        true,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
+        true
       );
       return response.data;
     }
@@ -344,20 +365,27 @@ export const productService = {
     payload: UpdateProductPayload,
     imageFile?: File | Blob
   ): Promise<ApiResponse<ProductDetail>> {
-    if (imageFile) {
+    const hasVariantImage = payload.variants.some((v) => Boolean(v.image_file));
+    if (imageFile || hasVariantImage) {
       const formData = new FormData();
       formData.append("payload", JSON.stringify(payload));
-      formData.append("image", imageFile, (imageFile as File).name || "product.jpg");
+      if (imageFile) {
+        formData.append("image", imageFile, (imageFile as File).name || "product.jpg");
+      }
+      payload.variants.forEach((v, idx) => {
+        if (v.image_file) {
+          formData.append(
+            `variant_image_${idx}`,
+            v.image_file,
+            (v.image_file as File).name || `variant_${idx}.jpg`
+          );
+        }
+      });
 
       const response = await httpPut<ProductDetail>(
         endpointUrl(`product/products/${id}`),
         formData,
-        true,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
+        true
       );
       return response.data;
     }

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Factory } from 'lucide-react';
 import { authService } from '@/services/auth.service';
+import { ForgotPasswordModal } from './components/ForgotPasswordModal';
 import { setCookie, deleteCookie } from 'cookies-next';
 import { toast } from 'sonner';
 
@@ -21,6 +22,7 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [showForgotModal, setShowForgotModal] = useState<boolean>(false);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -161,7 +163,16 @@ function LoginForm() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300">Password</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300">Password</label>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(true)}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                >
+                  Lupa password?
+                </button>
+              </div>
               <div className="relative">
                 <Input
                   type={showPassword ? 'text' : 'password'}
@@ -198,6 +209,15 @@ function LoginForm() {
               <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
           </form>
+
+          <ForgotPasswordModal
+            isOpen={showForgotModal}
+            onClose={() => setShowForgotModal(false)}
+            onSuccess={(resetEmail) => {
+              setEmail(resetEmail);
+              setPassword('');
+            }}
+          />
 
          
         </div>

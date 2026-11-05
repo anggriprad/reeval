@@ -14,6 +14,7 @@ import { canCreatePO, canViewFinance } from '@/lib/roles';
 import {
   procurementService,
   CreateProcurementRequest,
+  ProcessPORequest,
   PurchaseOrderResponse,
 } from '@/services/procurement.service';
 import {
@@ -51,7 +52,7 @@ export function ProcurementModal({
   const canExecuteCommercial = canCreatePO(currentUser.role);
   const canShowBankBalance = canViewFinance(currentUser.role);
   const isExecuteDraftMode = Boolean(draftPO);
-  const isRequestOnlyMode = !canExecuteCommercial && !isExecuteDraftMode;
+  const isRequestOnlyMode = !isExecuteDraftMode;
 
   const [purchaseType, setPurchaseType] = useState<'PO' | 'DIRECT'>('PO');
   const [supplier, setSupplier] = useState('');
@@ -211,50 +212,68 @@ export function ProcurementModal({
       return;
     }
 
-    const payload: CreateProcurementRequest = {
-      supplier: supplierTrimmed,
-      purchase_type: isRequestOnlyMode ? 'PO' : purchaseType,
-      bank_account_id:
-        !isRequestOnlyMode && purchaseType === 'DIRECT'
-          ? Number(selectedBankAccountId)
-          : undefined,
-      additional_cost: !isRequestOnlyMode ? Number(additionalCost || 0) : 0,
-      items: items.map((i) => ({
-        material_id: i.material_id,
-        qty: Number(i.qty),
-        unit_cost: Number(i.unit_cost || 0),
-      })),
-    };
+    if (isExecuteDraftMode && draftPO) {
+      const processPayload: ProcessPORequest = {
+        supplier: supplierTrimmed,
+        purchase_type: purchaseType,
+        bank_account_id:
+          purchaseType === 'DIRECT' && selectedBankAccountId
+            ? Number(selectedBankAccountId)
+            : undefined,
+        additional_cost: Number(additionalCost || 0),
+        items: items.map((i) => ({
+          material_id: i.material_id,
+          qty: Number(i.qty),
+          unit_cost: Number(i.unit_cost || 0),
+        })),
+      };
 
-    setIsSubmitting(true);
-    try {
-      if (isExecuteDraftMode && draftPO) {
-        await procurementService.orderPO(draftPO.id, payload);
+      setIsSubmitting(true);
+      try {
+        await procurementService.orderPO(draftPO.id, processPayload);
         toast.success(
           'Pengadaan Diproses',
           `Pengadaan ${draftPO.po_number} berhasil disetujui dan diproses.`
         );
         onSuccess();
         onClose();
-      } else {
-        const res = await procurementService.createProcurement(payload);
-        if (res.data) {
-          toast.success(
-            isRequestOnlyMode
-              ? 'Kebutuhan Bahan Diajukan'
-              : purchaseType === 'DIRECT'
-              ? 'Pembelian Langsung Berhasil'
-              : 'Pengadaan Berhasil Dibuat',
-            `Dokumen ${res.data.po_number} berhasil disimpan.`
-          );
-          onSuccess();
-          onClose();
-        }
+      } catch (err: any) {
+        console.error('Failed to process procurement:', err);
+        setErrorMsg(
+          err?.response?.data?.message || err?.message || 'Gagal memproses pengadaan.'
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    const payload: CreateProcurementRequest = {
+      supplier: supplierTrimmed,
+      purchase_type: 'PO',
+      additional_cost: 0,
+      items: items.map((i) => ({
+        material_id: i.material_id,
+        qty: Number(i.qty),
+        unit_cost: 0,
+      })),
+    };
+
+    setIsSubmitting(true);
+    try {
+      const res = await procurementService.createProcurement(payload);
+      if (res.data) {
+        toast.success(
+          'Kebutuhan Bahan Diajukan',
+          `Pengajuan pengadaan ${res.data.po_number} berhasil disimpan.`
+        );
+        onSuccess();
+        onClose();
       }
     } catch (err: any) {
-      console.error('Failed to process procurement:', err);
+      console.error('Failed to create procurement:', err);
       setErrorMsg(
-        err?.response?.data?.message || err?.message || 'Gagal menyimpan pengadaan.'
+        err?.response?.data?.message || err?.message || 'Gagal mengajukan pengadaan.'
       );
     } finally {
       setIsSubmitting(false);

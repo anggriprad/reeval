@@ -30,6 +30,7 @@ import { isRouteAllowed } from '@/lib/roles';
 import { hasPermission, hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { navigateBack } from '@/lib/navigation';
+import { resolveProductImageUrl } from '@/services/product.service';
 
 export interface MobileHeaderSyncDetail {
   title?: React.ReactNode;
@@ -487,25 +488,48 @@ export function MobileHeader() {
                 <button
                   type="button"
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700 transition-colors touch-manipulation font-bold text-sm"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700 transition-colors touch-manipulation font-bold text-sm overflow-hidden"
                   title="Menu Pengguna"
                 >
-                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : <User className="h-5 w-5" />}
+                  {currentUser.avatar_url ? (
+                    <img
+                      src={resolveProductImageUrl(currentUser.avatar_url)}
+                      alt={currentUser.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : currentUser.name ? (
+                    currentUser.name.charAt(0).toUpperCase()
+                  ) : (
+                    <User className="h-5 w-5" />
+                  )}
                 </button>
 
                 {showProfileMenu && (
                   <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in zoom-in-95 duration-100">
-                    <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 mb-2.5 px-1">
-                      <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                        {currentUser.name}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {currentUser.email}
-                      </p>
-                      <div className="mt-2">
-                        <span className="inline-block px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 text-[11px] font-bold">
-                          {currentUser.roleLabel}
-                        </span>
+                    <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-800/80 pb-3 mb-2.5 px-1">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white shadow-xs overflow-hidden">
+                        {currentUser.avatar_url ? (
+                          <img
+                            src={resolveProductImageUrl(currentUser.avatar_url)}
+                            alt={currentUser.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          currentUser.initials || (currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U')
+                        )}
+                      </div>
+                      <div className="overflow-hidden flex-1">
+                        <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                          {currentUser.name}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {currentUser.email}
+                        </p>
+                        <div className="mt-1">
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 text-[10px] font-bold">
+                            {currentUser.roleLabel}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -532,6 +556,15 @@ export function MobileHeader() {
                     </div>
 
                     <div className="border-t border-slate-100 dark:border-slate-800/80 pt-1.5 space-y-1">
+                      <Link
+                        href="/profile"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-2.5 w-full px-2.5 py-2.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800/60 transition-colors text-left"
+                      >
+                        <User className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                        <span>Profil Saya</span>
+                      </Link>
+
                       <button
                         type="button"
                         onClick={async () => {

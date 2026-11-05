@@ -118,6 +118,7 @@ interface AppContextType extends AppState {
   logout: () => void;
   login: (emailOrId: string, passwordInput: string) => { success: boolean; error?: string; user?: UserAccount };
   refreshProfile: () => void;
+  updateStoredUser: (user: UserSummary) => void;
 
   // Reusable BOM Templates & Variant-Level Overrides Actions
   cloneTemplateToVariant: (variantId: string, templateId: string) => void;
@@ -693,6 +694,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [getStoredToken]);
 
+  const updateStoredUser = useCallback((user: UserSummary) => {
+    setStoredUser(user);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(user));
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const token = getStoredToken();
@@ -738,6 +746,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         initials: initials || 'U',
         email: storedUser.email,
         phone: storedUser.phone,
+        avatar_url: storedUser.avatar_url,
+        avatar: storedUser.avatar_url,
         permissions: storedUser.permissions || (isSuper ? ['*'] : []),
         is_superadmin: isSuper,
       };
@@ -5638,6 +5648,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     currentUser,
     isLoggedIn,
     refreshProfile,
+    updateStoredUser,
     switchUser,
     logout,
     login,

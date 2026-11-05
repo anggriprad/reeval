@@ -23,6 +23,7 @@ import {
 import {
   workOrderService,
   mapWorkOrderResponseToWorkOrder,
+  mapJobCardResponseToJobCard,
   WorkOrderStatusCountsResponse,
 } from '@/services/work-order.service';
 import { productionOperationService } from '@/services/production-operation.service';
@@ -61,6 +62,7 @@ function ProductionContent() {
     spk_type: '',
     search: '',
     period: 'THIS_MONTH',
+    sort_by: '',
   });
 
   const activeTab = (filters.status || 'active') as 'active' | 'completed' | 'canceled' | 'analytics';
@@ -199,12 +201,14 @@ function ProductionContent() {
       }
 
       try {
+        const effectiveSortBy = filters.sort_by || (activeTab === 'completed' ? 'completed_at' : 'created_at');
         const res = await workOrderService.getWorkOrders({
           page: pageToFetch,
           per_page: 20,
           status: activeTab,
           spk_type: filters.spk_type || undefined,
           search: filters.search || undefined,
+          sort_by: effectiveSortBy,
         });
 
         if (activeRequestRef.current !== reqId) return;
@@ -253,7 +257,7 @@ function ProductionContent() {
         }
       }
     },
-    [activeTab, filters.spk_type, filters.search]
+    [activeTab, filters.spk_type, filters.search, filters.sort_by]
   );
 
   // Trigger initial fetch on filter or tab change
@@ -369,6 +373,7 @@ function ProductionContent() {
         value={activeTab}
         onChange={(tab) => {
           setFilter('status', tab);
+          setFilter('sort_by', tab === 'completed' ? 'completed_at' : 'created_at');
         }}
         options={[
           {
@@ -397,12 +402,28 @@ function ProductionContent() {
               ]
             : []),
         ]}
-        filterValue={filters.spk_type}
-        onFilterChange={(val) => setFilter('spk_type', val)}
-        filterPlaceholder="Semua Tipe SPK"
-        filterOptions={[
-          { value: 'FINISHED_GOOD', label: 'Barang Jadi' },
-          { value: 'SUB_ASSEMBLY', label: 'Bahan Setengah Jadi' },
+        filters={[
+          {
+            id: 'spk_type',
+            value: filters.spk_type,
+            onChange: (val) => setFilter('spk_type', val),
+            placeholder: 'Semua Tipe SPK',
+            options: [
+              { value: '', label: 'Semua Tipe SPK' },
+              { value: 'FINISHED_GOOD', label: 'Barang Jadi' },
+              { value: 'SUB_ASSEMBLY', label: 'Bahan Setengah Jadi' },
+            ],
+          },
+          {
+            id: 'sort_by',
+            value: filters.sort_by || (activeTab === 'completed' ? 'completed_at' : 'created_at'),
+            onChange: (val) => setFilter('sort_by', val),
+            placeholder: 'Urutkan',
+            options: [
+              { value: 'created_at', label: 'Tgl Dibuat (Terbaru)' },
+              { value: 'completed_at', label: 'Tgl Selesai (Terbaru)' },
+            ],
+          },
         ]}
         searchValue={searchInput}
         onSearchChange={setSearchInput}
@@ -450,7 +471,19 @@ function ProductionContent() {
       <CreateSpkModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        onSuccess={handleRefresh}
+        onSuccess={(newWO) => {
+          handleRefresh();
+          if (newWO && Array.isArray(newWO.job_cards) && newWO.job_cards.length > 0) {
+            const firstUnassigned = newWO.job_cards.find((jc) => !jc.pic_name || !jc.pic_name.trim());
+            if (firstUnassigned) {
+              setAssignTarget({
+                woId: String(newWO.id),
+                jc: mapJobCardResponseToJobCard(firstUnassigned),
+              });
+              toast.info('Tugaskan Operator', `SPK berhasil dibuat. Silakan pilih operator untuk operasi "${firstUnassigned.operation_name}".`);
+            }
+          }
+        }}
         products={products}
         materials={materials}
       />

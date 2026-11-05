@@ -33,6 +33,8 @@ import {
   FinishedGoodsTableSection,
   AssetTableSection,
 } from './components';
+import { materialService, type MaterialItem } from '@/services/material.service';
+import { workOrderService } from '@/services/work-order.service';
 import {
   materialCategoryService,
   MaterialCategoryOption,
@@ -320,6 +322,40 @@ export function InventoryContent() {
   const [saMaterialId, setSaMaterialId] = useState('');
   const [saTargetQty, setSaTargetQty] = useState('1');
   const [saError, setSaError] = useState('');
+  const [isSubmittingSa, setIsSubmittingSa] = useState(false);
+  const [wipMaterials, setWipMaterials] = useState<MaterialItem[]>([]);
+  const [selectedWipDetail, setSelectedWipDetail] = useState<MaterialItem | null>(null);
+  const [allMaterialsMap, setAllMaterialsMap] = useState<Record<number, MaterialItem>>({});
+
+  const fetchWipData = useCallback(async (selectedId?: string) => {
+    try {
+      const res = await materialService.getMaterials({ per_page: 200 });
+      if (res.data) {
+        const matMap: Record<number, MaterialItem> = {};
+        const wips: MaterialItem[] = [];
+        res.data.forEach((m) => {
+          matMap[m.id] = m;
+          if (m.is_sub_assembly) {
+            wips.push(m);
+          }
+        });
+        setAllMaterialsMap(matMap);
+        setWipMaterials(wips);
+        const targetId = selectedId || saMaterialId;
+        if (targetId && matMap[Number(targetId)]) {
+          setSelectedWipDetail(matMap[Number(targetId)]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch WIP materials:', err);
+    }
+  }, [saMaterialId]);
+
+  useEffect(() => {
+    if (showSaModal) {
+      fetchWipData(saMaterialId);
+    }
+  }, [showSaModal, saMaterialId, fetchWipData]);
 
   // Pengadaan (PO & Pembelian Langsung) state
   const [showPOModal, setShowPOModal] = useState(false);
@@ -479,10 +515,16 @@ export function InventoryContent() {
     setSaMaterialId(materialId || '');
     setSaTargetQty('1');
     setSaError('');
+    if (materialId && allMaterialsMap[Number(materialId)]) {
+      setSelectedWipDetail(allMaterialsMap[Number(materialId)]);
+    } else {
+      setSelectedWipDetail(null);
+    }
     setShowSaModal(true);
+    fetchWipData(materialId);
   };
 
-  const handleCreateSaWorkOrder = (e?: React.FormEvent) => {
+  const handleCreateSaWorkOrder = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setSaError('');
 
@@ -497,15 +539,28 @@ export function InventoryContent() {
       return;
     }
 
-    const res = createSubAssemblyWorkOrder(saMaterialId, qty);
-    if (!res.success) {
-      setSaError(res.error || 'Gagal menerbitkan SPK.');
-      return;
-    }
+    setIsSubmittingSa(true);
+    try {
+      const res = await workOrderService.createManualWorkOrder({
+        category: 'WIP',
+        sub_assembly_id: Number(saMaterialId),
+        target_qty: qty,
+      });
 
-    const targetMat = materials.find(m => m.id === saMaterialId);
-    toast.success('SPK Berhasil Dibuat', `SPK untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name}" berhasil diterbitkan.`);
-    setShowSaModal(false);
+      const targetMat = selectedWipDetail || allMaterialsMap[Number(saMaterialId)];
+      toast.success(
+        'SPK Berhasil Dibuat',
+        `SPK ${res.data?.spk_number || ''} untuk ${qty} ${targetMat?.unit || 'unit'} "${targetMat?.name || 'WIP'}" berhasil diterbitkan.`
+      );
+      setShowSaModal(false);
+      setSaMaterialId('');
+      setSaTargetQty('1');
+    } catch (err: any) {
+      console.error('Failed to create WIP work order:', err);
+      setSaError(err?.response?.data?.message || err?.message || 'Gagal menerbitkan SPK.');
+    } finally {
+      setIsSubmittingSa(false);
+    }
   };
 
 
@@ -1080,15 +1135,15 @@ export function InventoryContent() {
         size="lg"
         actions={
           <>
-            <Button variant="outline" onClick={() => setShowSaModal(false)}>
+            <Button variant="outline" onClick={() => setShowSaModal(false)} disabled={isSubmittingSa}>
               Batal
             </Button>
             <Button
               variant="primary"
               onClick={() => handleCreateSaWorkOrder()}
-              disabled={!saMaterialId}
+              disabled={!saMaterialId || isSubmittingSa}
             >
-              <Layers className="h-4 w-4 mr-1.5" /> Terbitkan SPK
+              <Layers className="h-4 w-4 mr-1.5" /> {isSubmittingSa ? 'Menerbitkan...' : 'Terbitkan SPK'}
             </Button>
           </>
         }
@@ -1109,13 +1164,15 @@ export function InventoryContent() {
               <Select
                 value={saMaterialId}
                 onChange={e => {
-                  setSaMaterialId(e.target.value);
+                  const val = e.target.value;
+                  setSaMaterialId(val);
+                  setSelectedWipDetail(allMaterialsMap[Number(val)] || null);
                   setSaError('');
                 }}
                 inputSize="sm"
               >
                 <option value="">-- Pilih Bahan Setengah Jadi --</option>
-                {materials.filter(m => m.isSubAssembly).map(m => (
+                {wipMaterials.map(m => (
                   <option key={m.id} value={m.id}>
                     [{m.code}] {m.name} — Stok Saat Ini: {m.stock} {m.unit}
                   </option>
@@ -1140,9 +1197,9 @@ export function InventoryContent() {
 
           {/* Child BOM Requirement & Stock Preview */}
           {saMaterialId && (() => {
-            const targetMat = materials.find(m => m.id === saMaterialId);
+            const targetMat = selectedWipDetail || allMaterialsMap[Number(saMaterialId)];
             const targetQtyNum = parseFloat(saTargetQty.replace(',', '.')) || 0;
-            const childBom = targetMat?.childBom || [];
+            const childBom = targetMat?.child_bom || [];
 
             let hasInsufficientStock = false;
 
@@ -1176,7 +1233,7 @@ export function InventoryContent() {
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {childBom.map((child, idx) => {
-                          const childMat = materials.find(m => m.id === child.materialId);
+                          const childMat = allMaterialsMap[child.child_material_id];
                           const requiredQty = child.qty * targetQtyNum;
                           const currentStock = childMat?.stock || 0;
                           const isOk = currentStock >= requiredQty;
@@ -1185,15 +1242,15 @@ export function InventoryContent() {
                           return (
                             <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
                               <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
-                                {childMat?.name || child.materialId}
-                                <div className="text-[10px] text-slate-400 font-normal">{childMat?.code} • {childMat?.category}</div>
+                                {childMat?.name || `Material #${child.child_material_id}`}
+                                <div className="text-[10px] text-slate-400 font-normal">{childMat?.code || '-'} • {childMat?.category || '-'}</div>
                               </td>
-                              <td className="px-3 py-2 text-center font-mono">{child.qty} {childMat?.unit}</td>
+                              <td className="px-3 py-2 text-center font-mono">{child.qty} {childMat?.unit || 'unit'}</td>
                               <td className="px-3 py-2 text-center font-mono font-bold text-slate-900 dark:text-white">
-                                {requiredQty} {childMat?.unit}
+                                {requiredQty} {childMat?.unit || 'unit'}
                               </td>
                               <td className="px-3 py-2 text-center font-mono">
-                                {currentStock} {childMat?.unit}
+                                {currentStock} {childMat?.unit || 'unit'}
                               </td>
                               <td className="px-3 py-2 text-center">
                                 {isOk ? (

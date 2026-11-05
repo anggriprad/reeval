@@ -62,7 +62,10 @@ async function runTests() {
   console.log('1. Checking authService contract...');
   assert(typeof authService.login === 'function', 'authService.login must be a function');
   assert(typeof authService.getProfile === 'function', 'authService.getProfile must be a function');
+  assert(typeof authService.updateProfile === 'function', 'authService.updateProfile must be a function');
   assert(typeof authService.changePassword === 'function', 'authService.changePassword must be a function');
+  assert(typeof authService.forgotPassword === 'function', 'authService.forgotPassword must be a function');
+  assert(typeof authService.resetPassword === 'function', 'authService.resetPassword must be a function');
   assert(typeof authService.logout === 'function', 'authService.logout must be a function');
   assert(!('switchCompany' in authService), 'authService.switchCompany should be removed');
   console.log('✓ authService contract verified');

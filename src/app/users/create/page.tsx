@@ -62,7 +62,7 @@ export default function CreateUserPage() {
         email: formData.email,
         password: null,
         full_name: formData.full_name,
-        phone: formData.phone,
+        phone: formData.phone || '',
         role_ids: formData.role_ids,
       });
 

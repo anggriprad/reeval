@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useTableFilters } from '@/hooks/useTableFilters';
-import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
@@ -19,6 +18,14 @@ import {
   productCategoryService,
   ProductCategoryOption,
 } from '@/services/product-category.service';
+import {
+  productModifierService,
+  ProductModifierGroupOption,
+} from '@/services/product-modifier.service';
+import {
+  materialService,
+  MaterialOption,
+} from '@/services/material.service';
 import {
   Pencil,
   Trash2,
@@ -86,7 +93,23 @@ interface ProductSectionProps {
 export function ProductSection({ categoryFilter, searchTerm }: ProductSectionProps) {
   const { toast, confirm } = useToast();
   const { can } = usePermission();
-  const { masterModifierGroups, materials } = useApp();
+
+  const [modifierGroups, setModifierGroups] = useState<ProductModifierGroupOption[]>([]);
+  const [materials, setMaterials] = useState<MaterialOption[]>([]);
+
+  useEffect(() => {
+    productModifierService.getGroupOptions().then(res => {
+      if (res.success && res.data) {
+        setModifierGroups(res.data);
+      }
+    }).catch(() => {});
+
+    materialService.getMaterialOptions().then(res => {
+      if (res.success && res.data) {
+        setMaterials(res.data);
+      }
+    }).catch(() => {});
+  }, []);
 
   const seeCosts = can(PERMISSIONS.PRODUCT.READ);
   const canCreate = can(PERMISSIONS.PRODUCT.CREATE);
@@ -395,7 +418,17 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
                                             {v.sku}
                                           </td>
                                           <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-200">
-                                            {combinationLabel(v.combination)}
+                                            <div className="flex items-center gap-2">
+                                              {v.image_url ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                  src={resolveProductImageUrl(v.image_url)}
+                                                  alt={v.sku}
+                                                  className="w-7 h-7 rounded object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                                />
+                                              ) : null}
+                                              <span>{combinationLabel(v.combination)}</span>
+                                            </div>
                                           </td>
                                           {seeCosts && (
                                             <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-400">
@@ -432,9 +465,7 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
 
                             {(() => {
                               const prodModifierIds = (p.modifier_group_ids || []).map(String);
-                              const prodModifiers = masterModifierGroups
-                                ? masterModifierGroups.filter((g) => prodModifierIds.includes(String(g.id)))
-                                : [];
+                              const prodModifiers = modifierGroups.filter((g) => prodModifierIds.includes(String(g.id)));
                               if (prodModifiers.length === 0) return null;
                               return (
                                 <div className="mt-3 space-y-2">
@@ -442,56 +473,65 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
                                     Modifier (Pilihan Add-on):
                                   </p>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {prodModifiers.map((group) => (
-                                      <div
-                                        key={group.id}
-                                        className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5 bg-slate-50/50 dark:bg-slate-800/10"
-                                      >
-                                        <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400 mb-1.5">
-                                          {group.name} (
-                                          {group.selectType === 'MULTI' ? 'Multi-select' : 'Single-select'})
-                                        </p>
-                                        <div className="space-y-1.5">
-                                          {(group.options || []).map((opt) => {
-                                            const bomCost = (opt.bom || []).reduce((sum, b) => {
-                                              const mat = (materials || []).find((m) => m.id === b.materialId);
-                                              return sum + (mat ? mat.unitCost * b.qty : 0);
-                                            }, 0);
-                                            return (
-                                              <div
-                                                key={opt.id}
-                                                className="text-xs border-b border-slate-100 dark:border-slate-800 pb-1.5 last:border-0 last:pb-0"
-                                              >
-                                                <div className="flex justify-between font-medium">
-                                                  <span>{opt.name}</span>
-                                                  <span className="text-emerald-600 dark:text-emerald-400">
-                                                    +{formatCurrency(opt.additionalPrice)}
-                                                  </span>
-                                                </div>
-                                                {opt.bom && opt.bom.length > 0 && (
-                                                  <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 pl-2 border-l border-slate-200 dark:border-slate-700">
-                                                    <span>
-                                                      BOM:{' '}
-                                                      {opt.bom
-                                                        .map((b) => {
-                                                          const mat = (materials || []).find(
-                                                            (m) => m.id === b.materialId
-                                                          );
-                                                          return `${mat?.name || b.materialId} (${b.qty} ${mat?.unit || 'unit'})`;
-                                                        })
-                                                        .join(', ')}
-                                                    </span>
-                                                    <span className="block text-[9px] font-semibold text-indigo-500 mt-0.5">
-                                                      Est. HPP Material: {formatCurrency(bomCost)}
+                                    {prodModifiers.map((group) => {
+                                      const selectType = group.select_type || (group as any).selectType;
+                                      return (
+                                        <div
+                                          key={group.id}
+                                          className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5 bg-slate-50/50 dark:bg-slate-800/10"
+                                        >
+                                          <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400 mb-1.5">
+                                            {group.name} (
+                                            {selectType === 'MULTI' ? 'Multi-select' : 'Single-select'})
+                                          </p>
+                                          <div className="space-y-1.5">
+                                            {(group.options || []).map((opt: any) => {
+                                              const addPrice = opt.additional_price ?? opt.additionalPrice ?? 0;
+                                              const bomCost = opt.bom_cost ?? (opt.bom || []).reduce((sum: number, b: any) => {
+                                                const cost = b.unit_cost ?? b.unitCost ?? 0;
+                                                const qty = b.quantity ?? b.qty ?? 0;
+                                                return sum + (cost * qty);
+                                              }, 0);
+                                              return (
+                                                <div
+                                                  key={opt.id}
+                                                  className="text-xs border-b border-slate-100 dark:border-slate-800 pb-1.5 last:border-0 last:pb-0"
+                                                >
+                                                  <div className="flex justify-between font-medium">
+                                                    <span>{opt.name}</span>
+                                                    <span className="text-emerald-600 dark:text-emerald-400">
+                                                      +{formatCurrency(addPrice)}
                                                     </span>
                                                   </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
+                                                  {opt.bom && opt.bom.length > 0 && (
+                                                    <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 pl-2 border-l border-slate-200 dark:border-slate-700">
+                                                      <span>
+                                                        BOM:{' '}
+                                                        {opt.bom
+                                                          .map((b: any) => {
+                                                            const mId = String(b.material_id ?? b.materialId);
+                                                            const mat = (materials || []).find(
+                                                              (m) => String(m.id) === mId
+                                                            );
+                                                            const mName = b.material_name || mat?.name || mId;
+                                                            const mQty = b.quantity ?? b.qty ?? 0;
+                                                            const mUnit = b.material_unit || mat?.unit || 'unit';
+                                                            return `${mName} (${mQty} ${mUnit})`;
+                                                          })
+                                                          .join(', ')}
+                                                      </span>
+                                                      <span className="block text-[9px] font-semibold text-indigo-500 mt-0.5">
+                                                        Est. HPP Material: {formatCurrency(bomCost)}
+                                                      </span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );

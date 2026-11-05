@@ -99,6 +99,8 @@ export interface VariantType {
 export interface ProductVariantSKU {
   id: string;
   sku: string;
+  image?: string;
+  imageFile?: File | Blob;
   combination: Record<string, string>; // { "Warna": "Hitam", "Ukuran": "M" }
   price: number;
   estimatedHours: number;

@@ -24,6 +24,7 @@ export interface UserDetail {
   email: string;
   full_name: string;
   phone?: string;
+  avatar_url?: string;
   is_superadmin: boolean;
   is_active: boolean;
   is_ready: boolean;
@@ -36,6 +37,7 @@ export interface UserOption {
   full_name: string;
   email: string;
   phone?: string;
+  avatar_url?: string;
   is_ready: boolean;
   roles?: RoleSummaryItem[];
 }
@@ -50,13 +52,14 @@ export interface CreateUserPayload {
   email: string;
   password?: string | null;
   full_name: string;
-  phone?: string;
+  phone: string;
   role_id?: number;
   role_ids?: number[];
 }
 
 export interface UpdateUserPayload {
   full_name?: string;
+  email?: string;
   phone?: string;
   is_active?: boolean;
   is_ready?: boolean;

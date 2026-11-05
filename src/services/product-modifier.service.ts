@@ -16,6 +16,7 @@ export interface ProductModifierOptionRequest {
   name: string;
   additional_price: number;
   bom?: ProductModifierOptionBOMRequest[];
+  operation_ids?: number[];
 }
 
 export interface CreateProductModifierGroupPayload {
@@ -40,12 +41,25 @@ export interface ProductModifierOptionBOMResponse {
   quantity: number;
 }
 
+export interface ProductModifierOptionOperationResponse {
+  id: number;
+  operation_id: number;
+  name: string;
+  wage_type: string;
+  cost_per_hour: number;
+  fixed_cost: number;
+  standard_duration_minutes: number;
+  calculated_labor_cost: number;
+}
+
 export interface ProductModifierOptionResponse {
   id: number;
   name: string;
   additional_price: number;
   bom_cost?: number;
   bom: ProductModifierOptionBOMResponse[];
+  operation_ids?: number[];
+  operations?: ProductModifierOptionOperationResponse[];
 }
 
 export interface ProductModifierGroupResponse {

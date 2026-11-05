@@ -67,15 +67,29 @@ export interface PurchaseOrderResponse {
 export interface CreateProcurementItemRequest {
   material_id: number;
   qty: number;
-  unit_cost: number;
+  unit_cost?: number;
 }
 
 export interface CreateProcurementRequest {
+  supplier?: string;
+  purchase_type?: 'PO' | 'DIRECT';
+  bank_account_id?: number;
+  additional_cost?: number;
+  items: CreateProcurementItemRequest[];
+}
+
+export interface ProcessPOItemRequest {
+  material_id: number;
+  qty: number;
+  unit_cost: number;
+}
+
+export interface ProcessPORequest {
   supplier: string;
   purchase_type: 'PO' | 'DIRECT';
   bank_account_id?: number;
   additional_cost?: number;
-  items: CreateProcurementItemRequest[];
+  items: ProcessPOItemRequest[];
 }
 
 export interface ReceivePOItemRequest {
@@ -143,7 +157,7 @@ export const procurementService = {
 
   async orderPO(
     id: number | string,
-    payload?: Partial<CreateProcurementRequest>
+    payload?: ProcessPORequest | Partial<CreateProcurementRequest>
   ): Promise<ApiResponse<PurchaseOrderResponse>> {
     const response = await httpPut<PurchaseOrderResponse>(
       endpointUrl(`inventory/procurements/${id}/order`),

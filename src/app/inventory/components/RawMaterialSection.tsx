@@ -31,6 +31,10 @@ import {
   productionRoutingService,
   ProductionRoutingOption,
 } from '@/services/production-routing.service';
+import {
+  productionOperationService,
+  ProductionOperationOption,
+} from '@/services/production-operation.service';
 import { RawMaterialModal } from './RawMaterialModal';
 import { Edit2, Trash2 } from 'lucide-react';
 
@@ -61,8 +65,6 @@ export function RawMaterialSection({
   const { can } = usePermission();
   const {
     currentUser,
-    routings = [],
-    operations = [],
     setMaterialsList,
   } = useApp();
 
@@ -82,6 +84,7 @@ export function RawMaterialSection({
   // Options for select inputs
   const [categoryOptions, setCategoryOptions] = useState<MaterialCategoryOption[]>([]);
   const [routingOptions, setRoutingOptions] = useState<ProductionRoutingOption[]>([]);
+  const [operationOptions, setOperationOptions] = useState<ProductionOperationOption[]>([]);
   const [materialOptions, setMaterialOptions] = useState<MaterialOption[]>([]);
 
   const fetchMaterials = useCallback(async () => {
@@ -134,18 +137,40 @@ export function RawMaterialSection({
 
   const fetchOptions = useCallback(async () => {
     try {
-      const [catRes, rtRes, matOptRes] = await Promise.all([
+      const [catRes, rtRes, matOptRes, opOptRes] = await Promise.all([
         materialCategoryService.getCategoryOptions(),
         productionRoutingService.getRoutingOptions(),
         materialService.getMaterialOptions(),
+        productionOperationService.getOperationOptions(),
       ]);
       if (catRes.data) setCategoryOptions(catRes.data);
       if (rtRes.data) setRoutingOptions(rtRes.data);
       if (matOptRes.data) setMaterialOptions(matOptRes.data);
+      if (opOptRes.data) setOperationOptions(opOptRes.data);
     } catch (err) {
       console.error('Failed to fetch options for materials:', err);
     }
   }, []);
+
+  const mappedRoutings = useMemo(() => {
+    return routingOptions.map(r => ({
+      id: String(r.id),
+      name: r.name,
+      steps: (r.steps || []).map(s => ({
+        operationId: String(s.operation_id),
+      })),
+    }));
+  }, [routingOptions]);
+
+  const mappedOperations = useMemo(() => {
+    return operationOptions.map(o => ({
+      id: String(o.id),
+      costingMethod: (o.wage_type?.toLowerCase() === 'hourly' ? 'hourly' : 'fixed') as 'fixed' | 'hourly',
+      fixedLaborCost: o.calculated_labor_cost ?? 0,
+      laborCostPerHour: 0,
+      durationMinutes: o.standard_duration_minutes ?? 0,
+    }));
+  }, [operationOptions]);
 
   useEffect(() => {
     fetchMaterials();
@@ -406,8 +431,8 @@ export function RawMaterialSection({
         routingOptions={routingOptions}
         materialOptions={materialOptions}
         allMaterials={allAvailableMaterials}
-        allRoutings={routings}
-        allOperations={operations}
+        allRoutings={mappedRoutings as any}
+        allOperations={mappedOperations as any}
       />
     </>
   );

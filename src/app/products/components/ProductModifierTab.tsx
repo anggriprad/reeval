@@ -411,6 +411,21 @@ export function ProductModifierTab({
                                         Tidak membutuhkan bahan baku tambahan.
                                       </p>
                                     )}
+
+                                    {opt.operations && opt.operations.length > 0 && (
+                                      <div className="text-xs space-y-1 pl-2 border-l-2 border-indigo-200 dark:border-indigo-800 pt-1">
+                                        <p className="text-[10px] text-indigo-500 uppercase font-semibold">
+                                          Operasi Produksi:
+                                        </p>
+                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                          {opt.operations.map((op) => (
+                                            <Badge key={op.id || op.operation_id} variant="purple">
+                                              {op.name} ({op.standard_duration_minutes || 0} mnt)
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}

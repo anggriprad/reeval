@@ -32,6 +32,8 @@ export interface UserAccount {
   initials: string;
   email: string;
   phone?: string;
+  avatar_url?: string;
+  avatar?: string;
   is_superadmin?: boolean;
 }
 
@@ -146,6 +148,7 @@ const ALL_SYSTEM_ROUTES = [
   '/roles',
   '/customers',
   '/suppliers',
+  '/profile',
 ];
 
 // Menu Access Matrix per Role
@@ -271,6 +274,9 @@ export function isRouteAllowed(role: RoleType | string | string[] | undefined, p
     return role.some(r => isRouteAllowed(r, path));
   }
   const cleanPath = path.split('?')[0].split('#')[0] || '/';
+  if (cleanPath === '/profile' || cleanPath.startsWith('/profile')) {
+    return true;
+  }
   const upper = String(role).toUpperCase().trim();
   if (upper === 'SUPER_ADMIN' || upper === 'SUPERADMIN') {
     return true;

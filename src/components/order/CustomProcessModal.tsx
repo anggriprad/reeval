@@ -13,6 +13,8 @@ import { orderService, OrderCustomProcessItemDetail } from '@/services/order.ser
 import { materialService, MaterialOption } from '@/services/material.service';
 import { productionRoutingService, ProductionRoutingOption, ProductionRoutingItem } from '@/services/production-routing.service';
 import { productionOperationService, ProductionOperationOption } from '@/services/production-operation.service';
+import { finishedGoodService, FinishedGoodItem } from '@/services/finished-good.service';
+import { productService, ProductOption } from '@/services/product.service';
 import { SalesOrder, SalesOrderItem, CustomBomItem, CustomOperationItem, UnitCustomProcess } from '@/lib/types';
 import { formatVariantLabel, cn } from '@/lib/utils';
 import {
@@ -22,6 +24,7 @@ import {
   Copy,
   ChevronDown,
   ChevronUp,
+  Loader2,
 } from 'lucide-react';
 
 interface CustomProcessModalProps {
@@ -32,7 +35,7 @@ interface CustomProcessModalProps {
 }
 
 export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: CustomProcessModalProps) {
-  const { products, materials, routings, operations, finishedGoods, updateOrderCustomProcess } = useApp();
+  const { updateOrderCustomProcess } = useApp();
   const { toast } = useToast();
 
   const [activeItemIndex, setActiveItemIndex] = useState(0);
@@ -47,8 +50,11 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
   const [apiMaterials, setApiMaterials] = useState<MaterialOption[]>([]);
   const [apiRoutings, setApiRoutings] = useState<ProductionRoutingOption[]>([]);
   const [apiOperations, setApiOperations] = useState<ProductionOperationOption[]>([]);
+  const [apiFinishedGoods, setApiFinishedGoods] = useState<FinishedGoodItem[]>([]);
+  const [apiProducts, setApiProducts] = useState<ProductOption[]>([]);
   const [routingDetailsMap, setRoutingDetailsMap] = useState<Record<string, ProductionRoutingItem>>({});
   const [customDetailMap, setCustomDetailMap] = useState<Record<string, OrderCustomProcessItemDetail>>({});
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
   // Accordion toggle states
   const [isMaterialOpen, setIsMaterialOpen] = useState(true);
@@ -58,14 +64,17 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
   useEffect(() => {
     if (isOpen) {
       if (order?.id && Number(order.id) > 0) {
+        setIsLoadingDetail(true);
         orderService
           .getCustomProcessDetail(order.id)
           .then((res) => {
             if (res.success && res.data) {
               const map: Record<string, OrderCustomProcessItemDetail> = {};
-              (res.data.items || []).forEach((it) => {
+              (res.data.items || []).forEach((it, idx) => {
                 if (it.id) map[String(it.id)] = it;
                 map[`${it.productId}_${it.variantId || ''}`] = it;
+                map[`${it.productId}`] = it;
+                map[`idx_${idx}`] = it;
               });
               setCustomDetailMap(map);
 
@@ -114,6 +123,9 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
           })
           .catch((err) => {
             console.warn('Gagal memuat detail custom process dari backend:', err);
+          })
+          .finally(() => {
+            setIsLoadingDetail(false);
           });
       }
 
@@ -149,8 +161,54 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
         .catch((err) => {
           console.warn('Gagal memuat operation options dari backend:', err);
         });
+
+      finishedGoodService
+        .getFinishedGoods({ per_page: 500 })
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setApiFinishedGoods(res.data);
+          }
+        })
+        .catch(() => {});
+
+      productService
+        .getProductOptions()
+        .then((res) => {
+          if (res.success && Array.isArray(res.data)) {
+            setApiProducts(res.data);
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen]);
+
+  const effectiveFinishedGoods = useMemo(() => {
+    return apiFinishedGoods.map((fg) => ({
+      id: String(fg.id),
+      productName: fg.product_name,
+      variantLabel: fg.variant_label,
+      sku: fg.sku,
+      stock: fg.available_stock ?? fg.stock ?? 0,
+      price: fg.price,
+      unit: fg.unit || 'unit',
+    }));
+  }, [apiFinishedGoods]);
+
+  const effectiveProducts = useMemo(() => {
+    return apiProducts.map(p => ({
+      id: String(p.id),
+      name: p.name,
+      variants: (p.variants || []).map(v => ({
+        id: String(v.id),
+        sku: v.sku,
+        routingId: (v as any).routing_id || p.default_routing_id ? String((v as any).routing_id || p.default_routing_id) : undefined,
+        bom: (v.bom_items || (v as any).bom || []).map((b: any) => ({
+          materialId: String(b.material_id || b.materialId),
+          qty: b.quantity ?? b.qty ?? 1,
+        })),
+      })),
+    }));
+  }, [apiProducts]);
 
   // Effective materials: live API options only
   const effectiveMaterials = useMemo(() => {
@@ -219,13 +277,15 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
       const idStr = String(op.id);
       const isHourly = op.wage_type === 'HOURLY';
       const duration = op.standard_duration_minutes ?? 0;
-      const calcCost = op.calculated_labor_cost ?? 0;
+      const hourlyRate = (op as any).cost_per_hour ?? (op as any).costPerHour ?? 0;
+      const fixedCost = (op as any).fixed_cost ?? (op as any).fixedCost ?? 0;
+      const calcCost = op.calculated_labor_cost ?? (isHourly ? hourlyRate : fixedCost);
       opMap.set(idStr, {
         id: idStr,
         name: op.name,
         costingMethod: isHourly ? 'hourly' : 'fixed',
-        fixedLaborCost: isHourly ? 0 : calcCost,
-        laborCostPerHour: isHourly && duration > 0 ? (calcCost * 60) / duration : 0,
+        fixedLaborCost: isHourly ? 0 : (fixedCost || calcCost),
+        laborCostPerHour: isHourly ? (hourlyRate || (duration > 0 ? (calcCost * 60) / duration : 0)) : 0,
         durationMinutes: duration,
       });
     });
@@ -250,7 +310,10 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
 
   // Helper to build default master BOM for a single unit of a SalesOrderItem
   const getDefaultBomForItem = (item: SalesOrderItem): CustomBomItem[] => {
-    const detail = (item.id ? customDetailMap[String(item.id)] : null) || customDetailMap[`${item.productId}_${item.variantId || ''}`];
+    const detail = (item.id ? customDetailMap[String(item.id)] : null) ||
+      customDetailMap[`${item.productId}_${item.variantId || ''}`] ||
+      customDetailMap[`${item.productId}`];
+
     if (detail && Array.isArray(detail.defaultBom) && detail.defaultBom.length > 0) {
       return detail.defaultBom.map((b) => ({
         materialId: String(b.materialId),
@@ -259,40 +322,54 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
       }));
     }
 
-    const product = products.find(p => p.id === item.productId);
+    const product = effectiveProducts.find(p => String(p.id) === String(item.productId));
     const variant = item.variantId
-      ? product?.variants.find(v => v.id === item.variantId)
+      ? product?.variants.find(v => String(v.id) === String(item.variantId))
       : product?.variants[0];
 
-    const bomMap = new Map<string, number>();
+    const bomMap = new Map<string, { qty: number; itemType?: 'RAW_MATERIAL' | 'SUB_ASSEMBLY' | 'FINISHED_GOOD' }>();
 
     // 1. Variant Master BOM
     if (variant?.bom) {
-      variant.bom.forEach(b => {
-        bomMap.set(b.materialId, (bomMap.get(b.materialId) || 0) + b.qty);
+      variant.bom.forEach((b: any) => {
+        const matId = String(b.materialId || b.material_id || '');
+        const q = typeof b.qty === 'number' ? b.qty : (typeof b.quantity === 'number' ? b.quantity : parseFloat(b.qty || b.quantity) || 1);
+        if (matId) {
+          const cur = bomMap.get(matId);
+          bomMap.set(matId, { qty: (cur?.qty || 0) + q, itemType: b.itemType || 'RAW_MATERIAL' });
+        }
       });
     }
 
     // 2. Modifiers Master BOM
-    if (item.selectedModifiers && item.selectedModifiers.length > 0) {
+    if (item.selectedModifiers && Array.isArray(item.selectedModifiers) && item.selectedModifiers.length > 0) {
       item.selectedModifiers.forEach(group => {
-        group.selectedOptions.forEach(opt => {
-          opt.bom.forEach(b => {
-            bomMap.set(b.materialId, (bomMap.get(b.materialId) || 0) + b.qty);
+        (group.selectedOptions || []).forEach(opt => {
+          (opt.bom || []).forEach((b: any) => {
+            const matId = String(b.materialId || b.material_id || '');
+            const q = typeof b.qty === 'number' ? b.qty : (typeof b.quantity === 'number' ? b.quantity : parseFloat(b.qty || b.quantity) || 1);
+            if (matId) {
+              const cur = bomMap.get(matId);
+              bomMap.set(matId, { qty: (cur?.qty || 0) + q, itemType: b.itemType || 'RAW_MATERIAL' });
+            }
           });
         });
       });
     }
 
-    return Array.from(bomMap.entries()).map(([materialId, qty]) => ({
+    return Array.from(bomMap.entries()).map(([materialId, data]) => ({
       materialId,
-      qty,
+      qty: data.qty,
+      itemType: data.itemType,
     }));
   };
 
   // Helper to build default operation items for a single unit of a SalesOrderItem
   const getDefaultOperationsForItem = (item: SalesOrderItem): CustomOperationItem[] => {
-    const detail = (item.id ? customDetailMap[String(item.id)] : null) || customDetailMap[`${item.productId}_${item.variantId || ''}`];
+    const detail = (item.id ? customDetailMap[String(item.id)] : null) ||
+      customDetailMap[`${item.productId}_${item.variantId || ''}`] ||
+      customDetailMap[`${item.productId}`];
+
     if (detail && Array.isArray(detail.defaultOperations) && detail.defaultOperations.length > 0) {
       return detail.defaultOperations.map((o) => ({
         operationId: String(o.operationId),
@@ -303,27 +380,77 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
       }));
     }
 
-    const product = products.find(p => p.id === item.productId);
+    const product = effectiveProducts.find(p => String(p.id) === String(item.productId));
     const variant = item.variantId
-      ? product?.variants.find(v => v.id === item.variantId)
+      ? product?.variants.find(v => String(v.id) === String(item.variantId))
       : product?.variants[0];
 
-    if (!variant?.routingId) return [];
-    const routing = effectiveRoutings.find(r => String(r.id) === String(variant.routingId));
-    if (!routing) return [];
+    const ops: CustomOperationItem[] = [];
+    const seenOpIds = new Set<string>();
 
-    return routing.steps
-      .sort((a, b) => a.sequence - b.sequence)
-      .map(s => {
-        const op = effectiveOperations.find(o => String(o.id) === String(s.operationId));
-        return {
-          operationId: s.operationId,
-          costingMethod: s.costingMethod || op?.costingMethod || 'fixed',
-          fixedLaborCost: s.fixedLaborCost ?? op?.fixedLaborCost ?? 0,
-          laborCostPerHour: s.laborCostPerHour ?? op?.laborCostPerHour ?? 0,
-          durationMinutes: s.durationMinutes ?? op?.durationMinutes ?? 0,
-        };
+    if (variant?.routingId) {
+      const routing = effectiveRoutings.find(r => String(r.id) === String(variant.routingId));
+      if (routing) {
+        routing.steps
+          .sort((a, b) => a.sequence - b.sequence)
+          .forEach(s => {
+            const op = effectiveOperations.find(o => String(o.id) === String(s.operationId));
+            const opIdStr = String(s.operationId);
+            if (!seenOpIds.has(opIdStr)) {
+              seenOpIds.add(opIdStr);
+              ops.push({
+                operationId: opIdStr,
+                costingMethod: s.costingMethod || op?.costingMethod || 'fixed',
+                fixedLaborCost: s.fixedLaborCost ?? op?.fixedLaborCost ?? 0,
+                laborCostPerHour: s.laborCostPerHour ?? op?.laborCostPerHour ?? 0,
+                durationMinutes: s.durationMinutes ?? op?.durationMinutes ?? 0,
+              });
+            }
+          });
+      }
+    }
+
+    // Add operations from selected modifiers (if any option matches an operation name)
+    if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
+      item.selectedModifiers.forEach(g => {
+        (g.selectedOptions || []).forEach(opt => {
+          if ((opt as any).operations && Array.isArray((opt as any).operations)) {
+            (opt as any).operations.forEach((o: any) => {
+              const opIdStr = String(o.operationId || o.id);
+              if (opIdStr && !seenOpIds.has(opIdStr)) {
+                seenOpIds.add(opIdStr);
+                ops.push({
+                  operationId: opIdStr,
+                  costingMethod: o.costingMethod || 'fixed',
+                  fixedLaborCost: o.fixedLaborCost ?? 0,
+                  laborCostPerHour: o.laborCostPerHour ?? 0,
+                  durationMinutes: o.durationMinutes ?? 0,
+                });
+              }
+            });
+          }
+          const optName = (opt.name || '').toLowerCase().trim();
+          if (optName) {
+            const matched = effectiveOperations.find(o => {
+              const opName = o.name.toLowerCase().trim();
+              return opName === optName || opName.includes(optName) || optName.includes(opName);
+            });
+            if (matched && !seenOpIds.has(String(matched.id))) {
+              seenOpIds.add(String(matched.id));
+              ops.push({
+                operationId: String(matched.id),
+                costingMethod: matched.costingMethod,
+                fixedLaborCost: matched.fixedLaborCost,
+                laborCostPerHour: matched.laborCostPerHour,
+                durationMinutes: matched.durationMinutes,
+              });
+            }
+          }
+        });
       });
+    }
+
+    return ops;
   };
 
   // Helper to check if custom BOM matches default master BOM
@@ -374,7 +501,9 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
 
   // Helper to build the initial UnitCustomProcess[] for an item
   const getInitialUnitsForItem = (item: SalesOrderItem): UnitCustomProcess[] => {
-    const detail = (item.id ? customDetailMap[String(item.id)] : null) || customDetailMap[`${item.productId}_${item.variantId || ''}`];
+    const detail = (item.id ? customDetailMap[String(item.id)] : null) ||
+      customDetailMap[`${item.productId}_${item.variantId || ''}`] ||
+      customDetailMap[`${item.productId}`];
     const defaultBom = getDefaultBomForItem(item);
     const defaultOps = getDefaultOperationsForItem(item);
     const units: UnitCustomProcess[] = [];
@@ -392,10 +521,11 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
     for (let u = 1; u <= item.qty; u++) {
       const existing = existingUnitProcesses?.find((x: any) => x.unitIndex === u);
       if (existing) {
-        const ops: CustomOperationItem[] = existing.customOperations
+        const ops: CustomOperationItem[] = (existing.customOperations && existing.customOperations.length > 0)
           ? structuredClone(existing.customOperations)
-          : (existing.customOperationIds || []).map((opId: string) => {
-              const op = operations.find(o => o.id === opId);
+          : (existing.customOperationIds && existing.customOperationIds.length > 0)
+          ? (existing.customOperationIds || []).map((opId: string) => {
+              const op = effectiveOperations.find(o => String(o.id) === String(opId));
               return {
                 operationId: opId,
                 costingMethod: op?.costingMethod || 'fixed',
@@ -403,10 +533,13 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
                 laborCostPerHour: op?.laborCostPerHour || 0,
                 durationMinutes: op?.durationMinutes || 0,
               };
-            });
+            })
+          : structuredClone(defaultOps);
 
-        const customBom = existing.customBom ? structuredClone(existing.customBom) : structuredClone(defaultBom);
-        const customOperations = ops.length > 0 ? ops : structuredClone(defaultOps);
+        const customBom = (existing.customBom && existing.customBom.length > 0)
+          ? structuredClone(existing.customBom)
+          : structuredClone(defaultBom);
+        const customOperations = (ops.length > 0) ? ops : structuredClone(defaultOps);
         const isCustom = checkIfUnitIsCustomized(item, { customBom, customOperations });
 
         units.push({
@@ -417,10 +550,11 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
           customOperations,
         });
       } else if (itemIsCustomized) {
-        const ops: CustomOperationItem[] = itemCustomOps
+        const ops: CustomOperationItem[] = (itemCustomOps && itemCustomOps.length > 0)
           ? structuredClone(itemCustomOps)
-          : (item.customOperationIds || []).map(opId => {
-              const op = operations.find(o => o.id === opId);
+          : (item.customOperationIds && item.customOperationIds.length > 0)
+          ? (item.customOperationIds || []).map(opId => {
+              const op = effectiveOperations.find(o => String(o.id) === String(opId));
               return {
                 operationId: opId,
                 costingMethod: op?.costingMethod || 'fixed',
@@ -428,7 +562,8 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
                 laborCostPerHour: op?.laborCostPerHour || 0,
                 durationMinutes: op?.durationMinutes || 0,
               };
-            });
+            })
+          : structuredClone(defaultOps);
 
         const customBom = (itemCustomBom && itemCustomBom.length > 0) ? structuredClone(itemCustomBom) : structuredClone(defaultBom);
         const customOperations = ops.length > 0 ? ops : structuredClone(defaultOps);
@@ -581,7 +716,7 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
     const targetUnit = targetItem.unitCustomProcesses?.find(u => u.unitIndex === activeUnitIndex);
     if (!targetUnit) return;
 
-    const isFinishedGood = finishedGoods.some(fg => fg.id === selectedNewMaterialId);
+    const isFinishedGood = effectiveFinishedGoods.some(fg => fg.id === selectedNewMaterialId);
     const targetMat = effectiveMaterials.find(m => String(m.id) === String(selectedNewMaterialId));
     const itemType = isFinishedGood ? 'FINISHED_GOOD' : (targetMat?.isSubAssembly ? 'SUB_ASSEMBLY' : 'RAW_MATERIAL');
 
@@ -894,13 +1029,13 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
     }
   };
 
-  if (!isOpen || !activeItem || !activeUnit) return null;
+  if (!isOpen) return null;
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Kustom Proses — ${order.orderNumber}`}
+      title={`Kustom Proses — ${order?.orderNumber || ''}`}
       description="Penyesuaian kebutuhan material dan alur produksi SPK"
       size="lg"
       sheetHeight="full"
@@ -909,13 +1044,19 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
           <Button variant="outline" onClick={onClose}>
             Batal
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={!isFormValid}>
+          <Button variant="primary" onClick={handleSave} disabled={isLoadingDetail || !isFormValid}>
             Simpan Perubahan
           </Button>
         </>
       }
     >
-      <div className="space-y-4 text-[13.5px] md:text-xs">
+      {isLoadingDetail || !activeItem || !activeUnit ? (
+        <div className="flex flex-col items-center justify-center py-24 space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+          <p className="text-xs text-slate-500 font-medium">Memuat rincian alur proses dan BOM...</p>
+        </div>
+      ) : (
+        <div className="space-y-4 text-[13.5px] md:text-xs">
         {/* 1. SEGMEN ITEM PRODUK DI ATAS (CARD & FONT LEBIH LEGA) */}
         <div className="space-y-2.5">
           {itemsState.length > 1 && (
@@ -1049,7 +1190,7 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
               <div className="space-y-1.5">
                 {(activeUnit.customBom || []).map((bomItem, bIdx) => {
                   const mat = effectiveMaterials.find(m => String(m.id) === String(bomItem.materialId));
-                  const fg = !mat ? finishedGoods.find(f => String(f.id) === String(bomItem.materialId)) : null;
+                  const fg = !mat ? effectiveFinishedGoods.find(f => String(f.id) === String(bomItem.materialId)) : null;
                   const unitLabel = mat?.unit || fg?.unit || 'unit';
 
                   return (
@@ -1141,7 +1282,7 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
                           {m.name} ({m.code})
                         </option>
                       ))}
-                    {finishedGoods
+                    {effectiveFinishedGoods
                       .filter(fg => (fg.stock || 0) > 0 && !existingMaterialIds.has(String(fg.id)))
                       .map(fg => (
                         <option key={fg.id} value={String(fg.id)}>
@@ -1320,7 +1461,8 @@ export function CustomProcessModal({ isOpen, onClose, onSuccess, order }: Custom
             </div>
           )}
         </div>
-      </div>
+        </div>
+      )}
     </Modal>
   );
 }

@@ -6,12 +6,15 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { UserForm, UserFormData } from '../../components/UserForm';
 import { roleService, RoleSummary, PermissionItem } from '@/services/role.service';
 import { userService, UserDetail } from '@/services/user.service';
+import { authService } from '@/services/auth.service';
 import { useToast } from '@/context/ToastContext';
+import { useApp } from '@/context/AppContext';
 
 export default function EditUserPage() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
+  const { currentUser } = useApp();
 
   const idStr = Array.isArray(params.id) ? params.id[0] : params.id;
   const userId = idStr ? parseInt(idStr, 10) : NaN;
@@ -81,9 +84,13 @@ export default function EditUserPage() {
     try {
       setIsSubmitting(true);
 
+      const emailChanged = Boolean(user?.email && formData.email.trim().toLowerCase() !== user.email.trim().toLowerCase());
+      const isSelf = Boolean(currentUser && (String(currentUser.id) === String(userId) || currentUser.email === user?.email));
+
       const [updateRes, assignRes] = await Promise.all([
         userService.updateUser(userId, {
           full_name: formData.full_name,
+          email: formData.email,
           phone: formData.phone,
           is_active: formData.is_active,
           is_ready: formData.is_ready,
@@ -96,6 +103,14 @@ export default function EditUserPage() {
 
       if (!updateRes.success) {
         toast.error('Gagal Memperbarui Profil', updateRes.message || 'Gagal memperbarui profil pengguna.');
+        return;
+      }
+
+      if (emailChanged && isSelf) {
+        toast.info('Email Diubah', 'Email akun Anda telah diubah. Sesi Anda telah berakhir, silakan login kembali.');
+        setTimeout(() => {
+          authService.logout();
+        }, 1200);
         return;
       }
 
