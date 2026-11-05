@@ -18,11 +18,12 @@ import {
   ProductionOperationOption,
 } from '@/services/production-operation.service';
 import type { ProductionRouting, RoutingStep } from '@/lib/types';
-import { ConfigSection } from './ConfigSection';
+import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { formatCurrency } from '@/lib/utils';
 import {
   Layers,
@@ -368,7 +369,7 @@ export function ProductionRoutingSection() {
         title="Template Alur Produksi (Routing)"
         description={`Kelola susunan urutan tahap operasi untuk pembuatan varian produk. (${countDisplay} Template Alur)`}
         icon={Layers}
-        iconWrapperClass="bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400"
+
         isControlled={true}
         isExpandedControlled={isExpanded}
         defaultExpanded={false}
@@ -380,7 +381,7 @@ export function ProductionRoutingSection() {
           }
         }}
       >
-        <div className="pt-4 space-y-4">
+        <div className="space-y-4">
           {/* Top Bar: Search Input (Left) + Create Button (Right) */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <Input
@@ -399,11 +400,26 @@ export function ProductionRoutingSection() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {routings.length === 0 ? (
-              <div className="col-span-full rounded-xl border border-slate-200 bg-slate-50 p-8 text-center text-xs text-slate-400 dark:border-slate-800 dark:bg-slate-800/40">
-                {isLoading
-                  ? 'Memuat data template alur produksi...'
-                  : 'Belum ada template alur produksi. Klik "Buat Alur Produksi" untuk membuat.'}
+            {isLoading ? (
+              <div className="col-span-full py-12 text-center">
+                <div className="flex flex-col items-center justify-center space-y-2.5">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent dark:border-indigo-400" />
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Memuat data template alur produksi...
+                  </span>
+                </div>
+              </div>
+            ) : routings.length === 0 ? (
+              <div className="col-span-full py-8">
+                <EmptyState
+                  title={filters.rt_search ? 'Alur Produksi Tidak Ditemukan' : 'Belum Ada Alur Produksi'}
+                  description={
+                    filters.rt_search
+                      ? `Tidak ada template alur produksi yang cocok dengan "${filters.rt_search}".`
+                      : 'Belum ada template alur produksi terdaftar. Klik "Buat Alur Produksi" untuk membuat.'
+                  }
+                  variant="plain"
+                />
               </div>
             ) : (
               routings.map((rt) => {

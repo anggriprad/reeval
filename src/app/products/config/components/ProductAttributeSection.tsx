@@ -11,7 +11,7 @@ import {
   productAttributeService,
   ProductAttributeItem,
 } from '@/services/product-attribute.service';
-import { ConfigSection } from './ConfigSection';
+import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -247,7 +247,7 @@ export function ProductAttributeSection() {
       title="Master Atribut Varian"
       description="Kelola atribut master seperti Ukuran, Warna, Finishing, dan Material yang digunakan pada produk."
       icon={Tag}
-      iconWrapperClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+
       defaultExpanded={false}
       isControlled={true}
       isExpandedControlled={isExpanded}

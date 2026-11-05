@@ -23,6 +23,7 @@ interface OrderInfiniteListProps {
   canUpdate: boolean;
   canCustom: boolean;
   canDelete: boolean;
+  canApproveDelete?: boolean;
   onProcessOrder: (orderId: string) => void;
   onOpenCancelModal: (orderId: string) => void;
   onOpenCustomProcessModal: (order: SalesOrder) => void;
@@ -45,6 +46,7 @@ export function OrderInfiniteList({
   canUpdate,
   canCustom,
   canDelete,
+  canApproveDelete = false,
   onProcessOrder,
   onOpenCancelModal,
   onOpenCustomProcessModal,
@@ -164,6 +166,7 @@ export function OrderInfiniteList({
             canUpdate={canUpdate}
             canCustom={canCustom}
             canDelete={canDelete}
+            canApproveDelete={canApproveDelete}
             onProcessOrder={onProcessOrder}
             onOpenCancelModal={onOpenCancelModal}
             onOpenCustomProcessModal={onOpenCustomProcessModal}

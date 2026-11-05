@@ -11,7 +11,7 @@ import {
   bomPresetService,
   BOMPresetResponse,
 } from '@/services/bom-preset.service';
-import { ConfigSection } from './ConfigSection';
+import { ConfigSection } from '@/components/ui/ConfigSection';
 import { BomPresetModal } from './BomPresetModal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -216,7 +216,7 @@ export function BomPresetSection() {
         title="Master Preset BOM"
         description="Kelola resep material standar yang dapat di-clone ke varian produk saat pembuatan katalog."
         icon={FileSpreadsheet}
-        iconWrapperClass="bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400"
+
         defaultExpanded={false}
         onToggle={handleToggleExpand}
       >

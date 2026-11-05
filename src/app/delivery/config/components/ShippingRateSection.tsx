@@ -12,7 +12,7 @@ import {
   Regency,
   District,
 } from '@/services/shipping-rate.service';
-import { ConfigSection } from './ConfigSection';
+import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Toggle } from '@/components/ui/Toggle';
@@ -375,7 +375,7 @@ export function ShippingRateSection() {
       title="Atur Ongkos Kirim"
       description="Tarif pengiriman toko flat atau per kecamatan."
       icon={MapPin}
-      iconWrapperClass="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400"
+
       isControlled={true}
       isExpandedControlled={isEnabled}
       hideChevron={true}

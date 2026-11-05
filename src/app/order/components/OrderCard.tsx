@@ -81,6 +81,7 @@ interface OrderCardProps {
   canUpdate?: boolean;
   canCustom?: boolean;
   canDelete?: boolean;
+  canApproveDelete?: boolean;
   onProcessOrder?: (orderId: string) => void;
   onOpenCancelModal?: (orderId: string) => void;
   onOpenCustomProcessModal?: (order: SalesOrder) => void;
@@ -97,6 +98,7 @@ export function OrderCard({
   canUpdate = false,
   canCustom = false,
   canDelete = false,
+  canApproveDelete = false,
   onProcessOrder,
   onOpenCancelModal,
   onOpenCustomProcessModal,
@@ -122,29 +124,50 @@ export function OrderCard({
       });
     }
   }
-  if ((order.status === 'PENDING' || order.status === 'PROCESSING') && canDelete && onOpenCancelModal) {
-    actionMenuItems.push({
-      label: 'Batalkan Order',
-      icon: <XCircle className="h-3.5 w-3.5" />,
-      variant: 'danger' as const,
-      onClick: () => onOpenCancelModal(order.id),
-    });
-  }
-  if (order.status === 'WAITING_CANCEL_APPROVAL' && canApprove) {
-    if (onApproveCancel) {
+  const hasCancelRequest = Boolean(order.cancelRequest) || order.status === 'WAITING_CANCEL_APPROVAL';
+  const isPending = order.status === 'PENDING';
+  const isProcessing = order.status === 'PROCESSING';
+
+  if (hasCancelRequest) {
+    if ((canApprove || canApproveDelete) && onApproveCancel) {
       actionMenuItems.push({
         label: 'Setujui Pembatalan',
-        icon: <CheckCircle className="h-3.5 w-3.5 text-red-600" />,
+        icon: <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />,
         variant: 'danger' as const,
         onClick: () => onApproveCancel(order.id),
       });
     }
-    if (onRejectCancel) {
+    if ((canApprove || canApproveDelete) && onRejectCancel) {
       actionMenuItems.push({
         label: 'Tolak Pembatalan',
         icon: <XCircle className="h-3.5 w-3.5 text-slate-600" />,
         onClick: () => onRejectCancel(order.id),
       });
+    }
+  } else {
+    if (isPending && (canDelete || canApproveDelete) && onOpenCancelModal) {
+      actionMenuItems.push({
+        label: 'Batalkan Order',
+        icon: <XCircle className="h-3.5 w-3.5" />,
+        variant: 'danger' as const,
+        onClick: () => onOpenCancelModal(order.id),
+      });
+    } else if (isProcessing && onOpenCancelModal) {
+      if (canApproveDelete) {
+        actionMenuItems.push({
+          label: 'Batalkan Order',
+          icon: <XCircle className="h-3.5 w-3.5" />,
+          variant: 'danger' as const,
+          onClick: () => onOpenCancelModal(order.id),
+        });
+      } else if (canDelete) {
+        actionMenuItems.push({
+          label: 'Ajukan Pembatalan',
+          icon: <XCircle className="h-3.5 w-3.5 text-amber-600" />,
+          variant: 'danger' as const,
+          onClick: () => onOpenCancelModal(order.id),
+        });
+      }
     }
   }
 
@@ -169,6 +192,11 @@ export function OrderCard({
             {order.items.some((i) => i.isBomCustomized) && (
               <Badge variant="purple">Kustom Proses</Badge>
             )}
+            {hasCancelRequest && (
+                <Badge className="bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800">
+                  Menunggu Batal
+                </Badge>
+              )}
             {order.complaints &&
               order.complaints.some((c) => c.status !== 'SELESAI' && c.status !== 'DITOLAK') && (
                 <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-900">

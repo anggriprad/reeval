@@ -9,20 +9,9 @@ import {
   materialCategoryService,
   MaterialCategory,
 } from '@/services/material-category.service';
-import { ConfigSection } from './ConfigSection';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import {
-  Warehouse,
-  Plus,
-  Trash2,
-  Edit2,
-  X,
-  Check,
-  GripVertical,
-} from 'lucide-react';
+import { ConfigSection } from '@/components/ui/ConfigSection';
+import { ReorderableList } from '@/components/ui/ReorderableList';
+import { Warehouse } from 'lucide-react';
 
 export function MaterialCategorySection() {
   const { toast, confirm } = useToast();
@@ -36,25 +25,13 @@ export function MaterialCategorySection() {
     reorderMaterialCategories,
   } = useApp();
 
-  const [isMounted, setIsMounted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [categories, setCategories] = useState<MaterialCategory[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const hasFetchedRef = useRef(false);
   const isFetchingRef = useRef(false);
 
-  // Add state
-  const [showAddMaterialCat, setShowAddMaterialCat] = useState(false);
-  const [newMaterialCat, setNewMaterialCat] = useState('');
-  const [isSavingAdd, setIsSavingAdd] = useState(false);
-
-  // Edit state
-  const [editingMaterialCat, setEditingMaterialCat] = useState<number | null>(null);
-  const [editMaterialCatValue, setEditMaterialCatValue] = useState('');
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
-
   useEffect(() => {
-    setIsMounted(true);
     loadCategories();
   }, []);
 
@@ -101,22 +78,18 @@ export function MaterialCategorySection() {
     }
   };
 
-  const handleAddMaterialCategory = async () => {
-    const trimmed = newMaterialCat.trim();
-    if (!trimmed) return;
-
-    if (categories.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
-      toast.error('Kategori Sudah Ada', `Kategori "${trimmed}" sudah terdaftar.`);
-      return;
+  const handleAddCategory = async (name: string) => {
+    if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+      toast.error('Kategori Sudah Ada', `Kategori "${name}" sudah terdaftar.`);
+      return false;
     }
 
     try {
-      setIsSavingAdd(true);
-      const res = await materialCategoryService.createCategory({ name: trimmed });
+      const res = await materialCategoryService.createCategory({ name });
       const newCat: MaterialCategory = res.data || {
         id: Date.now(),
         company_id: 1,
-        name: trimmed,
+        name,
         sort_order: categories.length + 1,
         can_delete: true,
         is_active: true,
@@ -125,56 +98,49 @@ export function MaterialCategorySection() {
       };
 
       setCategories((prev) => [...prev, newCat]);
-      addMaterialCategory(trimmed);
-      toast.success('Kategori Ditambahkan', `Kategori bahan baku "${trimmed}" berhasil ditambahkan.`);
-      setNewMaterialCat('');
-      setShowAddMaterialCat(false);
+      addMaterialCategory(name);
+      toast.success('Kategori Ditambahkan', `Kategori bahan baku "${name}" berhasil ditambahkan.`);
+      return true;
     } catch (err: any) {
       toast.error('Gagal Menambahkan Kategori', err?.message || 'Terjadi kesalahan pada server.');
-    } finally {
-      setIsSavingAdd(false);
+      return false;
     }
   };
 
-  const handleUpdateMaterialCategory = async (catId: number, oldName: string) => {
-    const trimmed = editMaterialCatValue.trim();
-    if (!trimmed) return;
-
+  const handleUpdateCategory = async (catId: string | number, newName: string, item: MaterialCategory) => {
+    const numericId = Number(catId);
     const isDuplicateOther = categories.some(
-      (c) => c.id !== catId && c.name.toLowerCase() === trimmed.toLowerCase()
+      (c) => c.id !== numericId && c.name.toLowerCase() === newName.toLowerCase()
     );
     if (isDuplicateOther) {
-      toast.error('Kategori Sudah Ada', `Kategori "${trimmed}" sudah terdaftar.`);
-      return;
+      toast.error('Kategori Sudah Ada', `Kategori "${newName}" sudah terdaftar.`);
+      return false;
     }
 
     try {
-      setIsSavingEdit(true);
-      const res = await materialCategoryService.updateCategory(catId, { name: trimmed });
+      const res = await materialCategoryService.updateCategory(numericId, { name: newName });
       const updatedCat = res.data || {
-        ...categories.find((c) => c.id === catId)!,
-        name: trimmed,
+        ...categories.find((c) => c.id === numericId)!,
+        name: newName,
       };
 
-      setCategories((prev) => prev.map((c) => (c.id === catId ? updatedCat : c)));
-      updateMaterialCategory(oldName, trimmed);
-      toast.success('Kategori Diperbarui', `Kategori "${oldName}" berhasil diubah menjadi "${trimmed}".`);
-      setEditingMaterialCat(null);
-      setEditMaterialCatValue('');
+      setCategories((prev) => prev.map((c) => (c.id === numericId ? updatedCat : c)));
+      updateMaterialCategory(item.name, newName);
+      toast.success('Kategori Diperbarui', `Kategori "${item.name}" berhasil diubah menjadi "${newName}".`);
+      return true;
     } catch (err: any) {
       toast.error('Gagal Memperbarui Kategori', err?.message || 'Terjadi kesalahan pada server.');
-    } finally {
-      setIsSavingEdit(false);
+      return false;
     }
   };
 
-  const handleDeleteMaterialCategory = async (cat: MaterialCategory) => {
+  const handleDeleteCategory = async (cat: MaterialCategory) => {
     const count =
       cat.material_count !== undefined
         ? cat.material_count
         : materials.filter(
-            (m) => m.category.toLowerCase() === cat.name.toLowerCase()
-          ).length;
+          (m) => m.category.toLowerCase() === cat.name.toLowerCase()
+        ).length;
 
     if (cat.can_delete === false || count > 0) {
       toast.error(
@@ -203,14 +169,7 @@ export function MaterialCategorySection() {
     }
   };
 
-  const handleDragEndMaterial = async (result: DropResult) => {
-    if (!result.destination) return;
-    if (result.destination.index === result.source.index) return;
-
-    const updated = Array.from(categories);
-    const [removed] = updated.splice(result.source.index, 1);
-    updated.splice(result.destination.index, 0, removed);
-
+  const handleReorderCategories = async (updated: MaterialCategory[]) => {
     setCategories(updated);
     reorderMaterialCategories(updated.map((c) => c.name));
 
@@ -226,223 +185,40 @@ export function MaterialCategorySection() {
   const canUpdate = can(PERMISSIONS.INVENTORY.CATEGORY_UPDATE);
   const canDelete = can(PERMISSIONS.INVENTORY.CATEGORY_DELETE);
 
+  const displayItems = categories.map((cat) => ({
+    ...cat,
+    count:
+      cat.material_count !== undefined
+        ? cat.material_count
+        : materials.filter(
+          (m) => m.category.toLowerCase() === cat.name.toLowerCase()
+        ).length,
+  }));
+
   return (
     <ConfigSection
       title="Kategori Bahan Baku"
       description="Kelola pengelompokan kategori master bahan baku & material gudang. Geser item untuk mengubah urutan."
       icon={Warehouse}
-      iconWrapperClass="bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400"
       defaultExpanded={false}
       isExpanded={isExpanded}
       onToggle={handleToggle}
       isLoading={isLoading}
     >
-      <div className="pt-2.5 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500">
-            {isLoading ? 'Memuat kategori...' : `${categories.length} Kategori Terdaftar`}
-          </span>
-          {canCreate && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setShowAddMaterialCat(true);
-                setEditingMaterialCat(null);
-                setNewMaterialCat('');
-              }}
-              disabled={isLoading || showAddMaterialCat || !!editingMaterialCat}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" /> Tambah Kategori Bahan
-            </Button>
-          )}
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          {/* Header List */}
-          <div className="flex items-center bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs font-semibold border-b border-slate-200 dark:border-slate-800">
-            <div className="w-8 px-2 py-2 text-center shrink-0"></div>
-            <div className="flex-1 px-3.5 py-2">Nama Kategori</div>
-            <div className="w-36 px-3.5 py-2 text-center shrink-0">Jumlah Material</div>
-            <div className="w-24 px-3.5 py-2 text-right shrink-0">Aksi</div>
-          </div>
-
-          {/* Body: Loading / Droppable Body / Empty State */}
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-12 space-y-2.5">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent dark:border-indigo-400" />
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Memuat kategori bahan baku...
-              </span>
-            </div>
-          ) : (
-            <>
-              {isMounted && (
-                <DragDropContext onDragEnd={handleDragEndMaterial}>
-                  <Droppable droppableId="material-categories-list" isDropDisabled={!canUpdate}>
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`divide-y divide-slate-100 dark:divide-slate-800/60 ${snapshot.isDraggingOver ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''
-                          }`}
-                      >
-                        {categories.map((cat, idx) => {
-                          const materialCount =
-                            cat.material_count !== undefined
-                              ? cat.material_count
-                              : materials.filter(
-                                  (m) => m.category.toLowerCase() === cat.name.toLowerCase()
-                                ).length;
-                          const isEditing = editingMaterialCat === cat.id;
-
-                          return (
-                            <Draggable
-                              key={String(cat.id)}
-                              draggableId={`mat-${cat.id}`}
-                              index={idx}
-                              isDragDisabled={isEditing || !canUpdate}
-                            >
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  className={`flex items-center justify-between px-3.5 py-2 bg-white dark:bg-slate-900 ${snapshot.isDragging
-                                    ? 'shadow-md border-y border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/50 z-50'
-                                    : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'
-                                    }`}
-                                >
-                                  {isEditing ? (
-                                    <div className="flex items-center gap-2 w-full py-0.5">
-                                      <Input
-                                        autoFocus
-                                        placeholder="Nama Kategori"
-                                        value={editMaterialCatValue}
-                                        onChange={(e) => setEditMaterialCatValue(e.target.value)}
-                                        inputSize="sm"
-                                      />
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        <Button
-                                          size="sm"
-                                          variant="success"
-                                          onClick={() => handleUpdateMaterialCategory(cat.id, cat.name)}
-                                          isLoading={isSavingEdit}
-                                        >
-                                          <Check className="h-3.5 w-3.5 mr-1" /> Simpan
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => setEditingMaterialCat(null)}
-                                        >
-                                          <X className="h-4 w-4" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div className="w-8 px-1 text-center shrink-0">
-                                        {canUpdate ? (
-                                          <div
-                                            {...provided.dragHandleProps}
-                                            className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-grab active:cursor-grabbing inline-block shrink-0"
-                                          >
-                                            <GripVertical className="h-4 w-4" />
-                                          </div>
-                                        ) : (
-                                          <span className="text-[11px] text-slate-400 font-mono">
-                                            {idx + 1}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="flex-1 px-1 text-xs font-medium text-slate-900 dark:text-slate-200 truncate">
-                                        {cat.name}
-                                      </div>
-                                      <div className="w-36 px-1 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">
-                                        {materialCount} Material
-                                      </div>
-                                      <div className="w-24 px-1 text-right shrink-0">
-                                        <div className="flex items-center justify-end gap-0.5">
-                                          {canUpdate && (
-                                            <Button
-                                              variant="ghost"
-                                              onClick={() => {
-                                                setEditingMaterialCat(cat.id);
-                                                setEditMaterialCatValue(cat.name);
-                                                setShowAddMaterialCat(false);
-                                              }}
-                                              disabled={showAddMaterialCat}
-                                              title="Edit Kategori"
-                                              className="h-7 w-7 p-0"
-                                            >
-                                              <Edit2 className="h-3.5 w-3.5 text-slate-500" />
-                                            </Button>
-                                          )}
-                                          {canDelete && (
-                                            <Button
-                                              variant="ghost"
-                                              onClick={() => handleDeleteMaterialCategory(cat)}
-                                              disabled={showAddMaterialCat}
-                                              title="Hapus Kategori"
-                                              className="h-7 w-7 p-0"
-                                            >
-                                              <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                            </Draggable>
-                          );
-                        })}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </DragDropContext>
-              )}
-
-              {showAddMaterialCat && (
-                <div className="p-2 px-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      autoFocus
-                      placeholder="Nama Kategori Bahan Baku Baru..."
-                      value={newMaterialCat}
-                      onChange={(e) => setNewMaterialCat(e.target.value)}
-                      inputSize="sm"
-                    />
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="success"
-                        onClick={handleAddMaterialCategory}
-                        disabled={!newMaterialCat.trim()}
-                        isLoading={isSavingAdd}
-                      >
-                        <Check className="h-3.5 w-3.5 mr-1" /> Simpan
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setShowAddMaterialCat(false)}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {categories.length === 0 && !showAddMaterialCat && (
-                <EmptyState
-                  title="Belum Ada Kategori"
-                  description="Belum ada kategori bahan baku terdaftar."
-                  variant="plain"
-                />
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      <ReorderableList
+        items={displayItems}
+        isLoading={isLoading}
+        entityName="Kategori"
+        countUnitLabel="Material"
+        canCreate={canCreate}
+        canUpdate={canUpdate}
+        canDelete={canDelete}
+        onAdd={handleAddCategory}
+        onUpdate={handleUpdateCategory}
+        onDelete={handleDeleteCategory}
+        onReorder={handleReorderCategories}
+        droppableId="material-categories-list"
+      />
     </ConfigSection>
   );
 }

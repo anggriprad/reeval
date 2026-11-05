@@ -11,7 +11,7 @@ import {
   productCategoryService,
   ProductCategoryItem,
 } from '@/services/product-category.service';
-import { ConfigSection } from './ConfigSection';
+import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
@@ -245,7 +245,7 @@ export function ProductCategorySection() {
       title="Master Kategori Produk"
       description="Kelola daftar kategori untuk pengelompokan produk di katalog."
       icon={FolderTree}
-      iconWrapperClass="bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400"
+
       defaultExpanded={false}
       isControlled={true}
       isExpandedControlled={isExpanded}

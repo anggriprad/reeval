@@ -125,6 +125,13 @@ export function WorkOrderCard({
         (w) => w.salesOrderId === wo.salesOrderId && w.isSubAssembly && w.status !== 'COMPLETED'
       );
 
+    const isFromSO = Boolean(
+      (wo.salesOrderId && wo.salesOrderId !== 'INTERNAL-SA' && wo.salesOrderId !== 'INTERNAL-PROD') ||
+      (wo.salesOrderNumber && wo.salesOrderNumber !== 'INTERNAL-SA' && wo.salesOrderNumber !== 'INTERNAL-PROD')
+    );
+    const isFromComplaint = Boolean(wo.isComplaintReplacement || wo.complaintId);
+    const isManualSPK = !isFromSO && !isFromComplaint;
+
     const spkActionMenuItems = [
       ...(canKPI
         ? [
@@ -135,7 +142,7 @@ export function WorkOrderCard({
             },
           ]
         : []),
-      ...(canCancel && onOpenCancel
+      ...(canCancel && onOpenCancel && isManualSPK
         ? [
             {
               label: 'Batalkan SPK',
