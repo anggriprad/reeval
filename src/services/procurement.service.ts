@@ -53,6 +53,8 @@ export interface PurchaseOrderResponse {
   created_by_id?: number | null;
   created_by: string;
   created_by_user?: PurchaseOrderUserOption | null;
+  ordered_by?: string;
+  ordered_at?: string;
   purchase_type: 'PO' | 'DIRECT';
   status: string;
   payment_status: string;

@@ -15,6 +15,7 @@ import {
   getStockLevel,
   getStockLevelBadgeVariant,
   getStockLevelDescription,
+  formatCurrency,
   cn,
 } from '@/lib/utils';
 import type { RawMaterial } from '@/lib/types';
@@ -36,6 +37,7 @@ import {
   ProductionOperationOption,
 } from '@/services/production-operation.service';
 import { RawMaterialModal } from './RawMaterialModal';
+import { ProcurementRequestModal } from './ProcurementRequestModal';
 import { Edit2, Trash2 } from 'lucide-react';
 
 interface RawMaterialSectionProps {
@@ -49,7 +51,7 @@ interface RawMaterialSectionProps {
   setFilter: (key: 'page' | 'per_page' | 'search' | 'category_id' | 'status', value: any) => void;
   isAddModalOpen: boolean;
   onCloseAddModal: () => void;
-  onOpenProcurement: (materialId: string) => void;
+  onOpenProcurement?: (materialId: string) => void;
   onOpenCreateSaWorkOrder: (materialId: string) => void;
 }
 
@@ -62,7 +64,7 @@ export function RawMaterialSection({
   onOpenCreateSaWorkOrder,
 }: RawMaterialSectionProps) {
   const { toast, confirm } = useToast();
-  const { can } = usePermission();
+  const { can, canSeePurchasingCosts } = usePermission();
   const {
     currentUser,
     setMaterialsList,
@@ -80,6 +82,7 @@ export function RawMaterialSection({
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [editMaterial, setEditMaterial] = useState<RawMaterial | null>(null);
+  const [requestProcurementMat, setRequestProcurementMat] = useState<RawMaterial | null>(null);
 
   // Options for select inputs
   const [categoryOptions, setCategoryOptions] = useState<MaterialCategoryOption[]>([]);
@@ -252,14 +255,13 @@ export function RawMaterialSection({
       id: 'name',
       header: 'Nama Bahan',
       align: 'left',
-      width: '300px',
-      className: 'min-w-[260px]',
+      className: 'w-full min-w-[200px] max-w-0',
       cell: ({ row: mat }) => (
-        <div className="flex items-center gap-2 max-w-[320px]">
+        <div className="flex items-center gap-2 min-w-0" title={mat.name}>
           <TruncatedText
             text={mat.name}
-            className="font-semibold text-slate-900 dark:text-white"
-            maxWidth="250px"
+            title={mat.name}
+            className="text-slate-900 dark:text-white min-w-0"
           />
           {mat.isSubAssembly && (
             <Badge variant="purple" className="shrink-0">
@@ -274,7 +276,7 @@ export function RawMaterialSection({
       header: 'Stok',
       align: 'right',
       cell: ({ row: mat }) => (
-        <span className="font-semibold text-slate-900 dark:text-white">
+        <span className="font-medium text-slate-800 dark:text-slate-200">
           {mat.stock}
         </span>
       ),
@@ -284,16 +286,40 @@ export function RawMaterialSection({
       header: 'Satuan',
       align: 'left',
       cell: ({ row: mat }) => (
-        <span className="text-slate-500 dark:text-slate-400 text-xs">
+        <span className="text-slate-500 dark:text-slate-400 text-sm">
           {mat.unit}
         </span>
       ),
     },
+    ...(canSeePurchasingCosts
+      ? [
+        {
+          id: 'unitCost',
+          header: 'Harga Satuan',
+          align: 'right' as const,
+          cell: ({ row: mat }: { row: RawMaterial }) => (
+            <span className="font-mono text-slate-600 dark:text-slate-400">
+              {formatCurrency(mat.unitCost)}
+            </span>
+          ),
+        },
+        {
+          id: 'totalValue',
+          header: 'Total Nilai',
+          align: 'right' as const,
+          cell: ({ row: mat }: { row: RawMaterial }) => (
+            <span className="font-mono text-emerald-700 dark:text-emerald-300">
+              {formatCurrency((mat.stock || 0) * (mat.unitCost || 0))}
+            </span>
+          ),
+        },
+      ]
+      : []),
     {
       id: 'minStock',
       header: 'Batas Min',
       align: 'right',
-      cell: ({ row: mat }) => <span className="text-slate-500">{mat.minStock}</span>,
+      cell: ({ row: mat }) => <span className="text-slate-700 dark:text-slate-300">{mat.minStock}</span>,
     },
     {
       id: 'status',
@@ -324,8 +350,8 @@ export function RawMaterialSection({
         const buttonText = isWip
           ? 'Buat SPK'
           : canExecuteCommercial
-          ? 'Buat Pengadaan'
-          : 'Ajukan Kebutuhan';
+            ? 'Ajukan Pengadaan'
+            : 'Ajukan Pengadaan';
         const actionTitle = hasPermission
           ? (isWip ? `Buat SPK untuk ${mat.name}` : `${buttonText} untuk ${mat.name}`)
           : (isWip ? 'Anda tidak memiliki hak akses untuk membuat SPK' : 'Anda tidak memiliki hak akses untuk membuat pengadaan');
@@ -347,7 +373,7 @@ export function RawMaterialSection({
                   if (isWip) {
                     onOpenCreateSaWorkOrder(mat.id);
                   } else {
-                    onOpenProcurement(mat.id);
+                    setRequestProcurementMat(mat);
                   }
                 }}
                 title={actionTitle}
@@ -411,7 +437,7 @@ export function RawMaterialSection({
         emptyDescription={
           filters.search || filters.category_id || filters.status
             ? 'Tidak ada bahan baku yang cocok dengan pencarian atau filter.'
-            : 'Register bahan baku baru untuk mulai mengelola stok inventaris gudang.'
+            : 'Tambah bahan baku baru untuk mulai mengelola stok inventaris gudang.'
         }
       />
 
@@ -433,6 +459,16 @@ export function RawMaterialSection({
         allMaterials={allAvailableMaterials}
         allRoutings={mappedRoutings as any}
         allOperations={mappedOperations as any}
+      />
+      {/* Modal: Ajukan Pengadaan (Material Tunggal) */}
+      <ProcurementRequestModal
+        isOpen={Boolean(requestProcurementMat)}
+        onClose={() => setRequestProcurementMat(null)}
+        material={requestProcurementMat}
+        onSuccess={() => {
+          setRequestProcurementMat(null);
+          fetchMaterials();
+        }}
       />
     </>
   );

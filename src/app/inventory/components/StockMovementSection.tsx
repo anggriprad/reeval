@@ -16,6 +16,7 @@ import {
   stockMovementService,
   StockMovementItem,
 } from '@/services/stock-movement.service';
+import { procurementService } from '@/services/procurement.service';
 import { StockMovementModal } from './StockMovementModal';
 import {
   PackageCheck,
@@ -23,6 +24,7 @@ import {
   ArrowUpCircle,
   SlidersHorizontal,
   Plus,
+  PlusCircle,
 } from 'lucide-react';
 
 interface StockMovementSectionProps {
@@ -56,9 +58,31 @@ export function StockMovementSection({
   const [totalMovements, setTotalMovements] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [procurementLookup, setProcurementLookup] = useState<Record<string, number>>({});
 
   // Debounced search (600ms)
   const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
+
+  useEffect(() => {
+    let isMounted = true;
+    procurementService
+      .getProcurements({ per_page: 100 })
+      .then((res) => {
+        if (isMounted && res.data) {
+          const lookup: Record<string, number> = {};
+          res.data.forEach((p) => {
+            if (p.po_number) lookup[p.po_number] = p.id;
+          });
+          setProcurementLookup(lookup);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load procurements lookup for stock movements:', err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -103,22 +127,13 @@ export function StockMovementSection({
   const columns: Column<StockMovementItem>[] = useMemo(
     () => [
       {
-        id: 'date',
-        header: 'Waktu',
-        cell: ({ row: mv }) => (
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-mono whitespace-nowrap">
-            {formatDateTime(mv.date)}
-          </span>
-        ),
-      },
-      {
         id: 'type',
-        header: 'Jenis',
+        header: 'Tipe Mutasi',
         cell: ({ row: mv }) => {
           if (mv.reference_type === 'INITIAL' || mv.type === 'INIT') {
             return (
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                <PackageCheck className="h-3.5 w-3.5" />
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
+                <PlusCircle className="h-3.5 w-3.5" />
                 Inisiasi
               </span>
             );
@@ -141,31 +156,33 @@ export function StockMovementSection({
       },
       {
         id: 'material_name',
-        header: 'Item / Material',
-        width: '280px',
-        className: 'min-w-[260px]',
+        header: 'Nama Item',
+        className: 'min-w-[160px]',
         cell: ({ row: mv }) => (
           <div className="flex flex-col gap-0.5 max-w-[260px]">
             <TruncatedText
               text={mv.material_name}
-              className="font-medium text-slate-800 dark:text-slate-200"
+              className="text-slate-800 dark:text-slate-200"
               maxWidth="260px"
             />
-            {/* {mv.material_code && (
-              <span className="text-[11px] font-mono text-slate-400">
-                {mv.material_code}
-              </span>
-            )} */}
           </div>
         ),
       },
       {
         id: 'qty',
         header: 'Jumlah',
-        align: 'right',
         cell: ({ row: mv }) => (
-          <span className="font-semibold text-slate-900 dark:text-white font-mono">
+          <span className="text-slate-700 dark:text-slate-300">
             {mv.qty} {mv.unit || ''}
+          </span>
+        ),
+      },
+      {
+        id: 'date',
+        header: 'Waktu',
+        cell: ({ row: mv }) => (
+          <span className="text-xs text-slate-600 dark:text-slate-400">
+            {formatDateTime(mv.date)}
           </span>
         ),
       },
@@ -173,27 +190,38 @@ export function StockMovementSection({
         id: 'reference',
         header: 'Referensi',
         cell: ({ row: mv }) => {
+          const poMatch = mv.reference?.match(/PO-\d{4}-\d+/i);
+          const poNumber = poMatch ? poMatch[0] : null;
+
           const matchedPO = purchaseOrders.find(
             (po) =>
               po.poNumber === mv.reference ||
               mv.reference.startsWith(`${po.poNumber} `) ||
-              po.id === mv.reference
+              po.id === mv.reference ||
+              (poNumber && po.poNumber === poNumber)
           );
 
-          if (matchedPO) {
+          const targetId =
+            mv.reference_id ||
+            matchedPO?.id ||
+            (poNumber ? procurementLookup[poNumber] : null) ||
+            (mv.reference_type === 'PO' && poNumber ? poNumber : null);
+
+          if (targetId) {
             return (
               <Link
-                href={`/inventory/procurement/${matchedPO.id}`}
-                className="font-mono text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline inline-flex items-center gap-1 group"
-                title={`Lihat detail pengadaan ${matchedPO.poNumber}`}
+                href={`/inventory/procurement/${targetId}`}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline inline-flex items-center gap-1 group"
+                title={`Lihat detail pengadaan ${poNumber || mv.reference}`}
+                onClick={(e) => e.stopPropagation()}
               >
-                <span>{mv.reference}</span>
+                <span># {mv.reference}</span>
               </Link>
             );
           }
 
           return (
-            <span className="font-mono text-xs text-slate-600 dark:text-slate-400">
+            <span className="text-xs text-slate-600 dark:text-slate-400">
               {mv.reference}
             </span>
           );
@@ -235,7 +263,7 @@ export function StockMovementSection({
       //   },
       // },
     ],
-    [purchaseOrders]
+    [purchaseOrders, procurementLookup]
   );
 
   return (

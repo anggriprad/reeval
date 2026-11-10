@@ -66,11 +66,11 @@ export function RawMaterialModal({
   const [matCategoryId, setMatCategoryId] = useState('');
   const [matCategory, setMatCategory] = useState('');
   const [matUnit, setMatUnit] = useState('pcs');
-  const [matUnitCost, setMatUnitCost] = useState(0);
+  const [matUnitCost, setMatUnitCost] = useState<number | ''>('');
   const [matInitialStock, setMatInitialStock] = useState<string>('0');
-  const [matMinStock, setMatMinStock] = useState(5);
+  const [matMinStock, setMatMinStock] = useState<number | ''>(10);
   const [matIsSubAssembly, setMatIsSubAssembly] = useState(false);
-  const [matChildBom, setMatChildBom] = useState<BOMItem[]>([]);
+  const [matChildBom, setMatChildBom] = useState<Array<{ materialId: string; qty: number | string }>>([]);
   const [matRoutingId, setMatRoutingId] = useState('');
   const [selectedRoutingSteps, setSelectedRoutingSteps] = useState<ProductionRoutingStepItem[]>([]);
   const [childMatId, setChildMatId] = useState('');
@@ -78,12 +78,23 @@ export function RawMaterialModal({
   const [crudError, setCrudError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const parseQty = (qty: number | string | undefined): number => {
+    if (typeof qty === 'number') return isNaN(qty) ? 0 : qty;
+    if (!qty) return 0;
+    const parsed = parseFloat(String(qty).replace(',', '.'));
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   const computeSubAssemblyCost = (
-    childBom: BOMItem[],
+    childBom: Array<{ materialId: string; qty: number | string }>,
     selectedRoutingId?: string
   ): number => {
+    const normalizedBom: BOMItem[] = childBom.map(b => ({
+      ...b,
+      qty: parseQty(b.qty),
+    }));
     const materialCost = calculateRollupBOMCost(
-      childBom,
+      normalizedBom,
       allMaterials,
       allRoutings,
       allOperations
@@ -96,7 +107,7 @@ export function RawMaterialModal({
         laborCost = opt.total_labor_cost;
       } else {
         const legacyTotal = calculateSubAssemblyCost(
-          childBom,
+          normalizedBom,
           allMaterials,
           selectedRoutingId,
           allRoutings,
@@ -123,7 +134,7 @@ export function RawMaterialModal({
       setMatUnit(editMaterial.unit || 'pcs');
       setMatUnitCost(editMaterial.unitCost || 0);
       setMatInitialStock(String(editMaterial.stock ?? 0));
-      setMatMinStock(editMaterial.minStock ?? 5);
+      setMatMinStock(editMaterial.minStock ?? 10);
       setMatIsSubAssembly(Boolean(editMaterial.isSubAssembly));
       const initialChild = editMaterial.childBom ? [...editMaterial.childBom] : [];
       setMatChildBom(initialChild);
@@ -137,18 +148,15 @@ export function RawMaterialModal({
     } else {
       setMatCode('');
       setMatName('');
-      const defaultCatId = categoryOptions[0] ? String(categoryOptions[0].id) : '';
-      setMatCategoryId(defaultCatId);
-      setMatCategory(categoryOptions[0]?.name || '');
+      setMatCategoryId('');
+      setMatCategory('');
       setMatUnit('pcs');
-      setMatUnitCost(0);
-      setMatInitialStock('');
-      setMatMinStock(5);
+      setMatUnitCost('');
+      setMatInitialStock('0');
+      setMatMinStock(10);
       setMatIsSubAssembly(false);
       setMatChildBom([]);
-      setMatRoutingId(
-        routingOptions[0] ? String(routingOptions[0].id) : ''
-      );
+      setMatRoutingId('');
       setChildMatId('');
       setChildMatQty('');
     }
@@ -176,7 +184,7 @@ export function RawMaterialModal({
           setSelectedRoutingSteps(res.data.steps);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       active = false;
     };
@@ -239,18 +247,19 @@ export function RawMaterialModal({
 
   const handleAddChildBomItem = () => {
     if (!childMatId) return;
-    const parsedQty = parseFloat(String(childMatQty).replace(',', '.'));
-    if (isNaN(parsedQty) || parsedQty <= 0) return;
+    const parsedQty = parseQty(childMatQty);
+    if (parsedQty <= 0) return;
 
     const existingIndex = matChildBom.findIndex(
       item => String(item.materialId) === String(childMatId)
     );
-    let updated: BOMItem[];
+    let updated: Array<{ materialId: string; qty: number | string }>;
     if (existingIndex !== -1) {
       updated = [...matChildBom];
-      updated[existingIndex].qty += parsedQty;
+      const currentQty = parseQty(updated[existingIndex].qty);
+      updated[existingIndex].qty = currentQty + parsedQty;
     } else {
-      updated = [...matChildBom, { materialId: childMatId, qty: parsedQty }];
+      updated = [...matChildBom, { materialId: childMatId, qty: childMatQty }];
     }
     setMatChildBom(updated);
     setChildMatId('');
@@ -258,10 +267,11 @@ export function RawMaterialModal({
     setMatUnitCost(computeSubAssemblyCost(updated, matRoutingId));
   };
 
-  const handleUpdateChildBomQty = (materialId: string, newQty: number) => {
+  const handleUpdateChildBomQty = (materialId: string, rawVal: string) => {
+    const sanitized = rawVal.replace(/[^0-9.,]/g, '');
     const updated = matChildBom.map(item =>
       String(item.materialId) === String(materialId)
-        ? { ...item, qty: Math.max(0, newQty) }
+        ? { ...item, qty: sanitized }
         : item
     );
     setMatChildBom(updated);
@@ -306,6 +316,11 @@ export function RawMaterialModal({
       ? computeSubAssemblyCost(matChildBom, matRoutingId)
       : Number(matUnitCost) || 0;
 
+    if (matIsSubAssembly && matChildBom.some(b => parseQty(b.qty) <= 0)) {
+      setCrudError('Kuantitas setiap material pada BOM harus lebih besar dari 0.');
+      return;
+    }
+
     const targetCatId = matCategoryId ? Number(matCategoryId) : undefined;
     const targetCatName =
       categoryOptions.find(c => String(c.id) === matCategoryId)?.name ||
@@ -327,9 +342,9 @@ export function RawMaterialModal({
           routing_id: matIsSubAssembly && matRoutingId ? Number(matRoutingId) : null,
           child_bom: matIsSubAssembly
             ? matChildBom.map(b => ({
-                child_material_id: Number(b.materialId),
-                qty: b.qty,
-              }))
+              child_material_id: Number(b.materialId),
+              qty: parseQty(b.qty),
+            }))
             : [],
         };
         const res = await materialService.updateMaterial(Number(editMaterial.id), payload);
@@ -352,9 +367,9 @@ export function RawMaterialModal({
           routing_id: matIsSubAssembly && matRoutingId ? Number(matRoutingId) : null,
           child_bom: matIsSubAssembly
             ? matChildBom.map(b => ({
-                child_material_id: Number(b.materialId),
-                qty: b.qty,
-              }))
+              child_material_id: Number(b.materialId),
+              qty: parseQty(b.qty),
+            }))
             : [],
         };
         const res = await materialService.createMaterial(payload);
@@ -380,7 +395,7 @@ export function RawMaterialModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={editMaterial ? 'Edit Material / Inventaris' : 'Register Material Baru'}
+      title={editMaterial ? 'Edit Material' : 'Tambah Material'}
       size="lg"
       actions={
         <>
@@ -400,33 +415,14 @@ export function RawMaterialModal({
             <span>{crudError}</span>
           </div>
         )}
-
-        {/* Form Kode & Kategori: Kode HANYA tampil saat Edit (Saat Create: Dihilangkan) */}
-        {editMaterial ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Kode Bahan Baku"
-              type="text"
-              value={matCode}
-              disabled={true}
-            />
-            <Select
-              label="Kategori"
-              required
-              value={matCategoryId}
-              onChange={e => {
-                const selectedId = e.target.value;
-                setMatCategoryId(selectedId);
-                const found = categoryOptions.find(c => String(c.id) === selectedId);
-                if (found) setMatCategory(found.name);
-              }}
-              options={categoryOptions.map(cat => ({
-                value: String(cat.id),
-                label: cat.name,
-              }))}
-            />
-          </div>
-        ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Nama Bahan Baku"
+            required
+            type="text"
+            value={matName}
+            onChange={e => setMatName(e.target.value)}
+          />
           <Select
             label="Kategori"
             required
@@ -435,24 +431,17 @@ export function RawMaterialModal({
               const selectedId = e.target.value;
               setMatCategoryId(selectedId);
               const found = categoryOptions.find(c => String(c.id) === selectedId);
-              if (found) setMatCategory(found.name);
+              setMatCategory(found ? found.name : '');
             }}
-            options={categoryOptions.map(cat => ({
-              value: String(cat.id),
-              label: cat.name,
-            }))}
+            options={[
+              { value: '', label: '' },
+              ...categoryOptions.map(cat => ({
+                value: String(cat.id),
+                label: cat.name,
+              })),
+            ]}
           />
-        )}
-
-        <Input
-          label="Nama Bahan Baku"
-          required
-          type="text"
-          value={matName}
-          onChange={e => setMatName(e.target.value)}
-          placeholder="Contoh: Multiplek 18mm"
-        />
-
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Input
             label="Satuan"
@@ -460,7 +449,7 @@ export function RawMaterialModal({
             type="text"
             value={matUnit}
             onChange={e => setMatUnit(e.target.value)}
-            placeholder="pcs / unit / meter"
+            placeholder="pcs/unit/meter/kg"
           />
           <div>
             <CurrencyInput
@@ -472,13 +461,14 @@ export function RawMaterialModal({
                   : matUnitCost
               }
               onChange={val =>
-                !matIsSubAssembly && setMatUnitCost(typeof val === 'number' ? val : 0)
+                !matIsSubAssembly && setMatUnitCost(typeof val === 'number' ? val : '')
               }
               disabled={matIsSubAssembly}
+              placeholder=""
             />
             {matIsSubAssembly && (
-              <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold mt-1">
-                *Terhitung otomatis dari Bahan + Upah Routing
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                Dihitung otomatis dari BOM dan Alur Produksi
               </p>
             )}
           </div>
@@ -499,14 +489,14 @@ export function RawMaterialModal({
             label="Batas Stok Minimum"
             required
             type="number"
-            value={matMinStock || ''}
-            onChange={e => setMatMinStock(Number(e.target.value))}
+            value={matMinStock}
+            onChange={e => setMatMinStock(e.target.value === '' ? '' : Number(e.target.value))}
             placeholder="0"
           />
         </div>
 
         {/* Bahan Setengah Jadi Checkbox & Child BOM Builder */}
-        <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <div className="space-y-3 pt-3">
           <Checkbox
             checked={matIsSubAssembly}
             onChange={checked => {
@@ -516,6 +506,7 @@ export function RawMaterialModal({
               }
             }}
             label="Bahan Setengah Jadi"
+            labelClassName='!text-sm font-normal'
           />
 
           {matIsSubAssembly && (
@@ -550,32 +541,31 @@ export function RawMaterialModal({
                               )
                               : compMat.unitCost
                             : 0;
-                          const subtotal = compCost * item.qty;
+                          const subtotal = compCost * parseQty(item.qty);
 
                           return (
                             <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
-                              <td className="px-3.5 py-2.5 font-medium text-slate-800 dark:text-slate-200">
+                              <td className="px-3.5 py-2.5 font-medium text-slate-800 dark:text-slate-200 truncate" title={compMat?.name}>
                                 {compMat?.name || 'Unknown'}
                               </td>
-                              <td className="px-3 py-2 text-center w-28">
+                              <td className="py-2 px-1 w-20 text-right">
                                 <Input
-                                  type="number"
-                                  min={0.001}
-                                  step="any"
+                                  type="text"
+                                  inputMode="decimal"
                                   value={item.qty}
-                                  onChange={e => handleUpdateChildBomQty(item.materialId, parseFloat(e.target.value) || 0)}
+                                  onChange={e => handleUpdateChildBomQty(item.materialId, e.target.value)}
                                   inputSize="sm"
-                                  containerClassName="w-20 mx-auto"
-                                  className="font-medium text-right"
+                                  containerClassName="w-16 ml-auto"
+                                  className="font-medium text-right text-xs"
                                 />
                               </td>
-                              <td className="px-3 py-2 text-slate-500 dark:text-slate-400 w-16">
+                              <td className="py-2 px-1 w-12 text-left text-xs text-slate-500 dark:text-slate-400 truncate">
                                 {compMat?.unit || 'unit'}
                               </td>
-                              <td className="px-3 py-2 text-right font-mono text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
+                              <td className="py-2 px-1.5 w-28 text-right font-mono text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap text-xs">
                                 {formatCurrency(subtotal)}
                               </td>
-                              <td className="px-2 py-2 text-center w-10">
+                              <td className="py-2 pl-1 pr-2.5 text-center w-9">
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveChildBomItem(item.materialId)}
@@ -604,24 +594,23 @@ export function RawMaterialModal({
                         setChildMatQty('1');
                       }
                     }}
+                    options={[
+                      { value: '', label: 'Pilih BOM' },
+                      ...availableChildOptions.map(m => ({
+                        value: String(m.id),
+                        label: `${m.name} / ${m.unit}`,
+                      })),
+                    ]}
                     inputSize="sm"
                     containerClassName="flex-1"
-                  >
-                    <option value="">-- Pilih Material --</option>
-                    {availableChildOptions.map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} / {m.unit}
-                      </option>
-                    ))}
-                  </Select>
+                  />
 
                   <div className="flex items-center gap-2">
                     <Input
-                      type="number"
-                      min={0.001}
-                      step="any"
+                      type="text"
+                      inputMode="decimal"
                       value={childMatQty}
-                      onChange={e => setChildMatQty(e.target.value)}
+                      onChange={e => setChildMatQty(e.target.value.replace(/[^0-9.,]/g, ''))}
                       placeholder="Qty"
                       disabled={!childMatId}
                       inputSize="sm"
@@ -660,7 +649,7 @@ export function RawMaterialModal({
                     setMatUnitCost(computeSubAssemblyCost(matChildBom, newRtId));
                   }}
                   options={[
-                    { value: '', label: '-- Pilih Alur Produksi --' },
+                    { value: '', label: 'Pilih Alur Produksi' },
                     ...routingOptions.map(r => ({
                       value: String(r.id),
                       label: r.name,

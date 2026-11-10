@@ -3,10 +3,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { TruncatedText } from '@/components/ui/TruncatedText';
-import { ActionMenu, type ActionMenuItem } from '@/components/ui/ActionMenu';
+import { TableRowActions, type TableActionItem } from '@/components/ui/TableRowActions';
 import CustomTable, { Column } from '@/components/ui/CustomTable';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
@@ -31,7 +30,7 @@ import {
 import { ProcurementModal } from './ProcurementModal';
 import { ReceiveGoodsModal } from './ReceiveGoodsModal';
 import { CancelPOModal } from './CancelPOModal';
-import { XCircle, Ban, PackageCheck, Trash2 } from 'lucide-react';
+import { XCircle, Ban, PackageCheck } from 'lucide-react';
 
 interface ProcurementSectionProps {
   filters: {
@@ -42,24 +41,18 @@ interface ProcurementSectionProps {
     created_by_id?: string | number;
   };
   setFilter: (key: 'page' | 'per_page' | 'search' | 'status' | 'created_by_id', value: any) => void;
-  isCreateModalOpen: boolean;
-  onCloseCreateModal: () => void;
-  preselectedMaterialId?: string | number | null;
-  onClearPreselectedMaterial?: () => void;
+  refreshKey?: number;
 }
 
 export function ProcurementSection({
   filters,
   setFilter,
-  isCreateModalOpen,
-  onCloseCreateModal,
-  preselectedMaterialId,
-  onClearPreselectedMaterial,
+  refreshKey,
 }: ProcurementSectionProps) {
   const router = useRouter();
   const { toast, confirm } = useToast();
-  const { can } = usePermission();
-  const { currentUser, purchaseOrders = [] } = useApp();
+  const { can, isSuperAdmin, canSeePurchasingCosts } = usePermission();
+  const { currentUser, purchaseOrders = [], materials = [] } = useApp();
 
   // Fase 1 (Request), Fase 2 (Eksekusi Komersial), Fase 3 (Penerimaan Fisik) — Pure PBAC 1-to-1
   const canRequest = can(PERMISSIONS.PURCHASING.CREATE);
@@ -67,8 +60,9 @@ export function ProcurementSection({
   const canReceivePhysical = can(PERMISSIONS.PURCHASING.RECEIVE);
   const canReject = can(PERMISSIONS.PURCHASING.REJECT);
   const canCancel = can(PERMISSIONS.PURCHASING.CANCEL);
-  const canDelete = can(PERMISSIONS.PURCHASING.DELETE);
-  const canShowCosts = can(PERMISSIONS.PURCHASING.READ);
+  const canShowCosts = canSeePurchasingCosts;
+  // Pembatalan fase komersial (ORDERED atau PARTIALLY_RECEIVED) hanya untuk Purchasing & Super Admin
+  const canCancelCommercial = canCancel && (canExecuteCommercial || isSuperAdmin);
   const [procurements, setProcurements] = useState<PurchaseOrderResponse[]>([]);
   const [totalPOs, setTotalPOs] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -132,10 +126,10 @@ export function ProcurementSection({
 
   useEffect(() => {
     fetchProcurements();
-  }, [fetchProcurements]);
+  }, [fetchProcurements, refreshKey]);
 
   // Action: Batalkan Sisa PO
-  const handleCancelRemainingPO = async (po: PurchaseOrderResponse) => {
+  const handleCancelRemainingPO = useCallback(async (po: PurchaseOrderResponse) => {
     const isOk = await confirm({
       title: 'Batalkan Sisa PO',
       message: `Apakah Anda yakin ingin membatalkan sisa barang yang belum diterima pada PO ${po.po_number}? Status PO akan diselesaikan.`,
@@ -151,28 +145,94 @@ export function ProcurementSection({
         toast.error('Gagal Membatalkan Sisa PO', err?.response?.data?.message || err?.message || 'Terjadi kesalahan.');
       }
     }
-  };
+  }, [confirm, fetchProcurements, toast]);
 
-  // Action: Hapus PO Draft
-  const handleDeletePO = async (po: PurchaseOrderResponse) => {
-    const isOk = await confirm({
-      title: 'Hapus Draft Pengadaan',
-      message: `Apakah Anda yakin ingin menghapus draft pengadaan "${po.po_number}"? Data yang dihapus tidak dapat dipulihkan.`,
-      confirmText: 'Hapus Draft',
-      variant: 'danger',
-    });
-    if (isOk) {
-      try {
-        await procurementService.deletePO(po.id);
-        toast.success('Draft Dihapus', `Draft PO ${po.po_number} berhasil dihapus.`);
-        fetchProcurements();
-      } catch (err: any) {
-        toast.error('Gagal Menghapus Draft', err?.response?.data?.message || err?.message || 'Terjadi kesalahan.');
-      }
+  const getRowActions = useCallback((po: PurchaseOrderResponse): TableActionItem[] => {
+    const actions: (TableActionItem | false)[] = [];
+
+    if (po.status === 'DRAFT') {
+      const isOwner = Boolean(
+        (currentUser?.id && po.created_by_id && String(po.created_by_id) === String(currentUser.id).trim()) ||
+        (currentUser?.id && po.created_by_user?.id && String(po.created_by_user.id) === String(currentUser.id).trim()) ||
+        (currentUser?.email && po.created_by_user?.email && po.created_by_user.email.toLowerCase().trim() === currentUser.email.toLowerCase().trim()) ||
+        (po.created_by && (
+          (currentUser?.name && String(po.created_by).toLowerCase().trim() === currentUser.name.toLowerCase().trim()) ||
+          (currentUser?.id && String(po.created_by).trim() === String(currentUser.id).trim()) ||
+          (currentUser?.email && String(po.created_by).toLowerCase().trim() === currentUser.email.toLowerCase().trim())
+        ))
+      );
+
+      actions.push(
+        canExecuteCommercial && {
+          label: 'Proses & Pesan',
+          buttonVariant: 'primary',
+          icon: <PackageCheck className="h-3.5 w-3.5" />,
+          title: 'Verifikasi harga, vendor, dan proses pesanan',
+          onClick: () => setExecuteDraftPO(po),
+        },
+        canReject && {
+          label: 'Tolak PO',
+          buttonVariant: 'outline-danger',
+          menuVariant: 'danger',
+          icon: <Ban className="h-3.5 w-3.5" />,
+          title: 'Tolak pengadaan',
+          onClick: () => setCancelModalState({ po, mode: 'REJECT' }),
+        },
+        canCancel && isOwner && {
+          label: 'Batalkan PO',
+          buttonVariant: 'outline-danger',
+          menuVariant: 'danger',
+          icon: <XCircle className="h-3.5 w-3.5" />,
+          title: 'Batalkan pengadaan',
+          onClick: () => setCancelModalState({ po, mode: 'CANCEL_DRAFT' }),
+        }
+      );
+    } else if (po.status === 'ORDERED') {
+      actions.push(
+        canReceivePhysical && {
+          label: 'Terima Barang',
+          buttonVariant: 'primary',
+          icon: <PackageCheck className="h-3.5 w-3.5" />,
+          title: 'Terima barang',
+          onClick: () => setReceiveModalPO(po),
+        },
+        canCancelCommercial && {
+          label: 'Batalkan PO',
+          buttonVariant: 'outline-danger',
+          menuVariant: 'danger',
+          icon: <XCircle className="h-3.5 w-3.5" />,
+          title: 'Batalkan pengadaan',
+          onClick: () => setCancelModalState({ po, mode: 'CANCEL_ORDERED' }),
+        }
+      );
+    } else if (po.status === 'PARTIALLY_RECEIVED') {
+      actions.push(
+        canReceivePhysical && {
+          label: 'Terima Barang',
+          buttonVariant: 'primary',
+          icon: <PackageCheck className="h-3.5 w-3.5" />,
+          title: 'Terima sisa barang pengadaan',
+          onClick: () => setReceiveModalPO(po),
+        },
+        canCancelCommercial && {
+          label: 'Batalkan Sisa PO',
+          buttonVariant: 'outline-danger',
+          menuVariant: 'danger',
+          icon: <Ban className="h-3.5 w-3.5" />,
+          title: 'Batalkan sisa barang yang belum diterima',
+          onClick: () => handleCancelRemainingPO(po),
+        }
+      );
     }
-  };
+
+    return actions.filter((a): a is TableActionItem => Boolean(a));
+  }, [canExecuteCommercial, canReject, canCancel, canReceivePhysical, canCancelCommercial, currentUser, handleCancelRemainingPO]);
 
   const columns: Column<PurchaseOrderResponse>[] = useMemo(() => {
+    const rowActionCounts = procurements.map((po) => getRowActions(po).length);
+    const hasAnyActions = rowActionCounts.some((count) => count > 0);
+    const hasOverflowActions = rowActionCounts.some((count) => count > 1);
+
     const cols: Column<PurchaseOrderResponse>[] = [
       {
         id: 'po_number',
@@ -198,7 +258,7 @@ export function ProcurementSection({
       },
       {
         id: 'items_summary',
-        header: 'Item Material',
+        header: 'Nama Item',
         width: '280px',
         className: 'min-w-[250px]',
         cell: ({ row: po }) => {
@@ -211,8 +271,7 @@ export function ProcurementSection({
             <div className="flex flex-col gap-0.5 max-w-[280px]">
               <TruncatedText
                 text={firstItem.material_name}
-                className="text-sm font-medium text-slate-900 dark:text-white"
-                maxWidth="240px"
+                className="text-sm text-slate-900 dark:text-white"
               />
               {extraCount > 0 && (
                 <span className="text-indigo-600 dark:text-indigo-400 font-semibold text-xs">
@@ -225,14 +284,14 @@ export function ProcurementSection({
       },
       {
         id: 'quantity_summary',
-        header: 'Kuantitas',
+        header: 'Qty',
         cell: ({ row: po }) => {
           if (!po.items || po.items.length === 0) {
             return <span className="text-slate-400 text-xs">-</span>;
           }
           const firstItem = po.items[0];
           return (
-            <span className="text-sm font-normal text-slate-700 dark:text-slate-300">
+            <span className="text-sm font-normal text-slate-600 dark:text-slate-400">
               {firstItem.qty} {firstItem.unit}
             </span>
           );
@@ -265,168 +324,85 @@ export function ProcurementSection({
         id: 'total_amount',
         header: 'Total Transaksi',
         align: 'right',
+        cell: ({ row: po }) => {
+          const fallbackTotal =
+            po.total_amount > 0
+              ? po.total_amount
+              : (po.items || []).reduce((sum, it) => {
+                const mat = materials.find(
+                  (m) => String(m.id) === String(it.material_id)
+                );
+                const cost =
+                  it.unit_cost > 0 ? it.unit_cost : mat?.unitCost || 0;
+                return sum + it.qty * cost;
+              }, 0) + (po.additional_cost || 0);
+
+          return (
+            <span className="font-mono text-slate-700 dark:text-slate-300">
+              {fallbackTotal > 0 ? formatCurrency(fallbackTotal) : '-'}
+            </span>
+          );
+        },
+      });
+    }
+
+    cols.push({
+      id: 'status',
+      header: 'Status',
+      align: 'left',
+      cell: ({ row: po }) => (
+        <Badge variant={getPOStatusVariant(po.status as any)}>
+          {getPOStatusLabel(po.status as any)}
+        </Badge>
+      ),
+    });
+
+    if (hasAnyActions) {
+      cols.push({
+        id: 'actions',
+        header: 'Aksi',
+        align: 'center',
+        className: 'w-px whitespace-nowrap',
         cell: ({ row: po }) => (
-          <span className="font-mono font-bold text-slate-900 dark:text-white">
-            {po.status === 'DRAFT' && (!po.supplier || po.supplier === '-')
-              ? '-'
-              : formatCurrency(po.total_amount)}
-          </span>
+          <TableRowActions
+            actions={getRowActions(po)}
+            reserveOverflowSlot={hasOverflowActions}
+          />
         ),
       });
     }
 
-    cols.push(
-      {
-        id: 'status',
-        header: 'Status',
-        align: 'left',
-        cell: ({ row: po }) => (
-          <Badge variant={getPOStatusVariant(po.status as any)}>
-            {getPOStatusLabel(po.status as any)}
-          </Badge>
-        ),
-      },
-      {
-        id: 'actions',
-        header: 'Aksi',
-        align: 'center',
-        width: '190px',
-        className: 'w-[190px] whitespace-nowrap',
-        cell: ({ row: po }) => {
-          if (
-            po.status === 'RECEIVED' ||
-            po.status === 'REJECTED' ||
-            po.status === 'CANCELED'
-          ) {
-            return (
-              <div className="flex items-center justify-center text-slate-300 dark:text-slate-600 font-mono text-xs">
-                -
-              </div>
-            );
-          }
-
-          let mainButton: React.ReactNode = null;
-          const moreItems: ActionMenuItem[] = [];
-
-          if (po.status === 'DRAFT') {
-            if (canExecuteCommercial) {
-              mainButton = (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => setExecuteDraftPO(po)}
-                  title="Verifikasi harga, vendor, dan proses pesanan"
-                >
-                  Proses & Pesan
-                </Button>
-              );
-            }
-            if (canReject) {
-              moreItems.push({
-                label: 'Tolak PO',
-                icon: <XCircle className="h-3.5 w-3.5" />,
-                variant: 'danger',
-                onClick: () =>
-                  setCancelModalState({ po, mode: 'REJECT' }),
-              });
-            }
-            if (canCancel) {
-              moreItems.push({
-                label: 'Batalkan PO',
-                icon: <Ban className="h-3.5 w-3.5" />,
-                variant: 'danger',
-                onClick: () =>
-                  setCancelModalState({ po, mode: 'CANCEL_DRAFT' }),
-              });
-            }
-            if (canDelete) {
-              moreItems.push({
-                label: 'Hapus Draft',
-                icon: <Trash2 className="h-3.5 w-3.5" />,
-                variant: 'danger',
-                onClick: () => handleDeletePO(po),
-              });
-            }
-          } else if (po.status === 'ORDERED') {
-            if (canReceivePhysical) {
-              mainButton = (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => setReceiveModalPO(po)}
-                  title="Terima barang masuk ke gudang"
-                >
-                  <PackageCheck className="h-3.5 w-3.5 mr-1" />
-                  Terima Barang
-                </Button>
-              );
-            }
-            if (canCancel) {
-              moreItems.push({
-                label: 'Batalkan PO',
-                icon: <Ban className="h-3.5 w-3.5" />,
-                variant: 'danger',
-                onClick: () =>
-                  setCancelModalState({ po, mode: 'CANCEL_ORDERED' }),
-              });
-            }
-          } else if (po.status === 'PARTIALLY_RECEIVED') {
-            if (canReceivePhysical) {
-              mainButton = (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => setReceiveModalPO(po)}
-                  title="Terima sisa barang pengadaan"
-                >
-                  <PackageCheck className="h-3.5 w-3.5 mr-1" />
-                  Terima Barang
-                </Button>
-              );
-            }
-            if (canCancel) {
-              moreItems.push({
-                label: 'Batalkan Sisa PO',
-                icon: <Ban className="h-3.5 w-3.5" />,
-                variant: 'danger',
-                onClick: () => handleCancelRemainingPO(po),
-              });
-            }
-          }
-
-          if (!mainButton && moreItems.length === 0) {
-            return (
-              <div className="flex items-center justify-center text-slate-300 dark:text-slate-600 font-mono text-xs">
-                -
-              </div>
-            );
-          }
-
-          return (
-            <div
-              className="flex items-center justify-center gap-1.5 whitespace-nowrap"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {mainButton}
-              {moreItems.length > 0 && (
-                <ActionMenu
-                  menuWidth="w-max min-w-[130px]"
-                  items={moreItems}
-                />
-              )}
-            </div>
-          );
-        },
-      }
-    );
-
     return cols;
-  }, [canShowCosts, canExecuteCommercial, canReceivePhysical, canReject, canCancel, canRequest, canDelete]);
+  }, [procurements, getRowActions, canShowCosts, materials]);
+
+  const sortedProcurements = useMemo(() => {
+    const statusPriority: Record<string, number> = {
+      DRAFT: 1,
+      ORDERED: 2,
+      PARTIALLY_RECEIVED: 3,
+      RECEIVED: 4,
+      REJECTED: 5,
+      CANCELED: 6,
+      CANCELLED: 6,
+    };
+
+    return [...procurements].sort((a, b) => {
+      const aHasAction = getRowActions(a).length > 0 ? 0 : 1;
+      const bHasAction = getRowActions(b).length > 0 ? 0 : 1;
+      if (aHasAction !== bHasAction) return aHasAction - bHasAction;
+
+      const aPriority = statusPriority[a.status] ?? 99;
+      const bPriority = statusPriority[b.status] ?? 99;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+
+      return (b.id || 0) - (a.id || 0);
+    });
+  }, [procurements, getRowActions]);
 
   return (
     <>
       <CustomTable<PurchaseOrderResponse>
-        data={procurements}
+        data={sortedProcurements}
         columns={columns}
         loading={isLoading}
         pagination={true}
@@ -452,19 +428,13 @@ export function ProcurementSection({
         }
       />
 
-      {/* Modal: Form Pengadaan Baru (Fase 1 Request Gudang / Fase 1+2 Buat Langsung) & Fase 2 Eksekusi Draft */}
+      {/* Modal: Form Eksekusi Draft PO (Fase 2) */}
       <ProcurementModal
-        isOpen={isCreateModalOpen || Boolean(executeDraftPO)}
-        onClose={() => {
-          if (executeDraftPO) setExecuteDraftPO(null);
-          if (isCreateModalOpen) {
-            onCloseCreateModal();
-            if (onClearPreselectedMaterial) onClearPreselectedMaterial();
-          }
-        }}
-        preselectedMaterialId={preselectedMaterialId}
+        isOpen={Boolean(executeDraftPO)}
+        onClose={() => setExecuteDraftPO(null)}
         draftPO={executeDraftPO}
         onSuccess={() => {
+          setExecuteDraftPO(null);
           fetchProcurements();
         }}
       />

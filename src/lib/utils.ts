@@ -295,7 +295,7 @@ export function getPOStatusVariant(status: POStatus | string): 'warning' | 'info
     case 'PARTIALLY_RECEIVED': return 'purple';
     case 'RECEIVED': return 'success';
     case 'REJECTED': return 'danger';
-    case 'CANCELED': return 'danger';
+    case 'CANCELED': return 'default';
     default: return 'default';
   }
 }

@@ -2028,12 +2028,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [nextPONumber, currentUser.name]);
 
   const orderPO = useCallback((poId: string) => {
-    setState(prev => ({
-      ...prev,
-      purchaseOrders: prev.purchaseOrders.map(p =>
-        p.id === poId ? { ...p, status: 'ORDERED' as const } : p
-      ),
-    }));
+    setState(prev => {
+      const currentUser = getUserById(prev.currentUserId || DEFAULT_USER_ID);
+      const now = new Date().toISOString();
+      return {
+        ...prev,
+        purchaseOrders: prev.purchaseOrders.map(p =>
+          p.id === poId
+            ? { ...p, status: 'ORDERED' as const, orderedBy: currentUser.name, orderedAt: now }
+            : p
+        ),
+      };
+    });
   }, []);
 
   const rejectPO = useCallback((poId: string, reason?: string): { success: boolean; error?: string } => {
