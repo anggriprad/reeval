@@ -3,6 +3,7 @@
 import { useMemo, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
 import { hasPermission, hasAnyPermission, hasAllPermissions } from '@/lib/permissions';
+import { canSeePurchasingCosts as checkPurchasingCosts } from '@/lib/roles';
 
 export function usePermission() {
   const { currentUser } = useApp();
@@ -15,6 +16,10 @@ export function usePermission() {
       (Array.isArray(currentUser.permissions) && (currentUser.permissions.includes('*') || currentUser.permissions.includes('system:*')))
     );
   }, [currentUser]);
+
+  const canSeePurchasingCosts = useMemo(() => {
+    return isSuperAdmin || checkPurchasingCosts(currentUser);
+  }, [currentUser, isSuperAdmin]);
 
   const permissions = useMemo(() => {
     return currentUser.permissions || [];
@@ -46,6 +51,7 @@ export function usePermission() {
     canAny,
     canAll,
     isSuperAdmin,
+    canSeePurchasingCosts,
     permissions,
   };
 }

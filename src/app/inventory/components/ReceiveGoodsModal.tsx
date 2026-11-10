@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
+import { Table, type TableColumn } from '@/components/ui/Table';
 import { useToast } from '@/context/ToastContext';
 import { useApp } from '@/context/AppContext';
 import {
   procurementService,
   PurchaseOrderResponse,
+  PurchaseOrderItemResponse,
 } from '@/services/procurement.service';
 import { AlertTriangle, PackageCheck } from 'lucide-react';
 
@@ -29,31 +31,21 @@ export function ReceiveGoodsModal({
   const { toast } = useToast();
   const { receivePO } = useApp();
   const [receiveSelections, setReceiveSelections] = useState<
-    Record<number, { checked: boolean; receivedQty: number | '' }>
+    Record<number, { checked: boolean; receivedQty: number | string }>
   >({});
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && po) {
-      setErrorMsg('');
-      const initial: Record<number, { checked: boolean; receivedQty: number | '' }> = {};
-      po.items.forEach((item) => {
-        const remaining = Math.max(0, item.remaining_qty ?? item.qty - (item.received_qty || 0));
-        initial[item.material_id] = {
-          checked: false,
-          receivedQty: remaining,
-        };
-      });
-      setReceiveSelections(initial);
-    }
-  }, [isOpen, po]);
+  const poItems = po?.items || [];
 
-  if (!po) return null;
-
-  const remainingItems = po.items.filter(
-    (i) => Math.max(0, i.remaining_qty ?? i.qty - (i.received_qty || 0)) > 0
+  const remainingItems = useMemo(
+    () =>
+      poItems.filter(
+        (i) => Math.max(0, i.remaining_qty ?? i.qty - (i.received_qty || 0)) > 0
+      ),
+    [poItems]
   );
+
   const allChecked =
     remainingItems.length > 0 &&
     remainingItems.every((i) => receiveSelections[i.material_id]?.checked);
@@ -61,7 +53,24 @@ export function ReceiveGoodsModal({
     (i) => receiveSelections[i.material_id]?.checked
   );
 
+  useEffect(() => {
+    if (isOpen && po) {
+      setErrorMsg('');
+      const initial: Record<number, { checked: boolean; receivedQty: number | string }> = {};
+      (po.items || []).forEach((item) => {
+        const remaining = Math.max(0, item.remaining_qty ?? item.qty - (item.received_qty || 0));
+        const hasQty = remaining > 0;
+        initial[item.material_id] = {
+          checked: hasQty,
+          receivedQty: hasQty ? remaining : 0,
+        };
+      });
+      setReceiveSelections(initial);
+    }
+  }, [isOpen, po]);
+
   const handleSubmit = async () => {
+    if (!po) return;
     setErrorMsg('');
     const checkedEntries = Object.entries(receiveSelections).filter(
       ([_, val]) => val.checked
@@ -75,7 +84,7 @@ export function ReceiveGoodsModal({
     const itemsToReceive: { material_id: number; qty: number }[] = [];
     for (const [matIdStr, val] of checkedEntries) {
       const matId = Number(matIdStr);
-      const poItem = po.items.find((i) => i.material_id === matId);
+      const poItem = (po.items || []).find((i) => i.material_id === matId);
       const remaining = poItem
         ? Math.max(0, poItem.remaining_qty ?? poItem.qty - (poItem.received_qty || 0))
         : 0;
@@ -113,7 +122,7 @@ export function ReceiveGoodsModal({
         }))
       );
 
-      const allFullyReceived = po.items.every((item) => {
+      const allFullyReceived = (po.items || []).every((item) => {
         const receivedNow = itemsToReceive.find((r) => r.material_id === item.material_id)?.qty || 0;
         const alreadyReceived = item.received_qty || 0;
         return alreadyReceived + receivedNow >= item.qty;
@@ -149,23 +158,208 @@ export function ReceiveGoodsModal({
     }
   };
 
+  const columns: TableColumn<PurchaseOrderItemResponse>[] = useMemo(
+    () => [
+      {
+        key: 'select',
+        width: '44px',
+        align: 'left',
+        header: (
+          <Checkbox
+            checked={allChecked}
+            indeterminate={someChecked && !allChecked}
+            onChange={(checked) => {
+              setReceiveSelections((prev) => {
+                const next = { ...prev };
+                remainingItems.forEach((i) => {
+                  const rem = Math.max(
+                    0,
+                    i.remaining_qty ?? i.qty - (i.received_qty || 0)
+                  );
+                  const currentQty = prev[i.material_id]?.receivedQty;
+                  const numQty =
+                    typeof currentQty === 'number'
+                      ? currentQty
+                      : parseFloat(String(currentQty || 0));
+                  next[i.material_id] = {
+                    checked,
+                    receivedQty: checked
+                      ? (!isNaN(numQty) && numQty > 0 ? numQty : rem)
+                      : 0,
+                  };
+                });
+                return next;
+              });
+            }}
+          />
+        ),
+        cell: (item) => {
+          const remaining = Math.max(
+            0,
+            item.remaining_qty ?? item.qty - (item.received_qty || 0)
+          );
+          const isCompleted = remaining <= 0;
+          const sel = receiveSelections[item.material_id] || {
+            checked: false,
+            receivedQty: 0,
+          };
+
+          return (
+            <Checkbox
+              disabled={isCompleted}
+              checked={sel.checked}
+              onChange={(checked) => {
+                setReceiveSelections((prev) => {
+                  const currentQty = prev[item.material_id]?.receivedQty;
+                  const numQty =
+                    typeof currentQty === 'number'
+                      ? currentQty
+                      : parseFloat(String(currentQty || 0));
+                  return {
+                    ...prev,
+                    [item.material_id]: {
+                      checked,
+                      receivedQty: checked
+                        ? (!isNaN(numQty) && numQty > 0 ? numQty : remaining)
+                        : 0,
+                    },
+                  };
+                });
+              }}
+            />
+          );
+        },
+      },
+      {
+        key: 'name',
+        header: 'Nama Barang',
+        align: 'left',
+        cell: (item) => (
+          <span className="text-sm text-slate-900 dark:text-white block">
+            {item.material_name}
+          </span>
+        ),
+      },
+      {
+        key: 'qty',
+        header: 'Qty',
+        width: '160px',
+        cell: (item) => (
+          <span className="text-sm text-slate-700 dark:text-slate-300">
+            {item.qty} {item.unit}
+          </span>
+        ),
+      },
+      {
+        key: 'remaining',
+        header: 'Sisa',
+        width: '160px',
+        cell: (item) => {
+          const remaining = Math.max(
+            0,
+            item.remaining_qty ?? item.qty - (item.received_qty || 0)
+          );
+          return (
+            <span
+              className={`text-sm ${remaining === 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-amber-600 dark:text-amber-400'
+                }`}
+            >
+              {remaining} {item.unit}
+            </span>
+          );
+        },
+      },
+      {
+        key: 'receivedQty',
+        header: 'Diterima',
+        width: '160px',
+        cell: (item) => {
+          const remaining = Math.max(
+            0,
+            item.remaining_qty ?? item.qty - (item.received_qty || 0)
+          );
+          const isCompleted = remaining <= 0;
+          const sel = receiveSelections[item.material_id] || {
+            checked: false,
+            receivedQty: 0,
+          };
+
+          if (isCompleted) {
+            return (
+              <span className="text-sm text-emerald-600 dark:text-emerald-400">
+                Lengkap
+              </span>
+            );
+          }
+
+          return (
+            <div className="flex flex-col items-end">
+              <div className="w-36">
+                <Input
+                  type="number"
+                  step="any"
+                  min={0}
+                  max={remaining}
+                  value={sel.receivedQty}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === '') {
+                      setReceiveSelections((prev) => ({
+                        ...prev,
+                        [item.material_id]: {
+                          checked: false,
+                          receivedQty: '',
+                        },
+                      }));
+                      return;
+                    }
+                    const parsed = parseFloat(raw);
+                    if (isNaN(parsed) || parsed === 0) {
+                      setReceiveSelections((prev) => ({
+                        ...prev,
+                        [item.material_id]: {
+                          checked: false,
+                          receivedQty: raw === '0' ? 0 : raw,
+                        },
+                      }));
+                      return;
+                    }
+                    const qty = Math.min(remaining, Math.max(0, parsed));
+                    setReceiveSelections((prev) => ({
+                      ...prev,
+                      [item.material_id]: {
+                        checked: qty > 0,
+                        receivedQty: raw.endsWith('.') || raw.endsWith('.0') ? raw : qty,
+                      },
+                    }));
+                  }}
+                  placeholder={String(remaining)}
+                  suffix={item.unit}
+                />
+              </div>
+            </div>
+          );
+        },
+      },
+    ],
+    [allChecked, someChecked, remainingItems, receiveSelections]
+  );
+
+  if (!po) return null;
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Terima Barang - PO #${po.po_number}`}
-      size="lg"
-      actions={
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
-            Batal
-          </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            <PackageCheck className="h-4 w-4 mr-1.5" />
-            {isSubmitting ? 'Menyimpan...' : 'Simpan Penerimaan'}
-          </Button>
-        </div>
-      }
+      title={`Terima Barang`}
+      size="xl"
+      actions={[
+        <Button key="submit" onClick={handleSubmit} disabled={isSubmitting}>
+          {isSubmitting ? 'Menyimpan...' : 'Simpan Penerimaan'}
+        </Button>,
+      ]}
     >
       <div className="space-y-4">
         {errorMsg && (
@@ -175,161 +369,12 @@ export function ReceiveGoodsModal({
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs pb-3 border-b border-slate-100 dark:border-slate-800 gap-2">
-          <div>
-            <span className="text-slate-400">Vendor:</span>{' '}
-            <strong className="text-slate-900 dark:text-white font-semibold">
-              {!po.supplier || po.supplier === '-' ? '-' : po.supplier}
-            </strong>
-          </div>
-          <div className="text-slate-500">
-            Centang item yang diterima, lalu masukkan kuantitas barang masuk.
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-slate-800 text-xs">
-                <th className="pb-3 pr-3 text-left w-10">
-                  <Checkbox
-                    checked={allChecked}
-                    indeterminate={someChecked && !allChecked}
-                    onChange={(checked) => {
-                      setReceiveSelections((prev) => {
-                        const next = { ...prev };
-                        remainingItems.forEach((i) => {
-                          const rem = Math.max(
-                            0,
-                            i.remaining_qty ?? i.qty - (i.received_qty || 0)
-                          );
-                          next[i.material_id] = {
-                            checked,
-                            receivedQty:
-                              prev[i.material_id]?.receivedQty !== '' && prev[i.material_id]?.receivedQty !== undefined
-                                ? prev[i.material_id].receivedQty
-                                : rem,
-                          };
-                        });
-                        return next;
-                      });
-                    }}
-                  />
-                </th>
-                <th className="pb-3 pr-3 text-left font-medium text-slate-500">Nama Barang</th>
-                <th className="pb-3 pr-3 text-center font-medium text-slate-500">Total PO</th>
-                <th className="pb-3 pr-3 text-center font-medium text-slate-500">Sisa Belum Diterima</th>
-                <th className="pb-3 text-right font-medium text-slate-500 w-48">Kuantitas Diterima</th>
-              </tr>
-            </thead>
-            <tbody>
-              {po.items.map((item) => {
-                const remaining = Math.max(
-                  0,
-                  item.remaining_qty ?? item.qty - (item.received_qty || 0)
-                );
-                const isCompleted = remaining <= 0;
-                const sel = receiveSelections[item.material_id] || {
-                  checked: false,
-                  receivedQty: remaining,
-                };
-
-                return (
-                  <tr
-                    key={item.material_id}
-                    className="border-b border-slate-50 dark:border-slate-800/50 last:border-0 hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
-                  >
-                    <td className="py-3 pr-3">
-                      <Checkbox
-                        disabled={isCompleted}
-                        checked={sel.checked}
-                        onChange={(checked) => {
-                          setReceiveSelections((prev) => ({
-                            ...prev,
-                            [item.material_id]: {
-                              checked,
-                              receivedQty:
-                                checked && (prev[item.material_id]?.receivedQty === '' || prev[item.material_id]?.receivedQty === 0)
-                                  ? remaining
-                                  : (prev[item.material_id]?.receivedQty ?? remaining),
-                            },
-                          }));
-                        }}
-                      />
-                    </td>
-                    <td className="py-3 pr-3">
-                      <div className="font-semibold text-slate-900 dark:text-white">
-                        {item.material_name}
-                      </div>
-                      {item.received_qty && item.received_qty > 0 ? (
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Sudah diterima:{' '}
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
-                            {item.received_qty} {item.unit}
-                          </span>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="py-3 pr-3 text-center font-mono text-xs">
-                      {item.qty} {item.unit}
-                    </td>
-                    <td className="py-3 pr-3 text-center">
-                      <span
-                        className={`font-mono text-xs font-semibold ${
-                          remaining === 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-amber-600 dark:text-amber-400'
-                        }`}
-                      >
-                        {remaining} {item.unit}
-                      </span>
-                    </td>
-                    <td className="py-3 text-right">
-                      {isCompleted ? (
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          Lengkap
-                        </span>
-                      ) : (
-                        <div className="flex flex-col items-end">
-                          <div className="w-32">
-                            <Input
-                              inputSize="sm"
-                              type="number"
-                              step="any"
-                              min={0.01}
-                              max={remaining}
-                              value={sel.receivedQty}
-                              onChange={(e) => {
-                                const val =
-                                  e.target.value === ''
-                                    ? ''
-                                    : Math.min(
-                                        remaining,
-                                        Math.max(0, parseFloat(e.target.value))
-                                      );
-                                setReceiveSelections((prev) => ({
-                                  ...prev,
-                                  [item.material_id]: {
-                                    checked: typeof val === 'number' && val > 0,
-                                    receivedQty: val,
-                                  },
-                                }));
-                              }}
-                              placeholder={String(remaining)}
-                            />
-                          </div>
-                          <span className="text-[10px] text-slate-400 mt-0.5">
-                            Maks: {remaining} {item.unit}
-                          </span>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          dense
+          columns={columns}
+          data={poItems}
+          keyExtractor={(item) => item.material_id}
+        />
       </div>
     </Modal>
   );

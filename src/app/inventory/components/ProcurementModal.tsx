@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/context/ToastContext';
 import { useApp } from '@/context/AppContext';
 import { formatCurrency } from '@/lib/utils';
-import { canCreatePO, canViewFinance } from '@/lib/roles';
+import { canViewFinance } from '@/lib/roles';
 import {
   procurementService,
   CreateProcurementRequest,
@@ -28,7 +29,7 @@ interface ProcurementItemDraft {
   material_name: string;
   unit: string;
   unit_cost: number;
-  qty: number;
+  qty: number | string;
 }
 
 interface ProcurementModalProps {
@@ -39,6 +40,18 @@ interface ProcurementModalProps {
   onSuccess: () => void;
 }
 
+const parseQty = (qty: number | string | undefined): number => {
+  if (typeof qty === 'number') return isNaN(qty) ? 0 : qty;
+  if (!qty) return 0;
+  const parsed = parseFloat(String(qty).replace(',', '.'));
+  return isNaN(parsed) ? 0 : parsed;
+};
+
+const purchaseTypeOptions = [
+  { key: 'PO' as const, label: 'Purchase Order (PO)' },
+  { key: 'DIRECT' as const, label: 'Pembelian Langsung (Cash)' },
+];
+
 export function ProcurementModal({
   isOpen,
   onClose,
@@ -47,12 +60,11 @@ export function ProcurementModal({
   onSuccess,
 }: ProcurementModalProps) {
   const { toast } = useToast();
-  const { bankAccounts = [], currentUser } = useApp();
+  const { bankAccounts = [], materials = [], currentUser } = useApp();
 
-  const canExecuteCommercial = canCreatePO(currentUser.role);
   const canShowBankBalance = canViewFinance(currentUser.role);
   const isExecuteDraftMode = Boolean(draftPO);
-  const isRequestOnlyMode = !isExecuteDraftMode;
+  const isRequestOnlyMode = false;
 
   const [purchaseType, setPurchaseType] = useState<'PO' | 'DIRECT'>('PO');
   const [supplier, setSupplier] = useState('');
@@ -60,9 +72,9 @@ export function ProcurementModal({
   const [additionalCost, setAdditionalCost] = useState(0);
   const [items, setItems] = useState<ProcurementItemDraft[]>([]);
 
-  // Picker item baru
+  // Picker item baru (Khusus mode Create)
   const [selectedMatId, setSelectedMatId] = useState<string>('');
-  const [selectedQty, setSelectedQty] = useState<number>(1);
+  const [selectedQty, setSelectedQty] = useState<string>('');
   const [showAddItemRow, setShowAddItemRow] = useState(false);
 
   const [materialOptions, setMaterialOptions] = useState<MaterialOption[]>([]);
@@ -73,19 +85,31 @@ export function ProcurementModal({
     try {
       const res = await materialService.getMaterialOptions();
       if (res.data) {
-        setMaterialOptions(res.data.filter((m) => !m.is_sub_assembly));
+        const filtered = res.data.filter((m) => !m.is_sub_assembly);
+        setMaterialOptions(filtered);
+        // Jika ada item pada draft yang unit_cost-nya masih 0, isi otomatis dari HPP master material
+        setItems((prev) =>
+          prev.map((item) => {
+            if (item.unit_cost && item.unit_cost > 0) return item;
+            const match = filtered.find((m) => String(m.id) === String(item.material_id));
+            return match && match.unit_cost > 0
+              ? { ...item, unit_cost: match.unit_cost, unit: item.unit || match.unit || 'unit' }
+              : item;
+          })
+        );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch material options:', err);
     }
   }, []);
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchMaterialOptions();
       setSelectedBankAccountId(bankAccounts[0]?.id ? String(bankAccounts[0].id) : '');
       setSelectedMatId('');
-      setSelectedQty(1);
+      setSelectedQty('');
       setErrorMsg('');
 
       if (draftPO) {
@@ -93,13 +117,18 @@ export function ProcurementModal({
         setSupplier(draftPO.supplier && draftPO.supplier !== '-' ? draftPO.supplier : '');
         setAdditionalCost(draftPO.additional_cost || 0);
         setItems(
-          (draftPO.items || []).map((it) => ({
-            material_id: it.material_id,
-            material_name: it.material_name,
-            unit: it.unit || 'unit',
-            unit_cost: it.unit_cost || 0,
-            qty: it.qty,
-          }))
+          (draftPO.items || []).map((it) => {
+            const appMat = materials.find((m) => String(m.id) === String(it.material_id));
+            const fallbackCost =
+              it.unit_cost && it.unit_cost > 0 ? it.unit_cost : appMat?.unitCost || 0;
+            return {
+              material_id: it.material_id,
+              material_name: it.material_name,
+              unit: it.unit || appMat?.unit || 'unit',
+              unit_cost: fallbackCost,
+              qty: it.qty,
+            };
+          })
         );
         setShowAddItemRow(false);
       } else {
@@ -110,7 +139,7 @@ export function ProcurementModal({
         setShowAddItemRow(!preselectedMaterialId);
       }
     }
-  }, [isOpen, fetchMaterialOptions, bankAccounts, draftPO, preselectedMaterialId]);
+  }, [isOpen, fetchMaterialOptions, bankAccounts, draftPO, preselectedMaterialId, materials]);
 
   // Pre-fill ketika preselectedMaterialId diberikan pada mode Create
   useEffect(() => {
@@ -119,13 +148,14 @@ export function ProcurementModal({
         (m) => String(m.id) === String(preselectedMaterialId)
       );
       if (targetMat) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setItems([
           {
             material_id: targetMat.id,
             material_name: targetMat.name,
             unit: targetMat.unit || 'unit',
             unit_cost: targetMat.unit_cost || 0,
-            qty: 1,
+            qty: '1',
           },
         ]);
         setShowAddItemRow(false);
@@ -134,7 +164,8 @@ export function ProcurementModal({
   }, [isOpen, draftPO, preselectedMaterialId, materialOptions]);
 
   const handleAddItem = () => {
-    if (!selectedMatId || selectedQty <= 0) return;
+    const numQty = parseQty(selectedQty);
+    if (!selectedMatId || numQty <= 0) return;
     const target = materialOptions.find((m) => String(m.id) === String(selectedMatId));
     if (!target) return;
 
@@ -142,7 +173,7 @@ export function ProcurementModal({
     if (existingIndex >= 0) {
       setItems((prev) =>
         prev.map((item, idx) =>
-          idx === existingIndex ? { ...item, qty: item.qty + selectedQty } : item
+          idx === existingIndex ? { ...item, qty: parseQty(item.qty) + numQty } : item
         )
       );
     } else {
@@ -159,7 +190,7 @@ export function ProcurementModal({
     }
 
     setSelectedMatId('');
-    setSelectedQty(1);
+    setSelectedQty('');
     setShowAddItemRow(false);
     setErrorMsg('');
   };
@@ -168,9 +199,10 @@ export function ProcurementModal({
     setItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  const handleUpdateItemQty = (index: number, newQty: number) => {
+  const handleUpdateItemQty = (index: number, rawVal: string) => {
+    const sanitized = rawVal.replace(/[^0-9.,]/g, '');
     setItems((prev) =>
-      prev.map((item, idx) => (idx === index ? { ...item, qty: newQty } : item))
+      prev.map((item, idx) => (idx === index ? { ...item, qty: sanitized } : item))
     );
   };
 
@@ -181,7 +213,7 @@ export function ProcurementModal({
   };
 
   const itemsTotal = useMemo(() => {
-    return items.reduce((acc, i) => acc + (i.qty || 0) * (i.unit_cost || 0), 0);
+    return items.reduce((acc, i) => acc + (parseQty(i.qty) || 0) * (i.unit_cost || 0), 0);
   }, [items]);
 
   const grandTotal = useMemo(() => {
@@ -190,9 +222,9 @@ export function ProcurementModal({
 
   const handleSubmit = async () => {
     setErrorMsg('');
-    const supplierTrimmed = isRequestOnlyMode ? '-' : supplier.trim();
+    const supplierTrimmed = supplier.trim();
 
-    if (!isRequestOnlyMode && !supplierTrimmed) {
+    if (!supplierTrimmed) {
       setErrorMsg('Nama Vendor / Toko wajib diisi.');
       return;
     }
@@ -202,32 +234,37 @@ export function ProcurementModal({
       return;
     }
 
-    if (items.some((i) => !i.qty || Number(i.qty) <= 0)) {
+    if (items.some((i) => parseQty(i.qty) <= 0)) {
       setErrorMsg('Kuantitas setiap item pengadaan harus lebih besar dari 0.');
       return;
     }
 
-    if (!isRequestOnlyMode && purchaseType === 'DIRECT' && !selectedBankAccountId) {
-      setErrorMsg('Kas / Rekening Pembayaran wajib dipilih untuk Pembelian Langsung.');
+    if (items.some((i) => Number(i.unit_cost || 0) <= 0)) {
+      setErrorMsg('Harga satuan setiap item harus lebih besar dari 0.');
       return;
     }
 
-    if (isExecuteDraftMode && draftPO) {
-      const processPayload: ProcessPORequest = {
-        supplier: supplierTrimmed,
-        purchase_type: purchaseType,
-        bank_account_id:
-          purchaseType === 'DIRECT' && selectedBankAccountId
-            ? Number(selectedBankAccountId)
-            : undefined,
-        additional_cost: Number(additionalCost || 0),
-        items: items.map((i) => ({
-          material_id: i.material_id,
-          qty: Number(i.qty),
-          unit_cost: Number(i.unit_cost || 0),
-        })),
-      };
+    if (purchaseType === 'DIRECT' && !selectedBankAccountId) {
+      setErrorMsg('Rekening Pembayaran wajib dipilih untuk Pembelian Langsung.');
+      return;
+    }
 
+    const processPayload: ProcessPORequest = {
+      supplier: supplierTrimmed,
+      purchase_type: purchaseType,
+      bank_account_id:
+        purchaseType === 'DIRECT' && selectedBankAccountId
+          ? Number(selectedBankAccountId)
+          : undefined,
+      additional_cost: Number(additionalCost || 0),
+      items: items.map((i) => ({
+        material_id: i.material_id,
+        qty: parseQty(i.qty),
+        unit_cost: Number(i.unit_cost || 0),
+      })),
+    };
+
+    if (isExecuteDraftMode && draftPO) {
       setIsSubmitting(true);
       try {
         await procurementService.orderPO(draftPO.id, processPayload);
@@ -237,10 +274,11 @@ export function ProcurementModal({
         );
         onSuccess();
         onClose();
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to process procurement:', err);
+        const error = err as { response?: { data?: { message?: string } }; message?: string };
         setErrorMsg(
-          err?.response?.data?.message || err?.message || 'Gagal memproses pengadaan.'
+          error.response?.data?.message || error.message || 'Gagal memproses pengadaan.'
         );
       } finally {
         setIsSubmitting(false);
@@ -248,51 +286,46 @@ export function ProcurementModal({
       return;
     }
 
-    const payload: CreateProcurementRequest = {
-      supplier: supplierTrimmed,
-      purchase_type: 'PO',
-      additional_cost: 0,
-      items: items.map((i) => ({
-        material_id: i.material_id,
-        qty: Number(i.qty),
-        unit_cost: 0,
-      })),
-    };
-
+    // Mode Buat Pengadaan: langsung eksekusi ke order (bypass draft)
     setIsSubmitting(true);
     try {
-      const res = await procurementService.createProcurement(payload);
+      const res = await procurementService.createProcurement({
+        supplier: supplierTrimmed,
+        purchase_type: purchaseType,
+        bank_account_id: processPayload.bank_account_id,
+        additional_cost: processPayload.additional_cost,
+        items: processPayload.items,
+      });
+
       if (res.data) {
+        if (res.data.status === 'DRAFT') {
+          await procurementService.orderPO(res.data.id, processPayload);
+        }
         toast.success(
-          'Kebutuhan Bahan Diajukan',
-          `Pengajuan pengadaan ${res.data.po_number} berhasil disimpan.`
+          'Pengadaan Diproses',
+          `Pengadaan ${res.data.po_number} berhasil dibuat dan dipesan.`
         );
         onSuccess();
         onClose();
       }
-    } catch (err: any) {
-      console.error('Failed to create procurement:', err);
+    } catch (err: unknown) {
+      console.error('Failed to create and process procurement:', err);
+      const error = err as { response?: { data?: { message?: string } }; message?: string };
       setErrorMsg(
-        err?.response?.data?.message || err?.message || 'Gagal mengajukan pengadaan.'
+        error.response?.data?.message || error.message || 'Gagal memproses pengadaan.'
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const modalTitle = isExecuteDraftMode
-    ? `Proses Pengadaan — ${draftPO?.po_number}`
-    : isRequestOnlyMode
-    ? 'Ajukan Kebutuhan Bahan Baku'
-    : 'Form Pengadaan Bahan Baku';
+  const modalTitle = isExecuteDraftMode ? 'Proses Pengadaan' : 'Buat Pengadaan';
 
   const submitLabel = isSubmitting
     ? 'Menyimpan...'
     : isExecuteDraftMode
-    ? 'Setujui & Pesan'
-    : isRequestOnlyMode
-    ? 'Ajukan Kebutuhan'
-    : 'Buat Pengadaan';
+      ? 'Setujui & Pesan'
+      : 'Buat Pengadaan';
 
   return (
     <Modal
@@ -301,22 +334,28 @@ export function ProcurementModal({
       title={modalTitle}
       size="lg"
       actions={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
-            Batal
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={isSubmitting || items.length === 0}
-          >
-            {isExecuteDraftMode ? (
-              <Check className="h-4 w-4 mr-1" />
-            ) : (
-              <Plus className="h-4 w-4 mr-1" />
+        <div className='flex justify-between items-center w-full'>
+          <div className='flex flex-col'>
+            <span className='text-xs text-slate-600 dark:text-slate-400'>Total Pengadaan</span>
+            <span className='font-semibold text-slate-800 dark:text-slate-200'>{formatCurrency(grandTotal)}</span>
+          </div>
+          <div className='flex gap-2'>
+            {!isExecuteDraftMode && (
+              <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
+                Batal
+              </Button>
             )}
-            {submitLabel}
-          </Button>
-        </>
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting || items.length === 0}
+            >
+              {isExecuteDraftMode && (
+                <Check className="h-4 w-4 mr-1" />
+              )}
+              {submitLabel}
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="space-y-4">
@@ -327,75 +366,243 @@ export function ProcurementModal({
           </div>
         )}
 
-        {/* Kontrol Komersial (Hanya untuk Purchasing / Admin) */}
-        {!isRequestOnlyMode && (
+        {isExecuteDraftMode ? (
+          /* ============================================================ */
+          /* MODAL PROSES PENGADAAN (Fase 2 Draft Execution)              */
+          /* ============================================================ */
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div
-                onClick={() => setPurchaseType('PO')}
-                className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
-                  purchaseType === 'PO'
-                    ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
-                    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <input
-                    type="radio"
-                    name="purchaseTypeOption"
-                    value="PO"
-                    checked={purchaseType === 'PO'}
-                    onChange={() => setPurchaseType('PO')}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                  />
-                  <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Purchase Order (PO)
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
-                  Pesan ke vendor dan terima fisik barang saat tiba di gudang.
-                </p>
-              </div>
+            <SegmentedControl<'PO' | 'DIRECT'>
+              options={purchaseTypeOptions}
+              value={purchaseType}
+              onChange={setPurchaseType}
+              fullWidth
+            />
 
-              <div
-                onClick={() => setPurchaseType('DIRECT')}
-                className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
-                  purchaseType === 'DIRECT'
-                    ? 'border-indigo-600 bg-indigo-50/50 dark:border-indigo-500 dark:bg-indigo-950/30 ring-1 ring-indigo-600/30'
-                    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <input
-                    type="radio"
-                    name="purchaseTypeOption"
-                    value="DIRECT"
-                    checked={purchaseType === 'DIRECT'}
-                    onChange={() => setPurchaseType('DIRECT')}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                  />
-                  <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Pembelian Langsung (Tunai)
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
-                  Bayar kas/bank langsung & stok bertambah seketika.
-                </p>
+            <div className="space-y-3 pt-2">
+              <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 md:mb-1.5">
+                Daftar Item
+              </label>
+              <div className='border border-slate-200 dark:border-slate-700 rounded-md divide-y divide-slate-200 dark:divide-slate-700'>
+                {items.map((item, idx) => (
+                  <div
+                    key={item.material_id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3"
+                  >
+                    <div className="min-w-0 flex-1 ">
+                      <span className="text-sm text-slate-900 dark:text-white truncate block">
+                        {item.material_name}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 shrink-0">
+                      <div className="w-30 shrink-0">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={item.qty}
+                          onChange={(e) => handleUpdateItemQty(idx, e.target.value)}
+                          placeholder="qty"
+                          suffix={item.unit}
+                          className="font-medium"
+                        />
+                      </div>
+
+                      <div className="w-36 shrink-0">
+                        <CurrencyInput
+                          value={item.unit_cost}
+                          onChange={(val) =>
+                            handleUpdateItemCost(
+                              idx,
+                              typeof val === 'number' ? val : 0
+                            )
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
+            </div>
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4 pt-2'>
+              <Input
+                label="Nama Vendor / Toko"
+                required
+                value={supplier}
+                onChange={(e) => setSupplier(e.target.value)}
+              />
+              <CurrencyInput
+                label='Biaya Tambahan'
+                value={additionalCost}
+                onChange={(val) => setAdditionalCost(typeof val === 'number' ? val : 0)}
+                placeholder="0"
+              />
+            </div>
+            {purchaseType === 'DIRECT' && (
+              <div>
+                <Select
+                  required
+                  label='Rekening Pembayaran'
+                  value={selectedBankAccountId}
+                  onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                  options={bankAccounts.map((b) => ({
+                    value: String(b.id),
+                    label: canShowBankBalance
+                      ? `${b.name} (${formatCurrency(b.balance)})`
+                      : b.name,
+                  }))}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          /* ============================================================ */
+          /* MODAL BUAT PENGADAAN (Create Baru: Multi-Item)               */
+          /* ============================================================ */
+          <>
+            <SegmentedControl<'PO' | 'DIRECT'>
+              options={purchaseTypeOptions}
+              value={purchaseType}
+              onChange={setPurchaseType}
+              fullWidth
+            />
+            <div className="space-y-3 py-2">
+              <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Daftar Item
+              </label>
+              {items.length !== 0 && (
+                <div className="border border-slate-200 dark:border-slate-700 rounded-md divide-y divide-slate-200 dark:divide-slate-700">
+                  {items.map((item, idx) => (
+                    <div
+                      key={item.material_id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="text-sm text-slate-900 dark:text-white truncate block">
+                          {item.material_name}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 shrink-0">
+                        <div className="w-30 shrink-0">
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            value={item.qty}
+                            onChange={(e) => handleUpdateItemQty(idx, e.target.value)}
+                            placeholder="qty"
+                            suffix={item.unit}
+                            className="font-medium"
+                          />
+                        </div>
+
+                        {!isRequestOnlyMode && (
+                          <div className="w-36 shrink-0">
+                            <CurrencyInput
+                              value={item.unit_cost}
+                              onChange={(val) =>
+                                handleUpdateItemCost(
+                                  idx,
+                                  typeof val === 'number' ? val : 0
+                                )
+                              }
+                              placeholder="0"
+                            />
+                          </div>
+                        )}
+
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleRemoveItem(idx)}
+                          className="text-slate-400 hover:text-red-500 shrink-0"
+                          title="Hapus Item"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {showAddItemRow ? (
+                <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                  <div className="flex-1 min-w-[200px]">
+                    <Select
+                      placeholder="Pilih Bahan Baku"
+                      value={selectedMatId}
+                      onChange={(e) => setSelectedMatId(e.target.value)}
+                      options={materialOptions.map((m) => ({
+                        value: String(m.id),
+                        label: isRequestOnlyMode
+                          ? `${m.name} (${m.unit})`
+                          : `${m.name} (${formatCurrency(m.unit_cost)} / ${m.unit})`,
+                      }))}
+                    />
+                  </div>
+                  <div className="w-24 shrink-0">
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Qty"
+                      value={selectedQty}
+                      onChange={(e) => setSelectedQty(e.target.value.replace(/[^0-9.,]/g, ''))}
+                      className="font-medium"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="primary"
+                      onClick={handleAddItem}
+                      disabled={!selectedMatId || parseQty(selectedQty) <= 0}
+                      className="shrink-0"
+                      title="Tambah"
+                    >
+                      <Check className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        setSelectedMatId('');
+                        setSelectedQty('');
+                        if (items.length > 0) setShowAddItemRow(false);
+                      }}
+                      className="shrink-0"
+                      title="Batal"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className='w-full'
+                  onClick={() => setShowAddItemRow(true)}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Tambah Item Lain
+                </Button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label="Nama Vendor / Toko"
                 required
-                placeholder="Contoh: CV Sumber Kayu / PT Multi Perkasa"
                 value={supplier}
                 onChange={(e) => setSupplier(e.target.value)}
               />
 
               <div>
                 <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 md:mb-1.5">
-                  Biaya Ekspedisi / Ongkir Tambahan (Opsional)
+                  Biaya Tambahan
                 </label>
                 <CurrencyInput
                   value={additionalCost}
@@ -408,7 +615,7 @@ export function ProcurementModal({
             {purchaseType === 'DIRECT' && (
               <div>
                 <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 md:mb-1.5">
-                  Kas / Rekening Pembayaran <span className="text-red-500 font-bold">*</span>
+                  Rekening Pembayaran <span className="text-red-500 font-bold">*</span>
                 </label>
                 <Select
                   value={selectedBankAccountId}
@@ -424,162 +631,6 @@ export function ProcurementModal({
             )}
           </>
         )}
-
-        {/* Daftar Item Bahan Baku */}
-        <div className="space-y-2 pt-2">
-          <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Daftar Item Bahan Baku <span className="text-red-500 font-bold">*</span>
-          </label>
-
-          {items.length === 0 ? (
-            <EmptyState
-              title="Daftar Item Masih Kosong"
-              description="Tambahkan bahan baku beserta kuantitas yang dibutuhkan."
-              variant="plain"
-            />
-          ) : (
-            <div className="space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 bg-slate-50/40 p-3 dark:border-slate-800 dark:bg-slate-900/40">
-              {items.map((item, idx) => (
-                <div
-                  key={item.material_id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2.5 first:pt-0"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                      {item.material_name}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Satuan: {item.unit}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
-                    <div className="w-24">
-                      <Input
-                        type="number"
-                        min="1"
-                        value={item.qty}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          handleUpdateItemQty(idx, val);
-                        }}
-                        placeholder="Qty"
-                      />
-                    </div>
-                    <span className="text-xs text-slate-500 w-10 truncate">
-                      {item.unit}
-                    </span>
-
-                    {!isRequestOnlyMode && (
-                      <>
-                        <div className="w-36">
-                          <CurrencyInput
-                            value={item.unit_cost}
-                            onChange={(val) =>
-                              handleUpdateItemCost(
-                                idx,
-                                typeof val === 'number' ? val : 0
-                              )
-                            }
-                            placeholder="Harga / Unit"
-                          />
-                        </div>
-                        <div className="font-mono text-xs font-semibold text-right min-w-[96px] text-slate-900 dark:text-white">
-                          {formatCurrency(item.qty * item.unit_cost)}
-                        </div>
-                      </>
-                    )}
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleRemoveItem(idx)}
-                      className="text-slate-400 hover:text-red-500 p-1 h-8 w-8"
-                      title="Hapus Item"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {showAddItemRow ? (
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-2">
-              <div className="flex-1 min-w-[200px]">
-                <Select
-                  placeholder="Pilih Bahan Baku..."
-                  value={selectedMatId}
-                  onChange={(e) => setSelectedMatId(e.target.value)}
-                  options={materialOptions.map((m) => ({
-                    value: String(m.id),
-                    label: isRequestOnlyMode
-                      ? `${m.name} (${m.unit})`
-                      : `${m.name} (${formatCurrency(m.unit_cost)} / ${m.unit})`,
-                  }))}
-                />
-              </div>
-              <div className="w-24 shrink-0">
-                <Input
-                  type="number"
-                  min="1"
-                  placeholder="Qty"
-                  value={selectedQty || ''}
-                  onChange={(e) => setSelectedQty(Math.max(1, Number(e.target.value)))}
-                />
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="primary"
-                  onClick={handleAddItem}
-                  disabled={!selectedMatId || selectedQty <= 0}
-                  className="h-9 w-9 p-0"
-                  title="Tambah"
-                >
-                  <Check className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setSelectedMatId('');
-                    setSelectedQty(1);
-                    if (items.length > 0) setShowAddItemRow(false);
-                  }}
-                  className="h-9 w-9 p-0"
-                  title="Batal"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="pt-2 flex justify-between items-center">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setShowAddItemRow(true)}
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Tambah Item Lain
-              </Button>
-              {!isRequestOnlyMode && (
-                <div className="text-right text-xs">
-                  <span className="text-slate-500 mr-2">Total Estimasi:</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                    {formatCurrency(grandTotal)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
       </div>
     </Modal>
   );

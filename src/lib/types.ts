@@ -475,6 +475,8 @@ export interface PurchaseOrder {
   paidAt?: string;
   purchaseType?: 'PO' | 'DIRECT';
   additionalCost?: number;
+  orderedBy?: string;
+  orderedAt?: string;
   cancelReason?: string;
   cancelledBy?: string;
   cancelledAt?: string;

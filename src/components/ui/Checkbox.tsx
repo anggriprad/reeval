@@ -14,6 +14,7 @@ export interface CheckboxProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
   containerClassName?: string;
+  labelClassName?: string;
   id?: string;
   title?: string;
 }
@@ -40,6 +41,7 @@ export function Checkbox({
   size = 'md',
   className = '',
   containerClassName = '',
+  labelClassName,
   id,
   title,
 }: CheckboxProps) {
@@ -67,7 +69,7 @@ export function Checkbox({
       id={id}
       title={title}
       className={cn(
-        'inline-flex items-center gap-2 select-none',
+        'inline-flex items-center gap-2 select-none align-middle',
         disabled && 'opacity-50 cursor-not-allowed pointer-events-none',
         containerClassName
       )}
@@ -80,26 +82,31 @@ export function Checkbox({
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         className={cn(
-          'flex items-center justify-center border transition-all shrink-0 cursor-pointer',
+          'flex items-center justify-center border transition-colors shrink-0 cursor-pointer aspect-square leading-none',
           sizeClasses[size],
           isCheckedOrIndeterminate
-            ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs dark:border-indigo-500 dark:bg-indigo-500'
+            ? 'border-indigo-600 bg-indigo-600 text-white dark:border-indigo-500 dark:bg-indigo-500'
             : 'border-slate-300 bg-white hover:border-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-indigo-400',
           'focus:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900',
           className
         )}
       >
         {indeterminate ? (
-          <Minus className={iconSizes[size]} />
+          <Minus className={cn(iconSizes[size], 'shrink-0')} />
         ) : checked ? (
-          <Check className={iconSizes[size]} />
+          <Check className={cn(iconSizes[size], 'shrink-0')} />
         ) : null}
       </button>
 
       {(label || description) && (
         <div className="text-left cursor-pointer" onClick={handleClick}>
           {label && (
-            <span className="font-medium text-slate-800 dark:text-slate-200 block text-[13px] md:text-xs leading-tight">
+            <span
+              className={cn(
+                'font-medium text-slate-800 dark:text-slate-200 block text-[13px] md:text-xs leading-tight',
+                labelClassName
+              )}
+            >
               {label}
             </span>
           )}

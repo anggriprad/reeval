@@ -367,3 +367,21 @@ export function canSeeCosts(role: RoleType | string | string[]): boolean {
       norm === 'ADMIN_FINANCE'
   );
 }
+
+export function canSeePurchasingCosts(
+  userOrRole?: { role?: string; roles?: string[]; is_superadmin?: boolean } | RoleType | string | string[] | null
+): boolean {
+  if (!userOrRole) return false;
+  if (typeof userOrRole === 'object' && !Array.isArray(userOrRole) && 'role' in userOrRole) {
+    if (userOrRole.is_superadmin) return true;
+    const roles = userOrRole.roles && userOrRole.roles.length > 0 ? userOrRole.roles : [userOrRole.role || ''];
+    return roles.some(r => {
+      const norm = normalizeRole(r);
+      return norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'PURCHASING';
+    });
+  }
+  return hasAnyMatchingRole(
+    userOrRole as RoleType | string | string[],
+    norm => norm === 'ADMIN' || norm === 'SUPER_ADMIN' || norm === 'PURCHASING'
+  );
+}

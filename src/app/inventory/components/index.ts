@@ -1,6 +1,7 @@
 export * from './RawMaterialModal';
 export * from './RawMaterialSection';
 export * from './ProcurementModal';
+export * from './ProcurementRequestModal';
 export * from './ReceiveGoodsModal';
 export * from './CancelPOModal';
 export * from './ProcurementSection';

@@ -35,6 +35,7 @@ export interface SegmentedControlProps<T extends string = string> {
   value: T;
   onChange: (value: T) => void;
   className?: string;
+  fullWidth?: boolean;
   // Search props
   searchValue?: string;
   onSearchChange?: (value: string) => void;
@@ -55,6 +56,7 @@ export function SegmentedControl<T extends string = string>({
   value,
   onChange,
   className = '',
+  fullWidth = false,
   searchValue,
   onSearchChange,
   searchPlaceholder = 'Cari...',
@@ -67,6 +69,7 @@ export function SegmentedControl<T extends string = string>({
 }: SegmentedControlProps<T>) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [isPrimary, setIsPrimary] = React.useState(true);
+  const effectiveIsPrimary = !fullWidth && isPrimary;
   const [mobileFilterOpen, setMobileFilterOpen] = React.useState(false);
 
   const allFilters: FilterConfig[] = React.useMemo(() => {
@@ -98,15 +101,16 @@ export function SegmentedControl<T extends string = string>({
 
   // Detect if this is the primary top-level SegmentedControl on the page or a nested sub-tab bar
   React.useEffect(() => {
+    if (fullWidth) return;
     if (typeof document !== 'undefined' && containerRef.current) {
       const all = document.querySelectorAll('[data-segmented-control="true"]');
       setIsPrimary(all.length === 0 || all[0] === containerRef.current);
     }
-  }, []);
+  }, [fullWidth]);
 
   // Automatically sync Search & Filter controls with MobileHeader for all pages
   React.useEffect(() => {
-    if (!isPrimary || (!hasSearch && !hasFilters)) return;
+    if (!effectiveIsPrimary || (!hasSearch && !hasFilters)) return;
 
     const detail: MobileControlsSyncDetail = {
       search: hasSearch
@@ -133,7 +137,7 @@ export function SegmentedControl<T extends string = string>({
       clearTimeout(timer);
       window.dispatchEvent(new CustomEvent('mobile-controls-sync', { detail: null }));
     };
-  }, [isPrimary, hasSearch, hasFilters, searchValue, searchPlaceholder, isFilterActive]);
+  }, [effectiveIsPrimary, hasSearch, hasFilters, searchValue, searchPlaceholder, isFilterActive]);
 
   const itemRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
 
@@ -149,11 +153,13 @@ export function SegmentedControl<T extends string = string>({
   }, [value]);
 
   return (
-    <div ref={containerRef} data-segmented-control="true" className={`space-y-3.5 md:space-y-5 ${className}`}>
+    <div ref={containerRef} data-segmented-control="true" className={`${fullWidth ? 'w-full' : 'space-y-3.5 md:space-y-5'} ${className}`}>
       {/* Tab Segment Container: Flush to top under MobileHeader on mobile (if primary), standard pills on desktop / secondary sub-tabs */}
       <div
         className={
-          isPrimary
+          fullWidth
+            ? 'w-full flex items-center gap-1.5 rounded-xl md:rounded-lg bg-slate-100 dark:bg-slate-800 p-1'
+            : effectiveIsPrimary
             ? 'max-md:!-mt-4 max-md:-mx-4 md:mt-0 md:mx-0 sticky top-16 left-0 right-0 z-20 md:static h-12 md:h-auto md:w-fit max-w-none md:max-w-full flex items-stretch md:items-center gap-0 md:gap-1.5 rounded-none md:rounded-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-md md:bg-slate-50 md:dark:bg-slate-800 p-0 md:p-1 border-b border-slate-200/90 dark:border-slate-800/90 md:border-b-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
             : 'w-full md:w-fit max-w-full flex items-center gap-1.5 rounded-xl md:rounded-lg bg-slate-50 dark:bg-slate-800 p-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
         }
@@ -175,7 +181,12 @@ export function SegmentedControl<T extends string = string>({
               }}
               onClick={() => onChange(option.key)}
               className={
-                isPrimary
+                fullWidth
+                  ? `flex-1 flex items-center justify-center gap-2 rounded-lg md:rounded-md px-3.5 py-2 md:py-1.5 text-[13.5px] md:text-sm font-semibold transition-all cursor-pointer min-w-0 active:scale-[0.99] touch-manipulation ${isActive
+                    ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700/50 dark:hover:text-slate-200'
+                  }`
+                  : effectiveIsPrimary
                   ? `flex items-center justify-center gap-2 rounded-none md:rounded-md px-3.5 py-0 md:py-1.5 h-full md:h-auto text-[13.5px] md:text-sm font-semibold transition-all cursor-pointer shrink-0 min-w-[86px] md:min-w-[95px] border-b-[3px] md:border-b-0 active:scale-[0.99] touch-manipulation ${isActive
                     ? 'border-indigo-600 bg-indigo-50/50 text-indigo-600 dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-300 md:border-transparent md:bg-white md:text-indigo-600 md:shadow md:dark:bg-slate-700 md:dark:text-white'
                     : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200 md:hover:bg-slate-200/60 md:dark:hover:bg-slate-700/50'
@@ -187,7 +198,7 @@ export function SegmentedControl<T extends string = string>({
               }
             >
               {Icon && <Icon className="h-4 w-4 shrink-0" />}
-              <span className="whitespace-nowrap">{option.label}</span>
+              <span className="truncate">{option.label}</span>
               {typeof option.count === 'number' && option.count > 0 && (
                 <span
                   className={`inline-flex items-center justify-center rounded-full transition-colors shrink-0 font-bold h-4.5 min-w-[18px] px-1 text-[11px] leading-none shadow-xs ${option.countColor

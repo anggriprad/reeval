@@ -41,14 +41,14 @@ const extractText = (node: any): string => {
 
 const heightClasses = {
   sm: 'h-10 md:h-8 text-[16px] md:text-xs px-3 md:px-2.5',
-  md: 'h-11 md:h-9 text-[16px] md:text-xs px-3.5 md:px-3',
-  lg: 'h-12 md:h-10 text-[16px] md:text-sm px-4 md:px-3.5',
+  md: 'h-11 md:h-9 text-[16px] md:text-sm px-3.5 md:px-3',
+  lg: 'h-12 md:h-10 text-[16px] md:text-base px-4 md:px-3.5',
 };
 
 const optionTextClasses: Record<'sm' | 'md' | 'lg', string> = {
   sm: 'text-[16px] md:text-xs px-3.5 md:px-3 py-2.5 md:py-2',
-  md: 'text-[16px] md:text-xs px-3.5 md:px-3 py-2.5 md:py-2',
-  lg: 'text-[16px] md:text-sm px-4 md:px-3.5 py-3 md:py-2.5',
+  md: 'text-[16px] md:text-sm px-3.5 md:px-3 py-2.5 md:py-2',
+  lg: 'text-[16px] md:text-base px-4 md:px-3.5 py-3 md:py-2.5',
 };
 
 const iconSizes = {
@@ -362,16 +362,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
   const selectedOpt = parsedOptions.find(opt => String(opt.value) === currentValue);
   const displayLabel = useMemo(() => {
     if (selectedOpt) {
-      if (isDefaultPlaceholderOption(selectedOpt)) {
-        return '';
-      }
       return selectedOpt.label;
     }
     if (!currentValue || currentValue === '') {
-      if (placeholder && !placeholder.startsWith('--') && !placeholder.toLowerCase().includes('pilih')) {
-        return placeholder;
-      }
-      return '';
+      return placeholder || '';
     }
     return String(currentValue);
   }, [selectedOpt, currentValue, placeholder]);
@@ -413,15 +407,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
           type="button"
           disabled={disabled}
           onClick={toggleOpen}
-          className={`w-full inline-flex items-center justify-between gap-2 rounded-lg md:rounded-md border font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 ${
-            heightClasses[inputSize]
-          } ${
-            isHighlighted
+          className={`w-full inline-flex items-center justify-between gap-2 rounded-lg md:rounded-md border font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 ${heightClasses[inputSize]
+            } ${isHighlighted
               ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-600'
               : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-750'
-          } ${error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''} ${
-            disabled ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-850' : 'cursor-pointer'
-          } ${className}`}
+            } ${error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''} ${disabled ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-850' : 'cursor-pointer'
+            } ${className}`}
         >
           <span className="inline-flex items-center gap-2 truncate">
             {Icon && <Icon className={`text-slate-400 shrink-0 ${iconSizes[inputSize]}`} />}
@@ -528,13 +519,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({
                         disabled={opt.disabled}
                         onClick={() => handleSelect(opt.value)}
                         onMouseEnter={() => setFocusedIndex(index)}
-                        className={`w-full text-left ${optionTextClasses[inputSize] || optionTextClasses.md} rounded-md font-medium flex items-center justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold'
-                            : isFocused
+                        className={`w-full text-left ${optionTextClasses[inputSize] || optionTextClasses.md} rounded-md font-medium flex items-center justify-between gap-3 ${isSelected
+                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold'
+                          : isFocused
                             ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
                             : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        } ${opt.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          } ${opt.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                       >
                         <span className="truncate">{opt.label}</span>
                         {isSelected && <Check className="w-4 h-4 md:w-3.5 md:h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />}

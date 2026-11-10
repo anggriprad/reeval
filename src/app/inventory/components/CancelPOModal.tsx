@@ -3,12 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { Textarea } from '@/components/ui/Textarea';
 import { useToast } from '@/context/ToastContext';
+import { useApp } from '@/context/AppContext';
 import {
   procurementService,
   PurchaseOrderResponse,
 } from '@/services/procurement.service';
-import { AlertTriangle } from 'lucide-react';
 
 interface CancelPOModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export function CancelPOModal({
   onSuccess,
 }: CancelPOModalProps) {
   const { toast } = useToast();
+  const { rejectPO, cancelPO } = useApp();
   const [reason, setReason] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,7 +48,11 @@ export function CancelPOModal({
     setErrorMsg('');
     const trimmed = reason.trim();
     if (!trimmed || trimmed.length < 3) {
-      setErrorMsg('Alasan wajib diisi (minimal 3 karakter).');
+      setErrorMsg(
+        isReject
+          ? 'Alasan penolakan wajib diisi (minimal 3 karakter).'
+          : 'Alasan pembatalan wajib diisi (minimal 3 karakter).'
+      );
       return;
     }
 
@@ -54,9 +60,11 @@ export function CancelPOModal({
     try {
       if (isReject) {
         await procurementService.rejectPO(po.id, { reason: trimmed });
+        rejectPO?.(String(po.id), trimmed);
         toast.success('PO Ditolak', `Pengadaan ${po.po_number} berhasil ditolak.`);
       } else {
         await procurementService.cancelPO(po.id, { reason: trimmed });
+        cancelPO?.(String(po.id), trimmed);
         toast.success('PO Dibatalkan', `Pengadaan ${po.po_number} berhasil dibatalkan.`);
       }
       onSuccess();
@@ -75,7 +83,7 @@ export function CancelPOModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isReject ? `Tolak PO #${po.po_number}` : `Batalkan PO #${po.po_number}`}
+      title={isReject ? 'Tolak Pengadaan' : 'Batalkan Pengadaan'}
       size="md"
       actions={[
         <Button key="cancel" variant="ghost" onClick={onClose} disabled={isSubmitting}>
@@ -87,38 +95,22 @@ export function CancelPOModal({
           onClick={handleSubmit}
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Memproses...' : isReject ? 'Tolak PO' : 'Batalkan PO'}
+          {isSubmitting ? 'Memproses...' : isReject ? 'Tolak Pengadaan' : 'Batalkan Pengadaan'}
         </Button>,
       ]}
     >
       <div className="space-y-4">
-        {errorMsg && (
-          <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-400">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-            {isReject ? 'Alasan Penolakan PO' : 'Alasan Pembatalan PO'}
-            <span className="text-red-500 font-bold ml-1">*</span>
-          </label>
-          <textarea
-            rows={3}
-            value={reason}
-            onChange={(e) => {
-              setReason(e.target.value);
-              if (errorMsg) setErrorMsg('');
-            }}
-            placeholder={
-              isReject
-                ? 'Contoh: Stok di gudang masih mencukupi / harga vendor terlalu tinggi...'
-                : 'Contoh: Vendor tidak dapat memenuhi jadwal pengiriman / spesifikasi berubah...'
-            }
-            className="w-full rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          />
-        </div>
+        <Textarea
+          label={isReject ? 'Alasan Penolakan' : 'Alasan Pembatalan'}
+          required
+          rows={3}
+          value={reason}
+          onChange={(e) => {
+            setReason(e.target.value);
+            if (errorMsg) setErrorMsg('');
+          }}
+          error={errorMsg || undefined}
+        />
       </div>
     </Modal>
   );

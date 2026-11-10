@@ -130,7 +130,7 @@ export function ActionMenu({
   }, [isOpen, isMobile]);
 
   return (
-    <div className={cn('relative inline-block text-left', className)}>
+    <div className={cn('relative inline-flex items-center shrink-0 text-left', className)}>
       <Button
         ref={triggerRef}
         type="button"
@@ -138,7 +138,7 @@ export function ActionMenu({
         size="icon"
         onClick={handleToggle}
         className={cn(
-          triggerSize === 'md' ? 'h-9 w-9' : 'h-8 w-8',
+          triggerSize === 'md' ? 'h-11 w-11 md:h-9 md:w-9' : 'h-9 w-9 md:h-8 md:w-8',
           triggerVariant === 'ghost' && 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
           triggerClassName
         )}

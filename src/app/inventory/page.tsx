@@ -33,6 +33,7 @@ import {
   FinishedGoodsTableSection,
   AssetTableSection,
   ReturnedGoodsTabSection,
+  ProcurementModal,
 } from './components';
 import { materialService, type MaterialItem } from '@/services/material.service';
 import { workOrderService } from '@/services/work-order.service';
@@ -373,7 +374,8 @@ export function InventoryContent() {
 
   // Pengadaan (PO & Pembelian Langsung) state
   const [showPOModal, setShowPOModal] = useState(false);
-  const [procurementPreselectedMatId, setProcurementPreselectedMatId] = useState<string | null>(null);
+
+  const [procurementRefreshKey, setProcurementRefreshKey] = useState(0);
 
 
   // Master Material Add Modal state (Managed by modular RawMaterialSection)
@@ -532,11 +534,8 @@ export function InventoryContent() {
   }, [workOrders]);
 
   // ---- Pengadaan (Procurement) Handlers ----
-  const openAddProcurement = (targetMatId?: string) => {
-    setProcurementPreselectedMatId(targetMatId || null);
-    if (targetMatId) {
-      setActiveTab('procurement');
-    }
+  const openAddProcurement = () => {
+
     setShowPOModal(true);
   };
 
@@ -605,10 +604,10 @@ export function InventoryContent() {
           {activeTab === 'raw' && can(PERMISSIONS.INVENTORY.CREATE) && (
             <Button onClick={() => setShowAddMaterialModal(true)}>
               <Plus className="h-4 w-4" />
-              Register Bahan
+              Tambah Material
             </Button>
           )}
-          {activeTab === 'procurement' && can(PERMISSIONS.PURCHASING.CREATE) && (
+          {activeTab === 'procurement' && can(PERMISSIONS.PURCHASING.ORDER) && (
             <Button onClick={() => openAddProcurement()}>
               <Plus className="h-4 w-4" />
               Buat Pengadaan
@@ -623,7 +622,7 @@ export function InventoryContent() {
           {activeTab === 'assets' && can(PERMISSIONS.INVENTORY.ASSET_CREATE) && (
             <Button onClick={() => setShowAssetModal(true)}>
               <Plus className="h-4 w-4 mr-1.5" />
-              Register Aset Baru
+              Tambah Aset Baru
             </Button>
           )}
           {(can(PERMISSIONS.INVENTORY.CATEGORY_READ) || can(PERMISSIONS.INVENTORY.ASSET_CATEGORY_READ)) && (
@@ -712,13 +711,13 @@ export function InventoryContent() {
                 : []),
               ...(can(PERMISSIONS.RETURNED_GOOD.READ)
                 ? [
-                    {
-                      key: 'returns' as const,
-                      label: 'Barang Retur',
-                      icon: RotateCcw,
-                      count: pendingReturnsCount > 0 ? pendingReturnsCount : undefined,
-                    },
-                  ]
+                  {
+                    key: 'returns' as const,
+                    label: 'Barang Retur',
+                    icon: RotateCcw,
+                    count: pendingReturnsCount > 0 ? pendingReturnsCount : undefined,
+                  },
+                ]
                 : []),
             ]}
             filters={
@@ -881,7 +880,7 @@ export function InventoryContent() {
                           ? setRetSearchInput
                           : setSearchTerm
             }
-            searchPlaceholder="Cari bahan baku, barang jadi, pengadaan, mutasi, atau aset..."
+            searchPlaceholder="Cari"
             extraControls={
               activeTab === 'finished' ? (
                 <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
@@ -915,7 +914,7 @@ export function InventoryContent() {
           setFilter={setFilter}
           isAddModalOpen={showAddMaterialModal}
           onCloseAddModal={() => setShowAddMaterialModal(false)}
-          onOpenProcurement={matId => openAddProcurement(matId)}
+
           onOpenCreateSaWorkOrder={matId => openCreateSaWorkOrder(matId)}
         />
       )}
@@ -976,10 +975,7 @@ export function InventoryContent() {
             else if (key === 'status') setProcurementFilter('po_status', val);
             else if (key === 'created_by_id') setProcurementFilter('po_created_by_id', val);
           }}
-          isCreateModalOpen={showPOModal}
-          onCloseCreateModal={() => setShowPOModal(false)}
-          preselectedMaterialId={procurementPreselectedMatId}
-          onClearPreselectedMaterial={() => setProcurementPreselectedMatId(null)}
+          refreshKey={procurementRefreshKey}
         />
       )}
 
@@ -1075,7 +1071,7 @@ export function InventoryContent() {
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     <Layers className="h-4 w-4 text-indigo-500" />
-                    Kebutuhan Bahan Baku Penyusun (Child BOM)
+                    Kebutuhan Bahan Baku (BOM)
                   </div>
                   <span className="text-[11px] text-slate-500 font-medium">
                     Untuk Produksi: <strong className="text-indigo-600 dark:text-indigo-400">{targetQtyNum} {targetMat?.unit || 'unit'}</strong>
@@ -1091,7 +1087,7 @@ export function InventoryContent() {
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
                         <tr>
-                          <th className="px-3 py-2">Bahan Baku Penyusun</th>
+                          <th className="px-3 py-2">Bahan Baku</th>
                           <th className="px-3 py-2 text-center">BOM / Unit</th>
                           <th className="px-3 py-2 text-center">Dibutuhkan</th>
                           <th className="px-3 py-2 text-center">Stok Gudang</th>
@@ -1151,6 +1147,19 @@ export function InventoryContent() {
           })()}
         </form>
       </Modal>
+
+      {/* Modal: Form Pengadaan Baru (Fase 1 Request Gudang / Fase 1+2 Buat Langsung) */}
+      <ProcurementModal
+        isOpen={showPOModal}
+        onClose={() => {
+          setShowPOModal(false);
+        }}
+        onSuccess={() => {
+          setShowPOModal(false);
+          setActiveTab('procurement');
+          setProcurementRefreshKey((prev) => prev + 1);
+        }}
+      />
     </div>
   );
 }
