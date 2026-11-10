@@ -327,30 +327,37 @@ export interface ComplaintAttachment {
   id: string;
   name: string;
   type: 'image' | 'video';
-  url: string; // Base64 data URL
+  url: string; // Base64 data URL, blob preview URL, or hosted storage URL
   size?: number;
+  rawFile?: File;
+  file?: File;
 }
 
 export interface OrderComplaint {
   id: string;
+  complaintNumber?: string;
   category: 'Item tidak sesuai' | 'Item rusak / cacat' | 'Item kurang' | 'Barang tidak sesuai' | 'Barang rusak / cacat' | 'Barang kurang' | 'Lainnya';
   description: string;
   status: OrderComplaintStatus;
   items: OrderComplaintItem[];
   attachments?: ComplaintAttachment[];
-  resolution?: 'Batalkan Pesanan (Refund)' | 'Penuhi Barang Pengganti' | 'Kirim Barang Pengganti' | 'Perbaikan' | 'Tolak Komplain';
+  resolution?: 'Batalkan Pesanan (Refund)' | 'Refund Dana' | 'Penuhi Barang Pengganti' | 'Kirim Barang Pengganti' | 'Perbaikan' | 'Tolak Komplain' | 'Selesaikan Manual';
   resolutionNotes?: string;
   replacementSource?: 'NEW_SPK' | 'FINISHED_STOCK';
   isReturnRequested?: boolean;
   returnGoodId?: string;
+  returnNumber?: string;
+  refundAmount?: number;
+  refundBankAccountId?: string;
   rejectionReason?: string;
   rejectedAt?: string;
   rejectedBy?: string;
   createdAt: string;
   resolvedAt?: string;
   handledAt?: string;
-  replacementStatus?: 'READY_FOR_DELIVERY' | 'WAITING_PRODUCTION' | 'SHIPPED' | 'DELIVERED';
+  replacementStatus?: 'READY_FOR_DELIVERY' | 'WAITING_PRODUCTION' | 'SHIPPED' | 'IN_DELIVERY' | 'DELIVERED';
   replacementWOId?: string;
+  replacementDOId?: string;
   orderId?: string;
   orderNumber?: string;
   customerName?: string;
@@ -544,7 +551,10 @@ export type ReturnedGoodStatus = 'AWAITING_RECEIVAL' | 'RECEIVED' | 'RESTOCKED' 
 
 export interface ReturnedGood {
   id: string;
+  returnNumber?: string;
   complaintId: string;
+  complaintNumber?: string;
+  complaintStatus?: string;
   salesOrderId: string;
   salesOrderNumber: string;
   customerName: string;
@@ -552,6 +562,8 @@ export interface ReturnedGood {
   variantId?: string;
   productName: string;
   variantLabel?: string;
+  productImageUrl?: string;
+  productImageIcon?: string;
   qty: number;
   unitPrice?: number;
   conditionReason: string;

@@ -359,11 +359,18 @@ export default function DeliveryOrderDetailPage() {
     }
 
     setIsSubmittingFailure(true);
+    const isDamagedFailure =
+      failureReason.toLowerCase().includes('rusak') ||
+      failureReason.toLowerCase().includes('cacat') ||
+      failureNote.toLowerCase().includes('rusak') ||
+      failureNote.toLowerCase().includes('cacat');
+
     try {
       if (selectedFailureFile) {
         const formData = new FormData();
         formData.append('reason', failureReason);
         formData.append('failure_reason', failureReason);
+        formData.append('is_damaged', String(isDamagedFailure));
         if (failureNote.trim()) {
           formData.append('notes', failureNote.trim());
           formData.append('failure_note', failureNote.trim());
@@ -377,6 +384,7 @@ export default function DeliveryOrderDetailPage() {
           notes: failureNote.trim() || undefined,
           failure_note: failureNote.trim() || undefined,
           proof_photo: uploadedFailurePhoto || undefined,
+          is_damaged: isDamagedFailure,
         });
       }
 

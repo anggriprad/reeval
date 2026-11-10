@@ -38,11 +38,21 @@ export interface PurchaseOrderStatusHistoryResponse {
   created_at: string;
 }
 
+export interface PurchaseOrderUserOption {
+  id: number;
+  full_name: string;
+  email: string;
+  phone?: string;
+  avatar_url?: string;
+}
+
 export interface PurchaseOrderResponse {
   id: number;
   po_number: string;
   supplier: string;
+  created_by_id?: number | null;
   created_by: string;
+  created_by_user?: PurchaseOrderUserOption | null;
   purchase_type: 'PO' | 'DIRECT';
   status: string;
   payment_status: string;
@@ -118,6 +128,7 @@ export interface GetProcurementsParams {
   per_page?: number;
   status?: string;
   search?: string;
+  created_by_id?: number | string;
 }
 
 export const procurementService = {

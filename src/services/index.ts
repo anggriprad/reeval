@@ -23,3 +23,6 @@ export * from "./work-order.service";
 export * from "./delivery.service";
 export * from "./finished-good.service";
 export * from "./company-asset.service";
+export * from "./returned-good.service";
+export * from "./inventory.service";
+

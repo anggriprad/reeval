@@ -462,8 +462,13 @@ export default function ProcurementDetailPage() {
             <span>Dibuat Oleh</span>
           </div>
           <p className="font-semibold text-slate-900 dark:text-white text-sm">
-            {po.createdBy || 'Staff'}
+            {rawPOResponse?.created_by_user?.full_name || po.createdBy || 'Staff'}
           </p>
+          {rawPOResponse?.created_by_user?.email && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+              {rawPOResponse.created_by_user.email}
+            </p>
+          )}
         </Card>
 
         {/* 3. Nama Vendor */}

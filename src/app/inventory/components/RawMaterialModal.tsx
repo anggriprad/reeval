@@ -127,9 +127,7 @@ export function RawMaterialModal({
       setMatIsSubAssembly(Boolean(editMaterial.isSubAssembly));
       const initialChild = editMaterial.childBom ? [...editMaterial.childBom] : [];
       setMatChildBom(initialChild);
-      const initialRtId =
-        editMaterial.routingId ||
-        (routingOptions[0] ? String(routingOptions[0].id) : '');
+      const initialRtId = editMaterial.routingId ? String(editMaterial.routingId) : '';
       setMatRoutingId(initialRtId);
       setChildMatId('');
       setChildMatQty('');
@@ -514,12 +512,7 @@ export function RawMaterialModal({
             onChange={checked => {
               setMatIsSubAssembly(checked);
               if (checked) {
-                const targetRtId =
-                  matRoutingId || (routingOptions[0] ? String(routingOptions[0].id) : '');
-                if (!matRoutingId && targetRtId) {
-                  setMatRoutingId(targetRtId);
-                }
-                setMatUnitCost(computeSubAssemblyCost(matChildBom, targetRtId));
+                setMatUnitCost(computeSubAssemblyCost(matChildBom, matRoutingId));
               }
             }}
             label="Bahan Setengah Jadi"

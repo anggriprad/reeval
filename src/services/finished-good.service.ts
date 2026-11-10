@@ -42,6 +42,9 @@ export interface AllocateFinishedGoodPayload {
   variant_id?: number;
   sales_order_id: number;
   sales_order_item_id?: number;
+  target_id?: number;
+  allocation_type?: string;
+  cancel_wo_id?: number;
   qty: number;
   purpose?: string;
   complaint_id?: string;

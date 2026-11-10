@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
@@ -10,15 +10,19 @@ import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
-import { Select } from '@/components/ui/Select';
-import { Input } from '@/components/ui/Input';
-import { Textarea } from '@/components/ui/Textarea';
-import { Checkbox } from '@/components/ui/Checkbox';
-import { cn, formatCurrency, formatDateTime, formatVariantLabel, getComplaintStatusLabel } from '@/lib/utils';
-import { ComplaintAttachment, SalesOrder, OrderComplaint } from '@/lib/types';
+import { cn, formatDateTime, formatVariantLabel, getComplaintStatusLabel } from '@/lib/utils';
+import { ComplaintAttachment, SalesOrder, OrderComplaint, WorkOrder, ReturnedGood } from '@/lib/types';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '@/services/order.service';
+import { finishedGoodService, FinishedGoodItem } from '@/services/finished-good.service';
+import { workOrderService, mapWorkOrderResponseToWorkOrder } from '@/services/work-order.service';
+import { deliveryService, DeliveryOrder } from '@/services/delivery.service';
+import { returnedGoodService, mapReturnedGoodResponseToReturnedGood } from '@/services/returned-good.service';
+import { RejectComplaintModal } from './components/RejectComplaintModal';
+import { ManualResolveComplaintModal } from './components/ManualResolveComplaintModal';
+import { RefundComplaintModal } from './components/RefundComplaintModal';
+import { ReplaceComplaintModal } from './components/ReplaceComplaintModal';
 import {
   AlertCircle,
   CheckCircle,
@@ -26,8 +30,6 @@ import {
   Truck,
   Wallet,
   Clock,
-  Eye,
-  Film,
   Play,
   BedDouble,
   Layers,
@@ -80,7 +82,12 @@ export default function ComplaintDetailPage() {
   const complaintId = params?.id as string;
   const { toast } = useToast();
 
-  const { salesOrders, products, invoices, bankAccounts, finishedGoods, resolveOrderComplaint, rejectOrderComplaint, manuallyResolveComplaint } = useApp();
+  const {
+    products,
+    invoices,
+    bankAccounts,
+    finishedGoods: contextFinishedGoods,
+  } = useApp();
   const { can } = usePermission();
   const canRespondComplaint = can(PERMISSIONS.COMPLAINT.RESPONS);
 
@@ -104,21 +111,110 @@ export default function ComplaintDetailPage() {
   const [rejectionError, setRejectionError] = useState('');
 
   const [liveComplaint, setLiveComplaint] = useState<OrderComplaint | null>(null);
+  const [liveOrder, setLiveOrder] = useState<SalesOrder | null>(null);
+  const [apiFinishedGoods, setApiFinishedGoods] = useState<FinishedGoodItem[]>([]);
+  const [linkedWorkOrder, setLinkedWorkOrder] = useState<WorkOrder | null>(null);
+  const [linkedDeliveryOrder, setLinkedDeliveryOrder] = useState<DeliveryOrder | null>(null);
+  const [linkedReturnedGood, setLinkedReturnedGood] = useState<ReturnedGood | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchLiveComplaint = React.useCallback(() => {
+  const fetchLiveComplaint = useCallback(async () => {
     if (!complaintId) return;
     setIsLoading(true);
-    orderService.getComplaintById(complaintId)
-      .then(res => {
-        if (res.success && res.data) {
-          setLiveComplaint(mapComplaintResponseToOrderComplaint(res.data));
+    try {
+      const res = await orderService.getComplaintById(complaintId);
+      if (res.success && res.data) {
+        const mappedComplaint = mapComplaintResponseToOrderComplaint(res.data);
+        setLiveComplaint(mappedComplaint);
+
+        if (mappedComplaint.orderId) {
+          try {
+            const orderRes = await orderService.getOrderById(mappedComplaint.orderId);
+            if (orderRes.success && orderRes.data) {
+              setLiveOrder(mapOrderResponseToSalesOrder(orderRes.data));
+            }
+          } catch {
+            // fallback to constructed order from complaint
+          }
         }
-      })
-      .catch(err => {
-        console.error('Failed to load complaint:', err);
-      })
-      .finally(() => setIsLoading(false));
+
+        try {
+          const fgRes = await finishedGoodService.getFinishedGoods({ per_page: 200, show_empty: true });
+          if (fgRes.success && Array.isArray(fgRes.data)) {
+            setApiFinishedGoods(fgRes.data);
+          }
+        } catch {
+          // fallback to context finished goods
+        }
+
+        if (mappedComplaint.replacementWOId) {
+          try {
+            const woRes = await workOrderService.getWorkOrderById(mappedComplaint.replacementWOId);
+            if (woRes.success && woRes.data) {
+              setLinkedWorkOrder(mapWorkOrderResponseToWorkOrder(woRes.data));
+            }
+          } catch {
+            setLinkedWorkOrder(null);
+          }
+        } else {
+          setLinkedWorkOrder(null);
+        }
+
+        if (mappedComplaint.replacementDOId) {
+          try {
+            const doRes = await deliveryService.getDeliveryOrderById(mappedComplaint.replacementDOId);
+            if (doRes.success && doRes.data) {
+              setLinkedDeliveryOrder(doRes.data);
+            }
+          } catch {
+            setLinkedDeliveryOrder(null);
+          }
+        } else {
+          setLinkedDeliveryOrder(null);
+        }
+
+        if (mappedComplaint.returnGoodId) {
+          try {
+            const rgRes = await returnedGoodService.getReturnedGoodById(mappedComplaint.returnGoodId);
+            if (rgRes.success && rgRes.data) {
+              setLinkedReturnedGood(mapReturnedGoodResponseToReturnedGood(rgRes.data));
+            } else {
+              setLinkedReturnedGood(null);
+            }
+          } catch {
+            setLinkedReturnedGood(null);
+          }
+        } else if (mappedComplaint.id && !Number.isNaN(Number(mappedComplaint.id))) {
+          try {
+            const rgListRes = await returnedGoodService.getReturnedGoods({
+              complaint_id: Number(mappedComplaint.id),
+              per_page: 5,
+            });
+            const matchedRg = Array.isArray(rgListRes.data)
+              ? rgListRes.data.find(
+                  (rg) =>
+                    Number(rg.complaint_id) === Number(mappedComplaint.id) ||
+                    (mappedComplaint.complaintNumber && rg.complaint_number === mappedComplaint.complaintNumber)
+                )
+              : undefined;
+            if (rgListRes.success && matchedRg) {
+              setLinkedReturnedGood(mapReturnedGoodResponseToReturnedGood(matchedRg));
+            } else {
+              setLinkedReturnedGood(null);
+            }
+          } catch {
+            setLinkedReturnedGood(null);
+          }
+        } else {
+          setLinkedReturnedGood(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load complaint:', err);
+    } finally {
+      setIsLoading(false);
+    }
   }, [complaintId]);
 
   useEffect(() => {
@@ -126,7 +222,7 @@ export default function ComplaintDetailPage() {
   }, [fetchLiveComplaint]);
 
   const complaint: OrderComplaint | undefined = liveComplaint || undefined;
-  const order: SalesOrder | null = complaint ? {
+  const order: SalesOrder | null = liveOrder || (complaint ? {
     id: complaint.orderId || '',
     orderNumber: complaint.orderNumber || '',
     createdBy: 'Sales',
@@ -146,13 +242,12 @@ export default function ComplaintDetailPage() {
       isBomCustomized: false,
     })),
     status: 'SENT' as const,
-    totalAmount: 0,
+    totalAmount: (complaint.items || []).reduce((acc, itm) => acc + (itm.unitPrice || 0) * itm.qty, 0),
     shippingCost: 0,
     createdAt: complaint.createdAt,
     complaints: [complaint],
-  } : null;
+  } : null);
 
-  // Set default bank account
   useEffect(() => {
     if (bankAccounts.length > 0 && !refundBankAccountId) {
       setRefundBankAccountId(bankAccounts[0].id);
@@ -181,16 +276,16 @@ export default function ComplaintDetailPage() {
     );
   }
 
-  // Linked invoice
   const invoice = invoices.find(inv => inv.salesOrderId === order.id || inv.salesOrderNumber === order.orderNumber);
 
-  // Financial calculations
-  const refundAmount = complaint.items.reduce((sum: number, item: any) => {
-    const price = (item.unitPrice && item.unitPrice > 0)
-      ? item.unitPrice
-      : (order.items.find((oi: any) => oi.productId === item.productId)?.unitPrice ?? 0);
-    return sum + (price * item.qty);
-  }, 0);
+  const refundAmount = complaint.refundAmount && complaint.refundAmount > 0
+    ? complaint.refundAmount
+    : complaint.items.reduce((sum: number, item: any) => {
+        const price = (item.unitPrice && item.unitPrice > 0)
+          ? item.unitPrice
+          : (order.items.find((oi: any) => oi.productId === item.productId)?.unitPrice ?? 0);
+        return sum + (price * item.qty);
+      }, 0);
 
   const currentTotal = order.totalAmount;
   const newTotal = Math.max(0, currentTotal - refundAmount);
@@ -198,20 +293,44 @@ export default function ComplaintDetailPage() {
   const cashToReturn = Math.max(0, currentPaid - newTotal);
   const newRemainingUnpaid = Math.max(0, newTotal - currentPaid);
 
-  // Check available finished goods stock for complaint items
-  const totalAvailableStockForComplaint = complaint.items.reduce((acc: number, ci: any) => {
-    const fg = finishedGoods.find(f =>
+  const getAvailableStockForComplaintItem = (ci: any): number => {
+    if (apiFinishedGoods.length > 0) {
+      const matchedFg = apiFinishedGoods.find(f => {
+        const prodMatch = String(f.product_id) === String(ci.productId) || f.product_name === ci.productName;
+        if (!prodMatch) return false;
+        if (ci.variantId && f.variant_id) {
+          return String(f.variant_id) === String(ci.variantId) || String(f.id) === String(ci.variantId);
+        }
+        if (ci.variantLabel && f.variant_label) {
+          return f.variant_label === ci.variantLabel;
+        }
+        return true;
+      });
+      if (matchedFg) {
+        return Math.max(0, Number(matchedFg.available_stock ?? 0));
+      }
+    }
+
+    const fg = contextFinishedGoods.find(f =>
       (f.productId === ci.productId || f.productName === ci.productName) &&
       ((ci.variantId && f.variantId === ci.variantId) || (ci.variantLabel && f.variantLabel === ci.variantLabel) || (!ci.variantId && !ci.variantLabel))
     );
-    if (!fg) return acc;
+    if (!fg) return 0;
     const reservedCount = (fg.units || []).filter(u => u.status === 'RESERVED').length;
-    const avail = Math.max(0, fg.stock - reservedCount);
-    return acc + avail;
+    return Math.max(0, fg.stock - reservedCount);
+  };
+
+  const totalAvailableStockForComplaint = complaint.items.reduce((acc: number, ci: any) => {
+    return acc + getAvailableStockForComplaintItem(ci);
   }, 0);
   const totalNeededStock = complaint.items.reduce((acc: number, ci: any) => acc + ci.qty, 0);
+  const canFulfillFromFinishedStock =
+    complaint.items.length > 0 &&
+    complaint.items.every((ci: any) => getAvailableStockForComplaintItem(ci) >= ci.qty) &&
+    totalAvailableStockForComplaint >= totalNeededStock;
 
   const handleConfirmFulfillment = async () => {
+    setIsSubmitting(true);
     try {
       const res = await orderService.resolveComplaint(complaint.id, {
         resolution: 'Penuhi Barang Pengganti',
@@ -220,89 +339,69 @@ export default function ComplaintDetailPage() {
         is_return_requested: isReturnRequested,
       });
       if (res.success) {
-        toast.success('Komplain Sedang Ditangani', 'Unit dialokasikan dan status komplain berhasil diperbarui.');
-        fetchLiveComplaint();
+        if (replacementSource === 'FINISHED_STOCK') {
+          toast.success('Komplain Sedang Ditangani', 'Unit dialokasikan dari stok bebas gudang dan masuk ke Antrean Kirim.');
+        } else {
+          toast.success('Komplain Sedang Ditangani', 'SPK pengganti telah diterbitkan untuk produksi.');
+        }
+        await fetchLiveComplaint();
         setIsFulfillmentModalOpen(false);
         return;
       }
+      toast.error('Gagal Memproses Komplain', res.message || 'Gagal memproses penggantian barang komplain.');
     } catch (err: any) {
-      console.warn('Backend resolve complaint failed, syncing local mock:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Gagal memproses penggantian barang komplain.';
+      toast.error('Gagal Memproses Komplain', msg);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const res = resolveOrderComplaint(
-      order.id,
-      complaint.id,
-      'Penuhi Barang Pengganti',
-      fulfillmentNotes.trim() || undefined,
-      undefined,
-      {
-        replacementSource,
-        isReturnRequested,
-      }
-    ) as { success: boolean; inStock?: boolean; spkNumber?: string } | undefined;
-
-    if (replacementSource === 'FINISHED_STOCK') {
-      toast.success('Komplain Sedang Ditangani', 'Unit dialokasikan dari stok bebas gudang dan masuk ke Antrean Kirim.');
-    } else {
-      toast.success('Komplain Sedang Ditangani', res?.spkNumber ? `${res.spkNumber} telah diterbitkan untuk produksi.` : 'SPK pengganti telah diterbitkan.');
-    }
-    fetchLiveComplaint();
-    setIsFulfillmentModalOpen(false);
   };
 
   const handleConfirmRefund = async () => {
+    setIsSubmitting(true);
     try {
       const res = await orderService.resolveComplaint(complaint.id, {
         resolution: 'Batalkan Pesanan (Refund)',
         resolution_notes: refundNotes.trim() || 'Direfund sesuai item yang diretur.',
-        refund_bank_account_id: refundBankAccountId,
+        refund_amount: refundAmount,
+        refund_bank_account_id: refundBankAccountId || undefined,
         is_return_requested: isRefundReturnRequested,
       });
       if (res.success) {
         toast.success('Komplain Diselesaikan', 'Pengembalian dana telah diproses.');
-        fetchLiveComplaint();
+        await fetchLiveComplaint();
         setIsRefundModalOpen(false);
         return;
       }
+      toast.error('Gagal Memproses Refund', res.message || 'Gagal memproses pengembalian dana komplain.');
     } catch (err: any) {
-      console.warn('Backend refund failed, syncing local mock:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Gagal memproses pengembalian dana komplain.';
+      toast.error('Gagal Memproses Refund', msg);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    resolveOrderComplaint(
-      order.id,
-      complaint.id,
-      'Batalkan Pesanan (Refund)',
-      refundNotes.trim() || 'Direfund sesuai item yang diretur.',
-      refundBankAccountId,
-      {
-        isReturnRequested: isRefundReturnRequested,
-      }
-    );
-    toast.success('Komplain Diselesaikan', 'Pengembalian dana telah diproses.');
-    fetchLiveComplaint();
-    setIsRefundModalOpen(false);
   };
 
   const handleConfirmManualComplete = async () => {
+    setIsSubmitting(true);
     try {
       const res = await orderService.resolveComplaint(complaint.id, {
-        resolution: 'Perbaikan',
+        resolution: 'Selesaikan Manual',
         resolution_notes: manualCompleteNotes.trim() || undefined,
       });
       if (res.success) {
         toast.success('Komplain Diselesaikan', 'Status komplain telah ditandai selesai.');
-        fetchLiveComplaint();
+        await fetchLiveComplaint();
         setIsManualCompleteModalOpen(false);
         return;
       }
+      toast.error('Gagal Menyelesaikan Komplain', res.message || 'Gagal menandai komplain selesai.');
     } catch (err: any) {
-      console.warn('Backend resolve failed, syncing local mock:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Gagal menandai komplain selesai.';
+      toast.error('Gagal Menyelesaikan Komplain', msg);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    manuallyResolveComplaint(order.id, complaint.id, manualCompleteNotes.trim() || undefined);
-    toast.success('Komplain Diselesaikan', 'Status komplain telah ditandai selesai.');
-    fetchLiveComplaint();
-    setIsManualCompleteModalOpen(false);
   };
 
   const handleConfirmReject = async () => {
@@ -311,25 +410,27 @@ export default function ComplaintDetailPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const res = await orderService.rejectComplaint(complaint.id, {
         reason: rejectionReason.trim(),
       });
       if (res.success) {
         toast.success('Komplain Ditolak', 'Pengajuan komplain telah ditolak.');
-        fetchLiveComplaint();
+        await fetchLiveComplaint();
         setIsRejectModalOpen(false);
         return;
       }
+      toast.error('Gagal Menolak Komplain', res.message || 'Gagal menolak pengajuan komplain.');
     } catch (err: any) {
-      console.warn('Backend reject failed, syncing local mock:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Gagal menolak pengajuan komplain.';
+      toast.error('Gagal Menolak Komplain', msg);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    rejectOrderComplaint(order.id, complaint.id, rejectionReason.trim());
-    toast.success('Komplain Ditolak', 'Pengajuan komplain telah ditolak.');
-    fetchLiveComplaint();
-    setIsRejectModalOpen(false);
   };
+
+  const displayComplaintNumber = complaint.complaintNumber || complaint.id;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-24 lg:pb-12 text-slate-900 dark:text-slate-100">
@@ -463,7 +564,7 @@ export default function ComplaintDetailPage() {
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 dark:text-slate-400">Nomor Komplain</span>
                 <span className="font-mono font-bold text-slate-900 dark:text-white">
-                  {complaint.id}
+                  {displayComplaintNumber}
                 </span>
               </div>
               <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
@@ -493,6 +594,39 @@ export default function ComplaintDetailPage() {
                   {formatDateTime(order.createdAt)}
                 </span>
               </div>
+              {linkedWorkOrder && (
+                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                  <span className="text-slate-500 dark:text-slate-400">SPK Pengganti</span>
+                  <Link
+                    href={`/production/spk/${linkedWorkOrder.id}`}
+                    className="font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    {linkedWorkOrder.spkNumber}
+                  </Link>
+                </div>
+              )}
+              {linkedDeliveryOrder && (
+                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                  <span className="text-slate-500 dark:text-slate-400">Surat Jalan Pengganti</span>
+                  <Link
+                    href={`/delivery/sj/${linkedDeliveryOrder.id}`}
+                    className="font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    {linkedDeliveryOrder.delivery_number}
+                  </Link>
+                </div>
+              )}
+              {linkedReturnedGood && (
+                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                  <span className="text-slate-500 dark:text-slate-400">Tiket Retur</span>
+                  <Link
+                    href="/inventory?tab=returns"
+                    className="font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    {linkedReturnedGood.returnNumber || `#${linkedReturnedGood.id}`}
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
 
@@ -579,7 +713,7 @@ export default function ComplaintDetailPage() {
                   >
                     {complaint.replacementStatus === 'READY_FOR_DELIVERY' ? 'Siap di Antrean Kirim' :
                      complaint.replacementStatus === 'WAITING_PRODUCTION' ? 'Menunggu Produksi (SPK)' :
-                     complaint.replacementStatus === 'SHIPPED' ? 'Dalam Pengiriman' : 'Selesai Dikirim'}
+                     complaint.replacementStatus === 'SHIPPED' || complaint.replacementStatus === 'IN_DELIVERY' ? 'Dalam Pengiriman' : 'Selesai Dikirim'}
                   </Badge>
                 </div>
               )}
@@ -676,255 +810,60 @@ export default function ComplaintDetailPage() {
         </div>
       </Modal>
 
-      {/* Modal Resolusi: Batalkan Pesanan (Refund) */}
-      <Modal
+      <RefundComplaintModal
         isOpen={isRefundModalOpen}
         onClose={() => setIsRefundModalOpen(false)}
-        title="Batalkan Pesanan (Refund)"
-        size="md"
-        actions={
-          <Button
-            size="lg"
-            variant="danger"
-            className="w-full"
-            onClick={handleConfirmRefund}
-            disabled={cashToReturn > 0 && !refundBankAccountId}
-          >
-            Batalkan & Refund
-          </Button>
-        }
-      >
-        <div className="space-y-4 text-[13.5px] md:text-xs">
-          {/* Ringkasan Finansial Singkat */}
-          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3.5 border border-slate-200/80 dark:border-slate-800 space-y-2">
-            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
-              <span>Nilai Komplain</span>
-              <span className="font-medium text-slate-900 dark:text-white">{formatCurrency(refundAmount)}</span>
-            </div>
-            <div className="flex justify-between items-center text-slate-500 dark:text-slate-400">
-              <span>Sudah Dibayar</span>
-              <span className="font-medium text-slate-900 dark:text-white">{formatCurrency(currentPaid)}</span>
-            </div>
-            {cashToReturn > 0 ? (
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 flex justify-between items-center font-bold">
-                <span className="text-slate-900 dark:text-white">Dana Dikembalikan</span>
-                <span className="text-sm md:text-xs text-emerald-600 dark:text-emerald-400">{formatCurrency(cashToReturn)}</span>
-              </div>
-            ) : (
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 flex justify-between items-center font-bold">
-                <span className="text-slate-900 dark:text-white">Sisa Tagihan Baru</span>
-                <span className="text-sm md:text-xs text-slate-900 dark:text-white">{formatCurrency(newRemainingUnpaid)}</span>
-              </div>
-            )}
-          </div>
+        refundAmount={refundAmount}
+        currentPaid={currentPaid}
+        cashToReturn={cashToReturn}
+        newRemainingUnpaid={newRemainingUnpaid}
+        bankAccounts={bankAccounts}
+        refundBankAccountId={refundBankAccountId}
+        onChangeBankAccountId={setRefundBankAccountId}
+        isReturnRequested={isRefundReturnRequested}
+        onChangeReturnRequested={setIsRefundReturnRequested}
+        refundNotes={refundNotes}
+        onChangeRefundNotes={setRefundNotes}
+        onConfirm={handleConfirmRefund}
+        isSubmitting={isSubmitting}
+      />
 
-          {/* Rekening Pengeluaran jika ada pengembalian kas */}
-          {cashToReturn > 0 && (
-            <Select
-              label="Rekening Pengeluaran Kas"
-              required
-              value={refundBankAccountId}
-              onChange={e => setRefundBankAccountId(e.target.value)}
-              options={bankAccounts.map(ba => ({
-                value: ba.id,
-                label: `${ba.name} (Saldo: ${formatCurrency(ba.balance)})`,
-              }))}
-            />
-          )}
-
-          {/* Opsi Tarik Barang */}
-          <label className="flex items-center gap-2.5 cursor-pointer select-none py-0.5">
-            <Checkbox
-              checked={isRefundReturnRequested}
-              onChange={checked => setIsRefundReturnRequested(checked)}
-            />
-            <span className="font-medium text-[13.5px] md:text-xs text-slate-800 dark:text-slate-200">
-              Tarik barang dari pelanggan
-            </span>
-          </label>
-
-          {/* Catatan Resolusi */}
-          <Input
-            label="Catatan (Opsional)"
-            placeholder="Tambahkan catatan jika ada..."
-            value={refundNotes}
-            onChange={e => setRefundNotes(e.target.value)}
-          />
-        </div>
-      </Modal>
-
-      {/* Modal Resolusi: Kirim Barang Pengganti */}
-      <Modal
+      <ReplaceComplaintModal
         isOpen={isFulfillmentModalOpen}
         onClose={() => setIsFulfillmentModalOpen(false)}
-        title="Kirim Barang Pengganti"
-        size="md"
-        actions={
-          <Button
-            size="lg"
-            variant="primary"
-            className="w-full"
-            onClick={handleConfirmFulfillment}
-          >
-            Proses Komplain
-          </Button>
-        }
-      >
-        <div className="space-y-6 text-[13.5px] md:text-xs">
-          {/* Pilihan Sumber Pemenuhan */}
-          <div className="space-y-2">
-            <label className="block text-[13px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Sumber Barang
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <label
-                className={cn(
-                  "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
-                  replacementSource === 'NEW_SPK'
-                    ? "border-slate-400 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50"
-                    : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
-                )}
-              >
-                <input
-                  type="radio"
-                  name="replacementSource"
-                  checked={replacementSource === 'NEW_SPK'}
-                  onChange={() => setReplacementSource('NEW_SPK')}
-                  className="mt-0.5 h-4 w-4 text-slate-900 dark:text-slate-100 focus:ring-slate-400"
-                />
-                <div className="min-w-0">
-                  <span className="block font-medium text-[13.5px] md:text-xs text-slate-900 dark:text-white">
-                    Produksi Barang Baru
-                  </span>
-                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Produksi ulang unit
-                  </span>
-                </div>
-              </label>
+        replacementSource={replacementSource}
+        onChangeReplacementSource={setReplacementSource}
+        totalAvailableStock={totalAvailableStockForComplaint}
+        canFulfillFromStock={canFulfillFromFinishedStock}
+        isReturnRequested={isReturnRequested}
+        onChangeReturnRequested={setIsReturnRequested}
+        fulfillmentNotes={fulfillmentNotes}
+        onChangeFulfillmentNotes={setFulfillmentNotes}
+        onConfirm={handleConfirmFulfillment}
+        isSubmitting={isSubmitting}
+      />
 
-              <label
-                className={cn(
-                  "flex items-start gap-3 p-3 rounded-md border transition-colors",
-                  totalAvailableStockForComplaint < totalNeededStock
-                    ? "opacity-50 cursor-not-allowed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
-                    : replacementSource === 'FINISHED_STOCK'
-                    ? "border-slate-400 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 cursor-pointer"
-                    : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer"
-                )}
-              >
-                <input
-                  type="radio"
-                  name="replacementSource"
-                  checked={replacementSource === 'FINISHED_STOCK'}
-                  onChange={() => setReplacementSource('FINISHED_STOCK')}
-                  disabled={totalAvailableStockForComplaint < totalNeededStock}
-                  className="mt-0.5 h-4 w-4 text-slate-900 dark:text-slate-100 focus:ring-slate-400"
-                />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-medium text-[13.5px] md:text-xs text-slate-900 dark:text-white">
-                      Ambil dari Stok
-                    </span>
-                    <Badge variant={totalAvailableStockForComplaint >= totalNeededStock ? "default" : "default"}>
-                      {totalAvailableStockForComplaint} unit
-                    </Badge>
-                  </div>
-                  <span className="block text-xs md:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    {totalAvailableStockForComplaint >= totalNeededStock
-                      ? "Ambil dari barang jadi"
-                      : "Stok tidak cukup"}
-                  </span>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Opsi Tarik Barang */}
-          <label className="flex items-center gap-2.5 cursor-pointer select-none py-0.5">
-            <Checkbox
-              checked={isReturnRequested}
-              onChange={checked => setIsReturnRequested(checked)}
-            />
-            <span className="font-medium text-[13.5px] md:text-xs text-slate-800 dark:text-slate-200">
-              Tarik barang dari pelanggan
-            </span>
-          </label>
-
-          {/* Catatan Resolusi */}
-          <Input
-            label="Catatan (Opsional)"
-            placeholder="Tambahkan catatan jika ada..."
-            value={fulfillmentNotes}
-            onChange={e => setFulfillmentNotes(e.target.value)}
-          />
-        </div>
-      </Modal>
-
-      {/* Modal Resolusi: Tandai Selesai Manual */}
-      <Modal
+      <ManualResolveComplaintModal
         isOpen={isManualCompleteModalOpen}
         onClose={() => setIsManualCompleteModalOpen(false)}
-        title="Tandai Selesai Manual"
-        size="md"
-        actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => setIsManualCompleteModalOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleConfirmManualComplete}
-            >
-              Tandai Selesai
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4 text-[13.5px] md:text-xs">
-          <Input
-            label="Catatan Penyelesaian (Opsional)"
-            placeholder="Keterangan kesepakatan atau penyelesaian..."
-            value={manualCompleteNotes}
-            onChange={e => setManualCompleteNotes(e.target.value)}
-          />
-        </div>
-      </Modal>
+        notes={manualCompleteNotes}
+        onChangeNotes={setManualCompleteNotes}
+        onConfirm={handleConfirmManualComplete}
+        isSubmitting={isSubmitting}
+      />
 
-      {/* Modal Resolusi: Tolak Komplain */}
-      <Modal
+      <RejectComplaintModal
         isOpen={isRejectModalOpen}
         onClose={() => setIsRejectModalOpen(false)}
-        title="Tolak Komplain"
-        size="md"
-        actions={
-          <Button
-            size="lg"
-            variant="danger"
-            className="w-full"
-            onClick={handleConfirmReject}
-          >
-            Tolak Komplain
-          </Button>
-        }
-      >
-        <div className="space-y-4 text-[13.5px] md:text-xs">
-          <Textarea
-            label="Alasan Penolakan"
-            required
-            rows={3}
-            value={rejectionReason}
-            onChange={e => {
-              setRejectionReason(e.target.value);
-              if (rejectionError) setRejectionError('');
-            }}
-            placeholder="Tuliskan alasan penolakan..."
-            error={rejectionError}
-          />
-        </div>
-      </Modal>
+        rejectionReason={rejectionReason}
+        rejectionError={rejectionError}
+        onChangeReason={val => {
+          setRejectionReason(val);
+          if (rejectionError) setRejectionError('');
+        }}
+        onConfirm={handleConfirmReject}
+        isSubmitting={isSubmitting}
+      />
 
       {/* MEDIA PREVIEW MODAL */}
       <Modal

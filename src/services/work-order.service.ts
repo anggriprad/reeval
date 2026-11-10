@@ -65,6 +65,8 @@ export interface WorkOrderResponse {
   is_custom: boolean;
   custom_notes?: string;
   is_sub_assembly: boolean;
+  is_complaint_replacement?: boolean;
+  complaint_id?: number | null;
   cancel_reason?: string;
   canceled_by?: string;
   canceled_at?: string | null;
@@ -290,6 +292,8 @@ export function mapWorkOrderResponseToWorkOrder(dto: WorkOrderResponse): WorkOrd
     customNotes: dto.custom_notes || undefined,
     isSubAssembly: Boolean(dto.is_sub_assembly),
     subAssemblyId: dto.sub_assembly_id ? String(dto.sub_assembly_id) : undefined,
+    isComplaintReplacement: Boolean(dto.is_complaint_replacement),
+    complaintId: dto.complaint_id ? String(dto.complaint_id) : undefined,
     cancelReason: dto.cancel_reason || undefined,
     canceledAt: dto.canceled_at || undefined,
   };

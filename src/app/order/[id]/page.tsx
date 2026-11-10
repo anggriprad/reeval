@@ -407,8 +407,6 @@ export default function OrderDetailPage() {
 
     setUploadingFiles(true);
     const newAttachments: ComplaintAttachment[] = [];
-    let processed = 0;
-    const total = files.length;
 
     Array.from(files).forEach((file) => {
       const isVideo = file.type.startsWith('video');
@@ -416,47 +414,39 @@ export default function OrderDetailPage() {
 
       if (!isImage && !isVideo) {
         toast.error('Format Tidak Didukung', `${file.name} bukan file gambar atau video.`);
-        processed++;
-        if (processed === total) setUploadingFiles(false);
         return;
       }
 
       if (file.size > 10 * 1024 * 1024) {
         toast.error('Ukuran Terlalu Besar', `${file.name} melebihi batas maksimal 10MB.`);
-        processed++;
-        if (processed === total) setUploadingFiles(false);
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string;
-        newAttachments.push({
-          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          name: file.name,
-          type: isVideo ? 'video' : 'image',
-          url: base64,
-          size: file.size,
-        });
-
-        processed++;
-        if (processed === total) {
-          setComplaintAttachments(prev => [...prev, ...newAttachments]);
-          setUploadingFiles(false);
-        }
-      };
-      reader.onerror = () => {
-        processed++;
-        if (processed === total) setUploadingFiles(false);
-      };
-      reader.readAsDataURL(file);
+      const previewUrl = typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(file) : '';
+      newAttachments.push({
+        id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: file.name,
+        type: isVideo ? 'video' : 'image',
+        url: previewUrl,
+        size: file.size,
+        rawFile: file,
+        file: file,
+      });
     });
 
+    setComplaintAttachments(prev => [...prev, ...newAttachments]);
+    setUploadingFiles(false);
     e.target.value = '';
   };
 
   const handleRemoveAttachment = (id: string) => {
-    setComplaintAttachments(prev => prev.filter(a => a.id !== id));
+    setComplaintAttachments(prev => {
+      const target = prev.find(a => a.id === id);
+      if (target && target.url && target.url.startsWith('blob:') && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+        URL.revokeObjectURL(target.url);
+      }
+      return prev.filter(a => a.id !== id);
+    });
   };
 
   const handleSubmitComplaint = async () => {
@@ -493,6 +483,10 @@ export default function OrderDetailPage() {
       };
     });
 
+    const rawFiles: File[] = complaintAttachments
+      .map(att => att.rawFile || att.file)
+      .filter((f): f is File => f instanceof File);
+
     const complaintPayload = {
       category: complaintCategory,
       description: complaintDesc,
@@ -504,25 +498,42 @@ export default function OrderDetailPage() {
         qty: it.qty,
         unit_price: it.unitPrice,
       })),
-      attachments: complaintAttachments.map(att => ({
-        name: att.name,
-        type: att.type,
-        url: att.url,
-        size: att.size,
-      })),
+      attachments: complaintAttachments
+        .filter(att => !att.rawFile && !att.file && att.url && !att.url.startsWith('blob:'))
+        .map(att => ({
+          name: att.name,
+          type: att.type,
+          url: att.url,
+          size: att.size,
+        })),
     };
 
     try {
-      const res = await orderService.createComplaint(order.id, complaintPayload);
+      const res = await orderService.createComplaint(order.id, complaintPayload, rawFiles);
       if (res.success) {
         toast.success('Komplain Diajukan', 'Komplain penjualan berhasil dicatat dan masuk status menunggu tinjauan.');
+        const serverAttachments: ComplaintAttachment[] = res.data?.attachments && res.data.attachments.length > 0
+          ? res.data.attachments.map(a => ({
+              id: String(a.id),
+              name: a.name,
+              type: (a.type && a.type.includes('video') ? 'video' : 'image') as 'image' | 'video',
+              url: a.url,
+              size: a.size,
+            }))
+          : complaintAttachments;
+
         submitOrderComplaint(order.id, {
           category: complaintCategory as any,
           description: complaintDesc,
           items,
-          attachments: complaintAttachments,
+          attachments: serverAttachments,
         });
         fetchLiveOrderDetail();
+        complaintAttachments.forEach(att => {
+          if (att.url && att.url.startsWith('blob:') && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+            URL.revokeObjectURL(att.url);
+          }
+        });
         setComplaintModalOpen(false);
         setComplaintCategory('');
         setComplaintDesc('');
@@ -543,6 +554,7 @@ export default function OrderDetailPage() {
     });
 
     toast.success('Komplain Diajukan', 'Komplain penjualan berhasil dicatat dan masuk status menunggu tinjauan.');
+    fetchLiveOrderDetail();
     setComplaintModalOpen(false);
     setComplaintCategory('');
     setComplaintDesc('');

@@ -11,3 +11,5 @@ export * from './FinishedGoodsTableSection';
 export * from './AssetModal';
 export * from './AssetServiceModal';
 export * from './AssetTableSection';
+export * from './ProcessReturnedGoodModal';
+export * from './ReturnedGoodsTabSection';

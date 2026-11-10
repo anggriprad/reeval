@@ -32,9 +32,11 @@ import {
   StockMovementSection,
   FinishedGoodsTableSection,
   AssetTableSection,
+  ReturnedGoodsTabSection,
 } from './components';
 import { materialService, type MaterialItem } from '@/services/material.service';
 import { workOrderService } from '@/services/work-order.service';
+import { returnedGoodService } from '@/services/returned-good.service';
 import {
   materialCategoryService,
   MaterialCategoryOption,
@@ -47,6 +49,7 @@ import {
   assetCategoryService,
   AssetCategoryOption,
 } from '@/services/asset-category.service';
+import { userService, type UserOption } from '@/services/user.service';
 import Link from 'next/link';
 import {
   Plus,
@@ -224,6 +227,7 @@ export function InventoryContent() {
     po_per_page: 20,
     po_search: '',
     po_status: '',
+    po_created_by_id: '',
   });
 
   const [procurementSearchInput, setProcurementSearchInput] = useState(procurementFilters.po_search || '');
@@ -305,6 +309,7 @@ export function InventoryContent() {
 
   // Product category options for Finished Goods filter
   const [productCategoryOptions, setProductCategoryOptions] = useState<ProductCategoryOption[]>([]);
+  const [creatorUserOptions, setCreatorUserOptions] = useState<UserOption[]>([]);
 
   useEffect(() => {
     productCategoryService
@@ -313,6 +318,15 @@ export function InventoryContent() {
         if (res.data) setProductCategoryOptions(res.data);
       })
       .catch((err) => console.error('Failed to load product category options:', err));
+
+    userService
+      .getUserOptions()
+      .then((res) => {
+        if (res.data && Array.isArray(res.data)) {
+          setCreatorUserOptions(res.data);
+        }
+      })
+      .catch((err) => console.error('Failed to load user options:', err));
   }, []);
 
   const [showAdjustStockModal, setShowAdjustStockModal] = useState(false);
@@ -379,10 +393,52 @@ export function InventoryContent() {
 
   const [showEmptyStock, setShowEmptyStock] = useState(false);
 
-  // Barang Retur Action state
-  const [selectedReturnItem, setSelectedReturnItem] = useState<ReturnedGood | null>(null);
-  const [returnAction, setReturnAction] = useState<ReturnedGoodAction>('RESTOCK');
-  const [returnActionNotes, setReturnActionNotes] = useState('');
+  // URL table filters for Returned Goods tab
+  const { filters: retFilters, setFilter: setRetFilter } = useTableFilters({
+    ret_page: 1,
+    ret_per_page: 20,
+    ret_search: '',
+    ret_status: '',
+  });
+
+  const [retSearchInput, setRetSearchInput] = useState(retFilters.ret_search || '');
+  const isRetSearchInitial = useRef(true);
+
+  // Debounce search input for returned goods (500ms)
+  useEffect(() => {
+    if (isRetSearchInitial.current) {
+      isRetSearchInitial.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setRetFilter('ret_search', retSearchInput.trim());
+      setRetFilter('ret_page', 1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [retSearchInput, setRetFilter]);
+
+  useEffect(() => {
+    setRetSearchInput(retFilters.ret_search || '');
+  }, [retFilters.ret_search]);
+
+  // Returned goods pending action counter (awaiting_receival + received) from dedicated counting endpoint
+  const [pendingReturnsCount, setPendingReturnsCount] = useState<number>(0);
+
+  const fetchReturnedGoodCounts = useCallback(async () => {
+    if (!can(PERMISSIONS.RETURNED_GOOD.READ)) return;
+    try {
+      const res = await returnedGoodService.getReturnedGoodCounts();
+      if (res.success && res.data) {
+        setPendingReturnsCount(res.data.pending_action ?? (res.data.awaiting_receival + res.data.received));
+      }
+    } catch (err) {
+      console.warn('Failed to load returned good counts:', err);
+    }
+  }, [can]);
+
+  useEffect(() => {
+    fetchReturnedGoodCounts();
+  }, [fetchReturnedGoodCounts]);
 
   // URL table filters for Assets tab
   const { filters: astFilters, setFilter: setAstFilter } = useTableFilters({
@@ -474,31 +530,6 @@ export function InventoryContent() {
       });
     return map;
   }, [workOrders]);
-
-  const filteredReturnedGoods = (returnedGoods || []).filter(rg => {
-    const matchesStatus = !inventoryFilter || rg.status === inventoryFilter;
-    const q = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm ||
-      rg.productName.toLowerCase().includes(q) ||
-      rg.customerName.toLowerCase().includes(q) ||
-      rg.salesOrderNumber.toLowerCase().includes(q) ||
-      rg.complaintId.toLowerCase().includes(q) ||
-      (rg.conditionReason && rg.conditionReason.toLowerCase().includes(q));
-    return matchesStatus && matchesSearch;
-  });
-
-  const openReturnActionModal = (item: ReturnedGood) => {
-    setSelectedReturnItem(item);
-    setReturnAction('RESTOCK');
-    setReturnActionNotes('');
-  };
-
-  const handleConfirmReturnAction = () => {
-    if (!selectedReturnItem) return;
-    processReturnedGoodAction(selectedReturnItem.id, returnAction, returnActionNotes.trim());
-    toast.success('Tindakan Berhasil Diproses', `Barang retur telah diproses.`);
-    setSelectedReturnItem(null);
-  };
 
   // ---- Pengadaan (Procurement) Handlers ----
   const openAddProcurement = (targetMatId?: string) => {
@@ -623,11 +654,12 @@ export function InventoryContent() {
           filterPlaceholder = "Semua Status Retur";
           filterOptions = [
             { value: '', label: 'Semua Status Retur' },
-            { value: 'PENDING', label: 'Menunggu Tindakan' },
+            { value: 'AWAITING_RECEIVAL', label: 'Menunggu Fisik' },
+            { value: 'RECEIVED', label: 'Diterima di Gudang' },
             { value: 'RESTOCKED', label: 'Masuk Barang Jadi' },
-            { value: 'REPAIR', label: 'Diperbaiki' },
             { value: 'DISASSEMBLED', label: 'Dibongkar' },
-            { value: 'SCRAPPED', label: 'Dibuang / Sampah' },
+            { value: 'SCRAPPED', label: 'Afkir / Sampah' },
+            { value: 'CANCELED', label: 'Dibatalkan' },
           ];
         } else if (activeTab === 'procurement') {
           filterPlaceholder = "Semua Status";
@@ -653,8 +685,6 @@ export function InventoryContent() {
           filterPlaceholder = "Semua Kategori Aset";
           filterOptions = assetCategories.map(c => ({ value: c, label: c }));
         }
-
-        const pendingReturnsCount = (returnedGoods || []).filter(rg => rg.status === 'PENDING').length;
 
         return (
           <SegmentedControl
@@ -761,14 +791,49 @@ export function InventoryContent() {
                         placeholder: 'Semua Status',
                       },
                     ]
-                    : undefined
+                  : activeTab === 'procurement'
+                    ? [
+                      {
+                        id: 'po-status',
+                        value: procurementFilters.po_status,
+                        onChange: (st) => {
+                          setProcurementFilter('po_status', st);
+                          setProcurementFilter('po_page', 1);
+                        },
+                        options: [
+                          { value: 'DRAFT', label: 'Status: Menunggu' },
+                          { value: 'ORDERED', label: 'Status: Dipesan' },
+                          { value: 'PARTIALLY_RECEIVED', label: 'Status: Diterima Sebagian' },
+                          { value: 'RECEIVED', label: 'Status: Diterima' },
+                          { value: 'REJECTED', label: 'Status: Ditolak' },
+                          { value: 'CANCELED', label: 'Status: Dibatalkan' },
+                        ],
+                        placeholder: 'Semua Status',
+                      },
+                      {
+                        id: 'po-creator',
+                        value: procurementFilters.po_created_by_id,
+                        onChange: (uid) => {
+                          setProcurementFilter('po_created_by_id', uid);
+                          setProcurementFilter('po_page', 1);
+                        },
+                        options: creatorUserOptions.map((u) => ({
+                          value: String(u.id),
+                          label: `Dibuat: ${u.full_name || u.email}`,
+                        })),
+                        placeholder: 'Semua Pembuat',
+                      },
+                    ]
+                  : undefined
             }
             filterValue={
               activeTab === 'procurement'
                 ? procurementFilters.po_status
                 : activeTab === 'movements'
                   ? movementFilters.mv_type
-                  : inventoryFilter
+                  : activeTab === 'returns'
+                    ? retFilters.ret_status
+                    : inventoryFilter
             }
             onFilterChange={(val) => {
               if (activeTab === 'procurement') {
@@ -777,6 +842,9 @@ export function InventoryContent() {
               } else if (activeTab === 'movements') {
                 setMovementFilter('mv_type', val);
                 setMovementFilter('mv_page', 1);
+              } else if (activeTab === 'returns') {
+                setRetFilter('ret_status', val);
+                setRetFilter('ret_page', 1);
               } else {
                 setInventoryFilter(val);
               }
@@ -794,7 +862,9 @@ export function InventoryContent() {
                       ? movementSearchInput
                       : activeTab === 'assets'
                         ? astSearchInput
-                        : searchTerm
+                        : activeTab === 'returns'
+                          ? retSearchInput
+                          : searchTerm
             }
             onSearchChange={
               activeTab === 'raw'
@@ -807,7 +877,9 @@ export function InventoryContent() {
                       ? setMovementSearchInput
                       : activeTab === 'assets'
                         ? setAstSearchInput
-                        : setSearchTerm
+                        : activeTab === 'returns'
+                          ? setRetSearchInput
+                          : setSearchTerm
             }
             searchPlaceholder="Cari bahan baku, barang jadi, pengadaan, mutasi, atau aset..."
             extraControls={
@@ -857,220 +929,13 @@ export function InventoryContent() {
         />
       )}
 
-      {/* Barang Retur Table */}
+      {/* Barang Retur Table Section (Modular) */}
       {activeTab === 'returns' && (
-        filteredReturnedGoods.length === 0 ? (
-          <EmptyState
-            title="Tidak Ada Barang Retur"
-            description={
-              searchTerm || inventoryFilter
-                ? "Tidak ada data barang retur yang cocok dengan pencarian atau filter."
-                : "Barang retur dari komplain yang telah disetujui (refund, penggantian, atau perbaikan) akan otomatis tercatat di sini."
-            }
-            icon={<RotateCcw className="h-7 w-7 text-slate-400" />}
-          />
-        ) : (
-          <Card className="p-0 overflow-hidden">
-            <Table
-              data={filteredReturnedGoods}
-              keyExtractor={(rg) => rg.id}
-              embedded
-              emptyTitle="Tidak Ada Barang Retur"
-              emptyDescription={
-                searchTerm || inventoryFilter
-                  ? "Tidak ada data barang retur yang cocok dengan pencarian atau filter."
-                  : "Barang retur dari komplain yang telah disetujui (refund, penggantian, atau perbaikan) akan otomatis tercatat di sini."
-              }
-              emptyIcon={<RotateCcw className="h-7 w-7 text-slate-400" />}
-              columns={[
-                {
-                  key: 'product',
-                  header: 'Produk',
-                  align: 'left',
-                  width: '320px',
-                  className: 'min-w-[300px]',
-                  cell: (rg) => {
-                    const prod = products.find(p => p.id === rg.productId || p.name === rg.productName);
-                    const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
-                    const soItem = salesOrders
-                      .find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber)
-                      ?.items.find(i => i.productId === rg.productId && (!rg.variantId || i.variantId === rg.variantId));
-                    const orderItemNotes = rg.customNotes || soItem?.customNotes;
-
-                    return (
-                      <div className="flex items-start gap-3 max-w-[320px]">
-                        {prod?.image ? (
-                          <div className="h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                            <img src={prod.image} alt={rg.productName} className="w-full h-full object-cover" />
-                          </div>
-                        ) : (
-                          <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                            <IconComp className="h-5 w-5" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex flex-col gap-0.5">
-                          <TruncatedText
-                            text={rg.productName}
-                            className="font-semibold text-xs text-slate-900 dark:text-white"
-                            maxWidth="240px"
-                          />
-                          {rg.variantLabel && (
-                            <TruncatedText
-                              text={formatVariantLabel(rg.variantLabel)}
-                              className="text-[11px] text-slate-500 dark:text-slate-400"
-                              maxWidth="240px"
-                            />
-                          )}
-                          {orderItemNotes && (
-                            <TruncatedText
-                              text={`Catatan: ${orderItemNotes}`}
-                              className="text-[11px] text-slate-500 dark:text-slate-400 italic"
-                              maxWidth="240px"
-                            />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  },
-                },
-                {
-                  key: 'reference',
-                  header: 'Referensi',
-                  align: 'left',
-                  width: '160px',
-                  className: 'min-w-[150px]',
-                  cell: (rg) => (
-                    <div>
-                      <Link
-                        href={`/order/complaint/${rg.complaintId}`}
-                        className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline block"
-                      >
-                        Komplain #{rg.complaintId}
-                      </Link>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                        {rg.salesOrderNumber}
-                      </span>
-                    </div>
-                  ),
-                },
-                {
-                  key: 'qty',
-                  header: 'Qty',
-                  align: 'right',
-                  cell: (rg) => (
-                    <span className="font-mono text-xs font-semibold text-slate-900 dark:text-white whitespace-nowrap">
-                      {rg.qty} unit
-                    </span>
-                  ),
-                },
-                {
-                  key: 'reason',
-                  header: 'Alasan Retur',
-                  align: 'left',
-                  width: '260px',
-                  className: 'min-w-[240px]',
-                  cell: (rg) => (
-                    <TruncatedText
-                      text={rg.conditionReason}
-                      className="text-xs text-slate-600 dark:text-slate-400"
-                      maxWidth="240px"
-                    />
-                  ),
-                },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  align: 'center',
-                  cell: (rg) => {
-                    const statusConfig: Record<string, { label: string; variant: 'warning' | 'success' | 'purple' | 'default' | 'danger' }> = {
-                      AWAITING_RECEIVAL: { label: 'Menunggu Fisik', variant: 'warning' },
-                      PENDING: { label: 'Menunggu Fisik', variant: 'warning' },
-                      RECEIVED: { label: 'Diterima di Gudang', variant: 'purple' },
-                      RESTOCKED: { label: 'Masuk Barang Jadi', variant: 'success' },
-                      REPAIR: { label: 'Diperbaiki', variant: 'purple' },
-                      DISASSEMBLED: { label: 'Dibongkar', variant: 'default' },
-                      SCRAPPED: { label: 'Afkir / Sampah', variant: 'danger' },
-                      CANCELED: { label: 'Dibatalkan', variant: 'default' },
-                    };
-                    const cfg = statusConfig[rg.status] || { label: rg.status, variant: 'default' };
-                    return (
-                      <Badge variant={cfg.variant} className="text-[11px]">
-                        {cfg.label}
-                      </Badge>
-                    );
-                  },
-                },
-                ...(can(PERMISSIONS.RETURNED_GOOD.RECEIVE) || can(PERMISSIONS.RETURNED_GOOD.ACTION)
-                  ? [
-                    {
-                      key: 'action',
-                      header: 'Aksi',
-                      align: 'center' as const,
-                      width: '160px',
-                      cell: (rg: ReturnedGood) => {
-                        const order = salesOrders.find(so => so.id === rg.salesOrderId || so.orderNumber === rg.salesOrderNumber);
-                        const complaint = order?.complaints?.find(c => c.id === rg.complaintId);
-                        const isComplaintPending = complaint && (complaint.status === 'MENUNGGU' || complaint.status === 'DIAJUKAN');
-
-                        if (isComplaintPending) {
-                          return (
-                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
-                              Menunggu Resolusi CS
-                            </span>
-                          );
-                        }
-
-                        if (rg.status === 'AWAITING_RECEIVAL' || (rg.status === 'PENDING' && !rg.receivedAt)) {
-                          return (
-                            <div className="flex items-center justify-center gap-1.5">
-                              {can(PERMISSIONS.RETURNED_GOOD.RECEIVE) && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    confirmReceiveReturnedGood(rg.id);
-                                    toast.success('Barang Diterima', 'Fisik barang retur telah dikonfirmasi tiba di gudang.');
-                                  }}
-                                >
-                                  Terima Fisik
-                                </Button>
-                              )}
-                              {can(PERMISSIONS.RETURNED_GOOD.ACTION) && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    processReturnedGoodAction(rg.id, 'CANCEL', 'Dibatalkan / tidak ditarik');
-                                    toast.info('Retur Dibatalkan', 'Barang retur ditandai batal/tidak ditarik.');
-                                  }}
-                                >
-                                  Batal
-                                </Button>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        if ((rg.status === 'RECEIVED' || rg.status === 'PENDING') && can(PERMISSIONS.RETURNED_GOOD.ACTION)) {
-                          return (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => openReturnActionModal(rg)}
-                            >
-                              Tindak Lanjuti
-                            </Button>
-                          );
-                        }
-                        return <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">-</span>;
-                      },
-                    },
-                  ]
-                  : []),
-              ]}
-            />
-          </Card>
-        )
+        <ReturnedGoodsTabSection
+          filters={retFilters}
+          setFilter={setRetFilter}
+          onCountsUpdated={fetchReturnedGoodCounts}
+        />
       )}
 
       {/* Stock Movements Section (Modular) */}
@@ -1102,12 +967,14 @@ export function InventoryContent() {
             per_page: procurementFilters.po_per_page,
             search: procurementFilters.po_search,
             status: procurementFilters.po_status,
+            created_by_id: procurementFilters.po_created_by_id,
           }}
           setFilter={(key, val) => {
             if (key === 'page') setProcurementFilter('po_page', val);
             else if (key === 'per_page') setProcurementFilter('po_per_page', val);
             else if (key === 'search') setProcurementFilter('po_search', val);
             else if (key === 'status') setProcurementFilter('po_status', val);
+            else if (key === 'created_by_id') setProcurementFilter('po_created_by_id', val);
           }}
           isCreateModalOpen={showPOModal}
           onCloseCreateModal={() => setShowPOModal(false)}
@@ -1284,109 +1151,6 @@ export function InventoryContent() {
           })()}
         </form>
       </Modal>
-
-      {/* Modal Tindak Lanjut Barang Retur */}
-      <Modal
-        isOpen={!!selectedReturnItem}
-        onClose={() => setSelectedReturnItem(null)}
-        title="Tindak Lanjut Barang Retur"
-        size="md"
-        actions={
-          <div className="flex items-center justify-end gap-2.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedReturnItem(null)}
-            >
-              Batal
-            </Button>
-            <Button
-              variant={returnAction === 'SCRAP' ? 'danger' : 'primary'}
-              size="sm"
-              onClick={handleConfirmReturnAction}
-            >
-              Simpan Tindakan
-            </Button>
-          </div>
-        }
-      >
-        {selectedReturnItem && (
-          <div className="space-y-4 text-xs text-slate-700 dark:text-slate-300">
-            {/* Ringkasan Item */}
-            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3.5 space-y-2.5 border border-slate-200/80 dark:border-slate-700/80">
-              <div className="flex items-start gap-3">
-                {(() => {
-                  const prod = products.find(p => p.id === selectedReturnItem.productId || p.name === selectedReturnItem.productName);
-                  const IconComp = iconMap[prod?.imageIcon || 'BedDouble'] || BedDouble;
-                  return prod?.image ? (
-                    <div className="h-12 w-12 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800">
-                      <img src={prod.image} alt={selectedReturnItem.productName} className="w-full h-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="h-12 w-12 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                      <IconComp className="h-6 w-6" />
-                    </div>
-                  );
-                })()}
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm text-slate-900 dark:text-white truncate">
-                    {selectedReturnItem.productName}
-                  </div>
-                  {selectedReturnItem.variantLabel && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {formatVariantLabel(selectedReturnItem.variantLabel)}
-                    </div>
-                  )}
-                  <div className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
-                    Jumlah Retur: {selectedReturnItem.qty} unit
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 dark:text-slate-400">Referensi</span>
-                <span className="font-mono text-slate-700 dark:text-slate-300">
-                  {selectedReturnItem.complaintId} • {selectedReturnItem.salesOrderNumber} ({selectedReturnItem.customerName})
-                </span>
-              </div>
-              {selectedReturnItem.conditionReason && (
-                <div className="flex justify-between items-start pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
-                  <span className="text-slate-500 dark:text-slate-400 shrink-0 mr-2">Alasan Retur</span>
-                  <span className="text-right text-slate-700 dark:text-slate-300">
-                    {selectedReturnItem.conditionReason}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Pilihan Tindakan Alokasi */}
-            <div>
-              <Select
-                label="Pilih Tindakan Alokasi"
-                required
-                value={returnAction}
-                onChange={(e) => setReturnAction(e.target.value as ReturnedGoodAction)}
-                options={[
-                  { value: 'RESTOCK', label: 'Masuk ke Stok Bebas Barang Jadi (Restock)' },
-                  { value: 'DISASSEMBLE', label: 'Bongkar ke Bahan Baku (Disassemble)' },
-                  { value: 'SCRAP', label: 'Afkir / Dibuang ke Sampah (Scrap)' },
-                  { value: 'CANCEL', label: 'Batalkan / Tidak Ditarik' },
-                ]}
-              />
-            </div>
-
-            {/* Input Catatan Tindakan */}
-            <div>
-              <Input
-                label="Catatan Tindakan (Opsional)"
-                placeholder="Tambahkan catatan atau instruksi..."
-                value={returnActionNotes}
-                onChange={(e) => setReturnActionNotes(e.target.value)}
-              />
-            </div>
-          </div>
-        )}
-      </Modal>
-
     </div>
   );
 }

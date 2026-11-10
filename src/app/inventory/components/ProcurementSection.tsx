@@ -39,8 +39,9 @@ interface ProcurementSectionProps {
     per_page: number;
     search: string;
     status: string;
+    created_by_id?: string | number;
   };
-  setFilter: (key: 'page' | 'per_page' | 'search' | 'status', value: any) => void;
+  setFilter: (key: 'page' | 'per_page' | 'search' | 'status' | 'created_by_id', value: any) => void;
   isCreateModalOpen: boolean;
   onCloseCreateModal: () => void;
   preselectedMaterialId?: string | number | null;
@@ -99,6 +100,7 @@ export function ProcurementSection({
         per_page: filters.per_page,
         search: debouncedSearch?.trim() || undefined,
         status: filters.status || undefined,
+        created_by_id: filters.created_by_id ? String(filters.created_by_id) : undefined,
       });
 
       if (res.data) {
@@ -126,7 +128,7 @@ export function ProcurementSection({
     } finally {
       setIsLoading(false);
     }
-  }, [filters.page, filters.per_page, filters.status, debouncedSearch, purchaseOrders, toast]);
+  }, [filters.page, filters.per_page, filters.status, filters.created_by_id, debouncedSearch, purchaseOrders, toast]);
 
   useEffect(() => {
     fetchProcurements();
@@ -233,6 +235,26 @@ export function ProcurementSection({
             <span className="text-sm font-normal text-slate-700 dark:text-slate-300">
               {firstItem.qty} {firstItem.unit}
             </span>
+          );
+        },
+      },
+      {
+        id: 'created_by',
+        header: 'Dibuat Oleh',
+        cell: ({ row: po }) => {
+          const creatorName = po.created_by_user?.full_name || po.created_by || '-';
+          const creatorEmail = po.created_by_user?.email;
+          return (
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-slate-800 dark:text-slate-200">
+                {creatorName}
+              </span>
+              {creatorEmail && (
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 truncate max-w-[140px]">
+                  {creatorEmail}
+                </span>
+              )}
+            </div>
           );
         },
       },

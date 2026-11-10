@@ -23,6 +23,8 @@ import { workOrderService, mapWorkOrderResponseToWorkOrder, mapJobCardResponseTo
 import { deliveryService, resolveDeliveryPhotoUrl } from '../src/services/delivery.service';
 import { finishedGoodService } from '../src/services/finished-good.service';
 import { companyAssetService } from '../src/services/company-asset.service';
+import { returnedGoodService, mapReturnedGoodResponseToReturnedGood } from '../src/services/returned-good.service';
+import { inventoryService } from '../src/services/inventory.service';
 import { mapQueueResponseToOrderGroup, buildTripGroups } from '../src/app/delivery/components/types';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
@@ -268,6 +270,10 @@ async function runTests() {
   assert(PERMISSIONS.PURCHASING.READ === 'procurement:read', 'PURCHASING.READ must be procurement:read');
   assert(PERMISSIONS.PURCHASING.CREATE === 'procurement:create', 'PURCHASING.CREATE must be procurement:create');
   assert(PERMISSIONS.PURCHASING.UPDATE === 'procurement:update', 'PURCHASING.UPDATE must be procurement:update');
+  assert(PERMISSIONS.PURCHASING.ORDER === 'procurement:order', 'PURCHASING.ORDER must be procurement:order');
+  assert(PERMISSIONS.PURCHASING.RECEIVE === 'procurement:receive', 'PURCHASING.RECEIVE must be procurement:receive');
+  assert(PERMISSIONS.PURCHASING.REJECT === 'procurement:reject', 'PURCHASING.REJECT must be procurement:reject');
+  assert(PERMISSIONS.PURCHASING.CANCEL === 'procurement:cancel', 'PURCHASING.CANCEL must be procurement:cancel');
   assert(PERMISSIONS.PURCHASING.DELETE === 'procurement:delete', 'PURCHASING.DELETE must be procurement:delete');
   console.log('✓ procurementService contract verified');
 
@@ -406,6 +412,15 @@ async function runTests() {
   assert(PERMISSIONS.SALES.UPDATE === 'sales:update', 'SALES.UPDATE must be sales:update');
   assert(PERMISSIONS.SALES.APPROVE === 'sales:approve', 'SALES.APPROVE must be sales:approve');
   assert(PERMISSIONS.SALES.DELETE === 'sales:delete', 'SALES.DELETE must be sales:delete');
+  assert(PERMISSIONS.COMPLAINT.CREATE === 'complaint:create', 'COMPLAINT.CREATE must be complaint:create');
+  assert(orderService.createComplaint.length >= 2, 'createComplaint must accept at least orderId and payload (supports optional files)');
+  const samplePayloadWithRawFiles: Parameters<typeof orderService.createComplaint>[1] = {
+    category: 'Barang rusak',
+    description: 'Uji komplain dengan file',
+    items: [{ product_id: 1, product_name: 'Meja', qty: 1, unit_price: 1000 }],
+    rawFiles: [],
+  };
+  assert(samplePayloadWithRawFiles.category === 'Barang rusak', 'samplePayloadWithRawFiles should support rawFiles');
   console.log('✓ orderService contract, mappers & PBAC verified');
 
   // 4s. Verify workOrderService structure, mappers & PBAC mapping
@@ -638,6 +653,99 @@ async function runTests() {
   assert(PERMISSIONS.INVENTORY.ASSET_SERVICE === 'asset:service', 'ASSET_SERVICE must be asset:service');
   assert(PERMISSIONS.INVENTORY.ASSET_DELETE === 'asset:delete', 'ASSET_DELETE must be asset:delete');
   console.log('✓ companyAssetService contract & PBAC verified');
+
+  // 4w. Verify returnedGoodService, inventoryService & cross-module complaint/work-order mappers
+  console.log('4w. Checking returnedGoodService, inventoryService contract, mappers & cross-module complaint fields...');
+  assert(typeof returnedGoodService.getReturnedGoods === 'function', 'returnedGoodService.getReturnedGoods must be a function');
+  assert(typeof returnedGoodService.getReturnedGoodCounts === 'function', 'returnedGoodService.getReturnedGoodCounts must be a function');
+  assert(typeof returnedGoodService.getReturnedGoodById === 'function', 'returnedGoodService.getReturnedGoodById must be a function');
+  assert(typeof returnedGoodService.receiveReturnedGood === 'function', 'returnedGoodService.receiveReturnedGood must be a function');
+  assert(typeof returnedGoodService.processReturnedGoodAction === 'function', 'returnedGoodService.processReturnedGoodAction must be a function');
+  assert(typeof inventoryService.getReturnedGoods === 'function', 'inventoryService.getReturnedGoods must be a function');
+  assert(typeof inventoryService.getReturnedGoodCounts === 'function', 'inventoryService.getReturnedGoodCounts must be a function');
+  assert(typeof inventoryService.getReturnedGoodById === 'function', 'inventoryService.getReturnedGoodById must be a function');
+  assert(typeof inventoryService.receiveReturnedGood === 'function', 'inventoryService.receiveReturnedGood must be a function');
+  assert(typeof inventoryService.processReturnedGoodAction === 'function', 'inventoryService.processReturnedGoodAction must be a function');
+  assert(typeof inventoryService.getMaterials === 'function', 'inventoryService.getMaterials must be a function');
+  assert(typeof inventoryService.getFinishedGoods === 'function', 'inventoryService.getFinishedGoods must be a function');
+  assert(typeof inventoryService.allocateFinishedGood === 'function', 'inventoryService.allocateFinishedGood must be a function');
+  assert(typeof mapReturnedGoodResponseToReturnedGood === 'function', 'mapReturnedGoodResponseToReturnedGood must be a function');
+
+  const mockRgDto = {
+    id: 15,
+    return_number: 'RET-1-202611-0015',
+    complaint_id: 7,
+    complaint_number: 'CMP-1-202611-0007',
+    complaint_status: 'DIPROSES',
+    sales_order_id: 99,
+    sales_order_number: 'SO-202611-0099',
+    customer_id: 3,
+    customer_name: 'PT Maju Jaya',
+    product_id: 4,
+    variant_id: 8,
+    product_name: 'Sofa L-Shape',
+    variant_label: 'Abu Muda',
+    product_image_url: 'products/sofa.jpg',
+    product_image_icon: 'Sofa',
+    qty: 2,
+    unit_price: 4500000,
+    condition_reason: 'Kaki patah saat pengiriman',
+    custom_notes: 'Kain beludru',
+    status: 'PENDING',
+    returned_at: '2026-11-10T09:00:00Z',
+    created_at: '2026-11-10T09:00:00Z',
+    updated_at: '2026-11-10T09:00:00Z',
+  };
+  const mappedRg = mapReturnedGoodResponseToReturnedGood(mockRgDto);
+  assert(mappedRg.id === '15', 'mappedRg.id must be "15"');
+  assert(mappedRg.returnNumber === 'RET-1-202611-0015', 'mappedRg.returnNumber must match');
+  assert(mappedRg.complaintId === '7', 'mappedRg.complaintId must be "7"');
+  assert(mappedRg.complaintNumber === 'CMP-1-202611-0007', 'mappedRg.complaintNumber must match');
+  assert(mappedRg.complaintStatus === 'DITANGANI', 'mappedRg.complaintStatus must normalize DIPROSES to DITANGANI');
+  assert(mappedRg.status === 'AWAITING_RECEIVAL', 'mappedRg.status must normalize PENDING to AWAITING_RECEIVAL');
+  assert(mappedRg.productImageIcon === 'Sofa', 'mappedRg.productImageIcon must match');
+
+  const mockInProgressComplaint = mapComplaintResponseToOrderComplaint({
+    id: 7,
+    complaint_number: 'CMP-1-202611-0007',
+    sales_order_id: 99,
+    sales_order_number: 'SO-202611-0099',
+    customer_name: 'PT Maju Jaya',
+    category: 'Barang rusak / cacat',
+    description: 'Kaki patah',
+    status: 'DIPROSES',
+    resolution: 'Penuhi Barang Pengganti',
+    replacement_source: 'NEW_SPK',
+    replacement_status: 'IN_DELIVERY',
+    replacement_wo_id: 120,
+    replacement_do_id: 45,
+    return_good_id: 15,
+    refund_amount: 4500000,
+    refund_bank_account_id: 2,
+    created_at: '2026-11-10T08:00:00Z',
+    updated_at: '2026-11-10T09:00:00Z',
+    items: [],
+  });
+  assert(mockInProgressComplaint.status === 'DITANGANI', 'complaint status DIPROSES must normalize to DITANGANI');
+  assert(mockInProgressComplaint.replacementStatus === 'SHIPPED', 'replacement_status IN_DELIVERY must normalize to SHIPPED');
+  assert(mockInProgressComplaint.complaintNumber === 'CMP-1-202611-0007', 'complaintNumber must map');
+  assert(mockInProgressComplaint.replacementWOId === '120', 'replacementWOId must map');
+  assert(mockInProgressComplaint.replacementDOId === '45', 'replacementDOId must map');
+  assert(mockInProgressComplaint.returnGoodId === '15', 'returnGoodId must map');
+  assert(mockInProgressComplaint.refundAmount === 4500000, 'refundAmount must map');
+  assert(mockInProgressComplaint.refundBankAccountId === '2', 'refundBankAccountId must map');
+
+  const mappedReplacementWO = mapWorkOrderResponseToWorkOrder({
+    ...mockWorkOrderDto,
+    is_complaint_replacement: true,
+    complaint_id: 7,
+  });
+  assert(mappedReplacementWO.isComplaintReplacement === true, 'isComplaintReplacement must map to true');
+  assert(mappedReplacementWO.complaintId === '7', 'complaintId must map to "7"');
+  assert(PERMISSIONS.RETURNED_GOOD.READ === 'returned-good:read', 'RETURNED_GOOD.READ must be returned-good:read');
+  assert(PERMISSIONS.RETURNED_GOOD.RECEIVE === 'returned-good:receive', 'RETURNED_GOOD.RECEIVE must be returned-good:receive');
+  assert(PERMISSIONS.RETURNED_GOOD.ACTION === 'returned-good:action', 'RETURNED_GOOD.ACTION must be returned-good:action');
+  console.log('✓ returnedGoodService & cross-module mappers verified');
 
   // 5. Test Proxy logic for mustChangePassword
   console.log('5. Testing Proxy middleware mustChangePassword logic...');

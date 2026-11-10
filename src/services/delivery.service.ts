@@ -69,6 +69,8 @@ export interface DeliveryOrder {
   failure_note?: string;
   failure_photo?: string;
   failed_at?: string;
+  is_replacement?: boolean;
+  complaint_id?: string;
   created_at: string;
   updated_at: string;
   items?: DeliveryOrderItem[];
@@ -187,6 +189,8 @@ export interface ReportFailedDeliveryPayload {
   notes?: string;
   failure_note?: string;
   proof_photo?: string;
+  is_damaged?: boolean;
+  condition?: string;
 }
 
 export interface RescheduleDeliveryPayload {

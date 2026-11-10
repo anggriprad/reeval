@@ -310,6 +310,7 @@ export interface CreateComplaintRequest {
   description: string;
   items: CreateComplaintItemRequest[];
   attachments?: CreateComplaintAttachmentRequest[];
+  rawFiles?: File[];
 }
 
 export interface ResolveComplaintRequest {
@@ -317,7 +318,9 @@ export interface ResolveComplaintRequest {
   resolution_notes?: string;
   replacement_source?: string;
   is_return_requested?: boolean;
-  refund_bank_account_id?: string;
+  refund_amount?: number;
+  refund_bank_account_id?: string | number | null;
+  cancel_wo_id?: number | string | null;
 }
 
 export interface RejectComplaintRequest {
@@ -358,6 +361,8 @@ export interface OrderComplaintResponse {
   resolution_notes?: string;
   replacement_source?: string;
   is_return_requested?: boolean;
+  refund_amount?: number;
+  refund_bank_account_id?: number | null;
   rejection_reason?: string;
   rejected_at?: string | null;
   rejected_by?: string;
@@ -365,6 +370,8 @@ export interface OrderComplaintResponse {
   resolved_by?: string;
   replacement_status?: string;
   replacement_wo_id?: number | null;
+  replacement_do_id?: number | null;
+  return_good_id?: number | null;
   created_at: string;
   updated_at: string;
   items: OrderComplaintItemResponse[];
@@ -384,6 +391,7 @@ export interface GetComplaintsParams {
   per_page?: number;
   status?: string;
   search?: string;
+  sales_id?: number | string;
 }
 
 /**
@@ -500,7 +508,59 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
     isCustomProcess: Boolean(dto.is_custom_process),
     customProcessAt: dto.custom_process_at || undefined,
     customProcessBy: dto.custom_process_by || undefined,
-    complaints: [],
+    complaints: (() => {
+      let cf: any = dto.custom_fields;
+      if (typeof cf === "string") {
+        try {
+          cf = JSON.parse(cf);
+        } catch {
+          cf = {};
+        }
+      }
+      if (cf && Array.isArray(cf.complaints)) {
+        return cf.complaints.map((c: any) => ({
+          id: String(c.id),
+          complaintNumber: c.complaintNumber || c.complaint_number || undefined,
+          category: c.category as any,
+          description: c.description || c.reason || "",
+          status: ((c.status === "DIPROSES" ? "DITANGANI" : c.status) || "MENUNGGU") as any,
+          items: Array.isArray(c.items)
+            ? c.items.map((ci: any) => ({
+                productId: String(ci.productId ?? ci.product_id ?? ""),
+                variantId: (ci.variantId ?? ci.variant_id) ? String(ci.variantId ?? ci.variant_id) : undefined,
+                productName: ci.productName ?? ci.product_name ?? "",
+                variantLabel: ci.variantLabel ?? ci.variant_label ?? undefined,
+                qty: Number(ci.qty || 1),
+                unitPrice: Number(ci.unitPrice ?? ci.unit_price ?? 0),
+              }))
+            : [],
+          attachments: Array.isArray(c.attachments) ? c.attachments : [],
+          resolution: c.resolution as any,
+          resolutionNotes: c.resolutionNotes ?? c.resolution_notes,
+          replacementSource: (c.replacementSource ?? c.replacement_source) as any,
+          isReturnRequested: Boolean(c.isReturnRequested ?? c.is_return_requested),
+          returnGoodId: (c.return_good_id ?? c.returnGoodId) ? String(c.return_good_id ?? c.returnGoodId) : undefined,
+          returnNumber: c.returnNumber ?? c.return_number ?? undefined,
+          refundAmount: (c.refundAmount ?? c.refund_amount) ? Number(c.refundAmount ?? c.refund_amount) : undefined,
+          refundBankAccountId: (c.refundBankAccountId ?? c.refund_bank_account_id) ? String(c.refundBankAccountId ?? c.refund_bank_account_id) : undefined,
+          rejectionReason: c.rejectionReason ?? c.rejection_reason,
+          rejectedAt: c.rejectedAt ?? c.rejected_at ?? undefined,
+          rejectedBy: c.rejectedBy ?? c.rejected_by ?? undefined,
+          createdAt: c.createdAt ?? c.created_at ?? dto.created_at,
+          resolvedAt: c.resolvedAt ?? c.resolved_at ?? undefined,
+          handledAt: c.handledAt ?? c.resolvedAt ?? c.resolved_at ?? undefined,
+          replacementStatus: ((c.replacementStatus ?? c.replacement_status) === "IN_DELIVERY"
+            ? "SHIPPED"
+            : (c.replacementStatus ?? c.replacement_status)) as any,
+          replacementWOId: (c.replacementWOId ?? c.replacement_wo_id) ? String(c.replacementWOId ?? c.replacement_wo_id) : undefined,
+          replacementDOId: (c.replacementDOId ?? c.replacement_do_id) ? String(c.replacementDOId ?? c.replacement_do_id) : undefined,
+          orderId: String(dto.id),
+          orderNumber: dto.order_number,
+          customerName: dto.customer_name,
+        }));
+      }
+      return [];
+    })(),
   };
 }
 
@@ -509,11 +569,16 @@ export function mapComplaintResponseToOrderComplaint(dto: OrderComplaintResponse
   orderNumber?: string;
   customerName?: string;
 } {
+  const normalizedStatus = dto.status === "DIPROSES" ? "DITANGANI" : dto.status;
+  const normalizedReplacementStatus =
+    dto.replacement_status === "IN_DELIVERY" ? "SHIPPED" : dto.replacement_status;
+
   return {
     id: String(dto.id),
+    complaintNumber: dto.complaint_number || undefined,
     category: dto.category as any,
     description: dto.description || (dto as any).reason || "",
-    status: dto.status as any,
+    status: normalizedStatus as any,
     items: (dto.items || []).map((itm) => ({
       productId: String(itm.product_id),
       variantId: itm.variant_id ? String(itm.variant_id) : undefined,
@@ -533,13 +598,18 @@ export function mapComplaintResponseToOrderComplaint(dto: OrderComplaintResponse
     resolutionNotes: dto.resolution_notes,
     replacementSource: dto.replacement_source as any,
     isReturnRequested: dto.is_return_requested,
+    returnGoodId: dto.return_good_id ? String(dto.return_good_id) : undefined,
+    refundAmount: dto.refund_amount || undefined,
+    refundBankAccountId: dto.refund_bank_account_id ? String(dto.refund_bank_account_id) : undefined,
     rejectionReason: dto.rejection_reason,
     rejectedAt: dto.rejected_at || undefined,
     rejectedBy: dto.rejected_by || undefined,
     createdAt: dto.created_at,
     resolvedAt: dto.resolved_at || undefined,
-    replacementStatus: dto.replacement_status as any,
+    handledAt: dto.resolved_at || undefined,
+    replacementStatus: normalizedReplacementStatus as any,
     replacementWOId: dto.replacement_wo_id ? String(dto.replacement_wo_id) : undefined,
+    replacementDOId: dto.replacement_do_id ? String(dto.replacement_do_id) : undefined,
     orderId: String(dto.sales_order_id),
     orderNumber: dto.sales_order_number,
     customerName: dto.customer_name,
@@ -823,12 +893,57 @@ export const orderService = {
 
   /**
    * 15. POST /api/v1/orders/:id/complaints
-   * File a complaint against a specific Sales Order.
+   * File a complaint against a specific Sales Order. Supports multipart/form-data when files are provided.
    */
-  async createComplaint(orderId: number | string, payload: CreateComplaintRequest): Promise<ApiResponse<OrderComplaintResponse>> {
+  async createComplaint(
+    orderId: number | string,
+    payload: CreateComplaintRequest,
+    files?: File[]
+  ): Promise<ApiResponse<OrderComplaintResponse>> {
+    const rawFilesToUpload: File[] = [];
+
+    if (files && files.length > 0) {
+      files.forEach((f) => {
+        if ((typeof File !== "undefined" && f instanceof File) || (f && typeof (f as any).name === "string")) {
+          rawFilesToUpload.push(f as File);
+        }
+      });
+    }
+
+    if (payload.rawFiles && payload.rawFiles.length > 0) {
+      payload.rawFiles.forEach((f) => {
+        if (((typeof File !== "undefined" && f instanceof File) || (f && typeof (f as any).name === "string")) && !rawFilesToUpload.includes(f as File)) {
+          rawFilesToUpload.push(f as File);
+        }
+      });
+    }
+
+    if (rawFilesToUpload.length > 0) {
+      const formData = new FormData();
+      const { rawFiles, ...cleanPayload } = payload;
+      formData.append("payload", JSON.stringify(cleanPayload));
+
+      rawFilesToUpload.forEach((file) => {
+        formData.append("attachments", file, file.name);
+      });
+
+      const response = await httpPost<OrderComplaintResponse>(
+        endpointUrl(`orders/${orderId}/complaints`),
+        formData,
+        true,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+      return response.data;
+    }
+
+    const { rawFiles, ...cleanPayload } = payload;
     const response = await httpPost<OrderComplaintResponse>(
       endpointUrl(`orders/${orderId}/complaints`),
-      payload,
+      cleanPayload,
       true
     );
     return response.data;

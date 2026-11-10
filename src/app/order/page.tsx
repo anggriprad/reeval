@@ -164,12 +164,18 @@ export function OrderListContent() {
       }
       setErrorMsg('');
 
+      const isSalesOnly = !isAdminOrSuperAdmin && userRoleList.includes('SALES');
+      const salesIdParam = isSalesOnly && currentUser?.id
+        ? Number(currentUser.id)
+        : (filters.sales_id ? Number(filters.sales_id) : undefined);
+
       try {
         if (activeStatus === 'komplain') {
           const res = await orderService.getComplaints({
             page: pageToFetch,
             per_page: 20,
             search: filters.search || undefined,
+            sales_id: salesIdParam,
           });
 
           if (activeRequestRef.current !== reqId) return;
@@ -181,7 +187,7 @@ export function OrderListContent() {
               orderNumber: c.sales_order_number,
               customerName: c.customer_name,
               category: c.category,
-              status: c.status,
+              status: c.status === 'DIPROSES' ? 'DITANGANI' : c.status,
               description: c.description,
               createdAt: c.created_at,
               items: (c.items || []).map((i) => ({
@@ -217,7 +223,6 @@ export function OrderListContent() {
         } else {
           // Regular Sales Orders with server-side status, search & sales_id
           const statusParam = activeStatus === 'all' ? undefined : activeStatus;
-          const salesIdParam = filters.sales_id ? Number(filters.sales_id) : undefined;
           const res = await orderService.getOrders({
             page: pageToFetch,
             per_page: 20,
@@ -286,7 +291,10 @@ export function OrderListContent() {
   // Fetch unified aggregated status counts for all tabs
   const fetchStatusCounts = useCallback(async () => {
     try {
-      const salesIdParam = filters.sales_id ? Number(filters.sales_id) : undefined;
+      const isSalesOnly = !isAdminOrSuperAdmin && userRoleList.includes('SALES');
+      const salesIdParam = isSalesOnly && currentUser?.id
+        ? Number(currentUser.id)
+        : (filters.sales_id ? Number(filters.sales_id) : undefined);
       const res = await orderService.getStatusCounts({ sales_id: salesIdParam });
       if (res.success && res.data) {
         setStatusCounts({

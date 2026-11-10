@@ -15,7 +15,12 @@ import {
   orderService,
   SalesOrderOption,
   SalesOrderResponse,
+  OrderComplaintResponse,
 } from '@/services/order.service';
+import {
+  workOrderService,
+  WorkOrderResponse,
+} from '@/services/work-order.service';
 
 interface AllocateFinishedGoodModalProps {
   isOpen: boolean;
@@ -33,9 +38,11 @@ export function AllocateFinishedGoodModal({
   const { toast } = useToast();
 
   const [orders, setOrders] = useState<SalesOrderOption[]>([]);
+  const [apiComplaints, setApiComplaints] = useState<OrderComplaintResponse[]>([]);
+  const [apiWorkOrders, setApiWorkOrders] = useState<WorkOrderResponse[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrderResponse | null>(null);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
-  const [isLoadingOrderDetail, setIsLoadingOrderDetail] = useState(false);
+  const [, setIsLoadingOrderDetail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [targetOrderId, setTargetOrderId] = useState<string>('');
@@ -43,19 +50,23 @@ export function AllocateFinishedGoodModal({
   const [allocateQty, setAllocateQty] = useState<number>(1);
   const [allocationPurpose, setAllocationPurpose] = useState<'REGULAR' | 'COMPLAINT'>('REGULAR');
   const [targetComplaintId, setTargetComplaintId] = useState<string>('');
+  const [targetCancelWoId, setTargetCancelWoId] = useState<number | undefined>(undefined);
   const [notes, setNotes] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // Fetch candidate sales order options (slim)
+  // Fetch candidate sales order options, active complaints, and work orders from API
   useEffect(() => {
     if (!isOpen || !finishedGood) {
       setOrders([]);
+      setApiComplaints([]);
+      setApiWorkOrders([]);
       setSelectedOrder(null);
       setTargetOrderId('');
       setSelectedItemId('');
       setAllocateQty(1);
       setAllocationPurpose('REGULAR');
       setTargetComplaintId('');
+      setTargetCancelWoId(undefined);
       setNotes('');
       setErrorMessage('');
       return;
@@ -64,15 +75,72 @@ export function AllocateFinishedGoodModal({
     let isMounted = true;
     setIsLoadingOrders(true);
 
-    orderService
-      .getOrderOptions({
+    Promise.allSettled([
+      orderService.getOrderOptions({
         product_id: finishedGood.product_id,
         variant_id: finishedGood.variant_id || undefined,
-      })
-      .then((res) => {
-        if (isMounted && res.data) {
-          setOrders(res.data);
+      }),
+      orderService.getComplaints({ per_page: 100 }),
+      workOrderService.getWorkOrders({ per_page: 100 }),
+    ])
+      .then(([ordersRes, complaintsRes, workOrdersRes]) => {
+        if (!isMounted) return;
+
+        const baseOrders: SalesOrderOption[] =
+          ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value.data)
+            ? [...ordersRes.value.data]
+            : [];
+
+        const complaintsList: OrderComplaintResponse[] =
+          complaintsRes.status === 'fulfilled' && Array.isArray(complaintsRes.value.data)
+            ? complaintsRes.value.data
+            : [];
+        setApiComplaints(complaintsList);
+
+        const workOrdersList: WorkOrderResponse[] =
+          workOrdersRes.status === 'fulfilled' && Array.isArray(workOrdersRes.value.data)
+            ? workOrdersRes.value.data
+            : [];
+        setApiWorkOrders(workOrdersList);
+
+        // Ensure SOs with active complaints for this product/variant are included in options
+        const existingOrderIds = new Set(baseOrders.map((o) => o.id));
+        for (const cmp of complaintsList) {
+          const isActiveStatus =
+            cmp.status === 'DITANGANI' ||
+            cmp.status === 'DIPROSES' ||
+            cmp.status === 'MENUNGGU' ||
+            cmp.status === 'DIAJUKAN';
+          const needsReplacement =
+            cmp.replacement_status !== 'DELIVERED' &&
+            cmp.replacement_status !== 'READY_FOR_DELIVERY' &&
+            cmp.replacement_status !== 'SHIPPED' &&
+            cmp.replacement_status !== 'IN_DELIVERY';
+
+          if (!isActiveStatus || !needsReplacement) continue;
+
+          const matchesItem = (cmp.items || []).some((ci) => {
+            const prodMatch = ci.product_id === finishedGood.product_id;
+            const varMatch =
+              !finishedGood.variant_id ||
+              !ci.variant_id ||
+              ci.variant_id === finishedGood.variant_id;
+            return prodMatch && varMatch;
+          });
+
+          if (matchesItem && cmp.sales_order_id && !existingOrderIds.has(cmp.sales_order_id)) {
+            existingOrderIds.add(cmp.sales_order_id);
+            baseOrders.push({
+              id: cmp.sales_order_id,
+              order_number: cmp.sales_order_number,
+              customer_name: cmp.customer_name,
+              customer_phone: '',
+              status: 'SENT',
+            });
+          }
         }
+
+        setOrders(baseOrders);
       })
       .catch((err) => {
         console.error('Failed to load orders for allocation:', err);
@@ -88,7 +156,6 @@ export function AllocateFinishedGoodModal({
 
   const eligibleOrders = orders;
 
-  // Item pesanan yang relevan di dalam Sales Order terpilih
   const matchingItems = useMemo(() => {
     if (!selectedOrder || !finishedGood) return [];
     return (selectedOrder.items || []).filter((item) => {
@@ -112,12 +179,63 @@ export function AllocateFinishedGoodModal({
     ? Math.max(0, (selectedItem.qty || 0) - (selectedItem.produced_qty || 0))
     : maxAvailable;
 
+  const findActiveComplaintForOrder = (so: SalesOrderResponse) => {
+    const fromApi = apiComplaints.find(
+      (c) =>
+        c.sales_order_id === so.id &&
+        (c.status === 'MENUNGGU' ||
+          c.status === 'DITANGANI' ||
+          c.status === 'DIPROSES' ||
+          c.status === 'DIAJUKAN') &&
+        c.replacement_status !== 'DELIVERED'
+    );
+    if (fromApi) {
+      const pendingWo = apiWorkOrders.find(
+        (wo) =>
+          (wo.complaint_id === fromApi.id || wo.id === fromApi.replacement_wo_id) &&
+          wo.status === 'PENDING'
+      );
+      return {
+        id: String(fromApi.id),
+        cancelWoId: pendingWo?.id || fromApi.replacement_wo_id || undefined,
+      };
+    }
+
+    let cf: any = so.custom_fields;
+    if (typeof cf === 'string') {
+      try {
+        cf = JSON.parse(cf);
+      } catch {
+        cf = {};
+      }
+    }
+    const complaints = (cf?.complaints as any[]) || [];
+    const activeCmp = complaints.find(
+      (c) =>
+        (c.status === 'MENUNGGU' ||
+          c.status === 'DITANGANI' ||
+          c.status === 'DIPROSES' ||
+          c.status === 'DIAJUKAN') &&
+        (c.replacementStatus ?? c.replacement_status) !== 'DELIVERED'
+    );
+    if (activeCmp) {
+      const woIdRaw = activeCmp.replacementWOId ?? activeCmp.replacement_wo_id;
+      return {
+        id: String(activeCmp.id || ''),
+        cancelWoId: woIdRaw ? Number(woIdRaw) : undefined,
+      };
+    }
+    return null;
+  };
+
   const handleOrderChange = (soId: string) => {
     setTargetOrderId(soId);
     setErrorMessage('');
     if (!soId) {
       setSelectedOrder(null);
       setSelectedItemId('');
+      setTargetComplaintId('');
+      setTargetCancelWoId(undefined);
       return;
     }
 
@@ -129,19 +247,16 @@ export function AllocateFinishedGoodModal({
         if (!so) return;
         setSelectedOrder(so);
 
-        const complaints = (so.custom_fields?.complaints as any[]) || [];
-        const activeCmp = complaints.find(
-          (c) =>
-            (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
-            c.replacementStatus !== 'DELIVERED'
-        );
+        const activeCmp = findActiveComplaintForOrder(so);
 
         if (activeCmp) {
           setAllocationPurpose('COMPLAINT');
-          setTargetComplaintId(String(activeCmp.id || ''));
+          setTargetComplaintId(activeCmp.id);
+          setTargetCancelWoId(activeCmp.cancelWoId);
         } else {
           setAllocationPurpose('REGULAR');
           setTargetComplaintId('');
+          setTargetCancelWoId(undefined);
         }
 
         const items = (so.items || []).filter((item) => {
@@ -154,7 +269,7 @@ export function AllocateFinishedGoodModal({
         if (items.length > 0) {
           setSelectedItemId(String(items[0].id));
           const needed = Math.max(0, items[0].qty - (items[0].produced_qty || 0));
-          setAllocateQty(Math.min(maxAvailable, Math.max(1, needed)));
+          setAllocateQty(Math.min(maxAvailable, Math.max(1, needed || 1)));
         } else {
           setSelectedItemId('');
           setAllocateQty(Math.min(maxAvailable, 1));
@@ -173,7 +288,7 @@ export function AllocateFinishedGoodModal({
     const item = matchingItems.find((it) => String(it.id) === itemId);
     if (item) {
       const needed = Math.max(0, item.qty - (item.produced_qty || 0));
-      setAllocateQty(Math.min(maxAvailable, Math.max(1, needed)));
+      setAllocateQty(Math.min(maxAvailable, Math.max(1, needed || 1)));
     }
   };
 
@@ -200,14 +315,23 @@ export function AllocateFinishedGoodModal({
     setErrorMessage('');
 
     try {
+      const isComplaintAlloc = allocationPurpose === 'COMPLAINT';
+      const numericComplaintId =
+        isComplaintAlloc && targetComplaintId && !Number.isNaN(Number(targetComplaintId))
+          ? Number(targetComplaintId)
+          : undefined;
+
       const res = await finishedGoodService.allocateFinishedGood({
         product_id: finishedGood.product_id,
         variant_id: finishedGood.variant_id,
         sales_order_id: Number(targetOrderId),
         sales_order_item_id: selectedItem?.id,
+        target_id: isComplaintAlloc ? (numericComplaintId ?? Number(targetOrderId)) : Number(targetOrderId),
+        allocation_type: allocationPurpose,
+        cancel_wo_id: isComplaintAlloc ? targetCancelWoId : undefined,
         qty: allocateQty,
         purpose: allocationPurpose,
-        complaint_id: allocationPurpose === 'COMPLAINT' ? targetComplaintId : undefined,
+        complaint_id: isComplaintAlloc ? targetComplaintId : undefined,
         notes: notes.trim() || undefined,
       });
 
@@ -292,7 +416,7 @@ export function AllocateFinishedGoodModal({
               ...eligibleOrders.map((so) => ({
                 value: String(so.id),
                 label: `${so.order_number} - ${so.customer_name} (Status: ${so.status})`,
-              })),
+              }))
             ]}
           />
           {!isLoadingOrders && eligibleOrders.length === 0 && (
@@ -320,12 +444,8 @@ export function AllocateFinishedGoodModal({
 
         {/* Tujuan Alokasi jika pesanan memiliki komplain */}
         {selectedOrder && (() => {
-          const complaints = (selectedOrder.custom_fields?.complaints as any[]) || [];
-          const hasCmp = complaints.some(
-            (c) =>
-              (c.status === 'MENUNGGU' || c.status === 'DITANGANI' || c.status === 'DIAJUKAN') &&
-              c.replacementStatus !== 'DELIVERED'
-          );
+          const activeCmp = findActiveComplaintForOrder(selectedOrder);
+          const hasCmp = Boolean(activeCmp);
           const hasReg = (selectedOrder.items || []).some(
             (it) =>
               it.product_id === finishedGood.product_id &&
