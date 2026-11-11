@@ -7,6 +7,7 @@ import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
+import { resolveAuthorName } from '@/lib/types';
 import {
   productAttributeService,
   ProductAttributeItem,
@@ -344,6 +345,9 @@ export function ProductAttributeSection() {
                           {val}
                         </span>
                       ))}
+                    </div>
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 pt-1">
+                      Dibuat oleh: {resolveAuthorName(attr)}
                     </div>
                   </div>
                 );

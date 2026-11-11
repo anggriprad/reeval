@@ -6,6 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface PurchaseOrderItemResponse {
   id: number;
@@ -46,12 +47,10 @@ export interface PurchaseOrderUserOption {
   avatar_url?: string;
 }
 
-export interface PurchaseOrderResponse {
+export interface PurchaseOrderResponse extends ApiAuditFields {
   id: number;
   po_number: string;
   supplier: string;
-  created_by_id?: number | null;
-  created_by: string;
   created_by_user?: PurchaseOrderUserOption | null;
   ordered_by?: string;
   ordered_at?: string;

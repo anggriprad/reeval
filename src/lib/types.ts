@@ -2,6 +2,44 @@
 // Reeval ERP — Core Type Definitions
 // ========================================
 
+// --- Shared Audit Types ---
+
+export interface AuditUserOption {
+  id: number;
+  full_name: string;
+  email?: string;
+  phone?: string;
+  avatar_url?: string;
+  is_ready?: boolean;
+}
+
+export interface ApiAuditFields {
+  created_by_id?: number | null;
+  created_by?: string;
+  created_by_user?: AuditUserOption | null;
+  updated_by_id?: number | null;
+  updated_by?: string;
+  updated_by_user?: AuditUserOption | null;
+}
+
+export function resolveAuthorName(item?: {
+  created_by_user?: { full_name?: string | null } | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
+  createdByUser?: { full_name?: string | null } | null;
+  createdBy?: string | null;
+} | null): string {
+  if (!item) return '-';
+  const name =
+    item.created_by_user?.full_name ||
+    item.createdByUser?.full_name ||
+    item.created_by ||
+    item.created_by_name ||
+    item.createdBy ||
+    '';
+  return name.trim() || '-';
+}
+
 // --- Enums ---
 
 export type OrderStatus =
@@ -62,6 +100,9 @@ export interface RawMaterial {
   childBom?: BOMItem[];      // Child BOM components required to build this bahan setengah jadi
   routingId?: string;        // Optional Production Routing ID assigned to build this bahan setengah jadi
   isActive?: boolean;        // Soft delete flag (default: true)
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- BOM (Bill of Materials) Item ---
@@ -79,6 +120,7 @@ export interface AttributeMaster {
   name: string;          // e.g. "Ukuran", "Bahan Cover", "Ketebalan"
   values: string[];      // e.g. ["120x200 cm", "160x200 cm", "180x200 cm"]
   valueImages?: Record<string, string>; // mapping value -> image URL / base64 swatch
+  createdBy?: string;
 }
 
 // --- Product Attribute (Product-level reference to global attribute) ---
@@ -110,6 +152,7 @@ export interface ProductVariantSKU {
   routingId?: string;  // referensi ke ProductionRouting
   initialStock?: number; // Inisiasi stok awal saat dibuat
   isActive: boolean;
+  createdBy?: string;
 }
 
 // --- Dynamic Pricing: Pricing Rules ---
@@ -170,6 +213,7 @@ export interface ProductionOperation {
   laborCostPerHour?: number; // tarif upah / jam (jika hourly)
   fixedLaborCost?: number; // Nominal upah borongan jika costingMethod = 'fixed'
   description?: string;
+  createdBy?: string;
 }
 
 // --- Production: Routing ---
@@ -183,6 +227,7 @@ export interface ProductionRouting {
   id: string;
   name: string;           // e.g., 'Alur Standar Dipan'
   steps: RoutingStep[];   // langkah-langkah berurutan
+  createdBy?: string;
 }
 
 export interface ProductionOperator {
@@ -190,6 +235,7 @@ export interface ProductionOperator {
   name: string;
   roleSpecialization?: string; // e.g. "Potong", "Rakit", "Finishing", "Upholstery", "Umum"
   status: 'ACTIVE' | 'INACTIVE';
+  createdBy?: string;
 }
 
 
@@ -207,6 +253,7 @@ export interface ProductModifierGroup {
   name: string; // e.g. "Add-on"
   selectType: 'SINGLE' | 'MULTI';
   options: ProductModifierOption[];
+  createdBy?: string;
 }
 
 export interface SelectedModifierOption {
@@ -251,6 +298,9 @@ export interface Product {
   // --- Modifiers ---
   modifierGroupIds?: string[];
   isActive?: boolean; // Soft delete flag (default: true)
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- Customer ---
@@ -361,6 +411,9 @@ export interface OrderComplaint {
   orderId?: string;
   orderNumber?: string;
   customerName?: string;
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- Sales Order ---
@@ -376,6 +429,8 @@ export interface SalesOrder {
   orderNumber: string;
   createdBy: string;        // Name of sales who created this order
   createdById?: string;
+  createdByUser?: AuditUserOption | null;
+  updatedByUser?: AuditUserOption | null;
   customer: Customer;
   items: SalesOrderItem[];
   status: OrderStatus;
@@ -424,6 +479,7 @@ export interface JobCard {
   actualMinutes?: number;        // durasi aktual (menit)
   totalDurationMinutes?: number; // akumulasi durasi berjalan (menit)
   plannedMinutes: number;        // durasi standar (dari operasi master)
+  createdBy?: string;
 }
 
 export interface WorkOrder {
@@ -456,6 +512,9 @@ export interface WorkOrder {
   complaintId?: string;
   cancelReason?: string;
   canceledAt?: string;
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- Purchase Order ---
@@ -465,6 +524,8 @@ export interface PurchaseOrder {
   poNumber: string;
   supplier: string;
   createdBy: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
   items: PurchaseOrderItem[];
   status: POStatus;
   totalAmount: number;
@@ -508,6 +569,9 @@ export interface StockMovement {
   reference: string;
   date: string;
   stockCategory?: StockCategory; // Jenis stok: bahan baku, WIP, atau barang jadi
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- Finished Good Stock (Barang Jadi) ---
@@ -539,6 +603,7 @@ export interface FinishedGoodStock {
   unit: string; // default 'unit'
   isActive?: boolean; // Soft delete flag (default: true)
   units?: FinishedGoodUnit[]; // Unit fisik individual di gudang
+  createdBy?: string;
 }
 
 export interface DeleteResult {
@@ -578,6 +643,9 @@ export interface ReturnedGood {
   actionNotes?: string;
   actionAt?: string;
   actionBy?: string;
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- Delivery Order ---
@@ -634,6 +702,9 @@ export interface DeliveryOrder {
   createdAt: string;
   isReplacement?: boolean;
   complaintId?: string;
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- Delivery Configuration ---
@@ -642,12 +713,14 @@ export interface Armada {
   id: string;
   name: string;
   plateNumber: string;
+  createdBy?: string;
 }
 
 export interface Driver {
   id: string;
   name: string;
   phone: string;
+  createdBy?: string;
 }
 
 export interface ShippingRate {
@@ -660,6 +733,7 @@ export interface ShippingRate {
   districtName?: string;
   rate: number;
   isFlatCityRate: boolean;
+  createdBy?: string;
 }
 
 // --- Invoice ---
@@ -739,6 +813,9 @@ export interface CompanyAsset {
   status: AssetStatus;
   cashAccountId?: string; // FK to bankAccounts / cash_accounts (required if NEW_PURCHASE)
   financeTransactionId?: string; // FK to expenses (cash_out record)
+  createdBy?: string;
+  createdById?: string;
+  createdByUser?: AuditUserOption | null;
 }
 
 // --- Company Asset Service Log ---
@@ -752,6 +829,7 @@ export interface CompanyAssetServiceLog {
   cost: number;
   description: string;
   serviceProvider?: string;
+  createdBy?: string;
 }
 
 // --- Company Asset Depreciation Log ---
@@ -763,6 +841,7 @@ export interface AssetDepreciation {
   periodDate: string; // YYYY-MM-DD or YYYY-MM
   journalEntryId?: string;
   createdAt?: string;
+  createdBy?: string;
 }
 
 // --- Accounting: Chart of Accounts & Journal Entries ---

@@ -6,6 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface Province {
   id: string;
@@ -43,7 +44,7 @@ export interface DistrictRateResponse {
   rate: number;
 }
 
-export interface ConfiguredArea {
+export interface ConfiguredArea extends ApiAuditFields {
   regency_id: string;
   regency_name: string;
   province_id: string;

@@ -6,6 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface PermissionItem {
   id: number;
@@ -20,7 +21,7 @@ export interface RoleSummary {
   name: string;
 }
 
-export interface RoleDetail {
+export interface RoleDetail extends ApiAuditFields {
   id: number;
   code: string;
   name: string;

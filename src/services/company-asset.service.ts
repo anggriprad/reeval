@@ -6,8 +6,9 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
-export interface CompanyAssetItem {
+export interface CompanyAssetItem extends ApiAuditFields {
   id: number;
   code: string;
   name: string;
@@ -33,7 +34,7 @@ export interface CompanyAssetItem {
   updated_at: string;
 }
 
-export interface AssetServiceLogItem {
+export interface AssetServiceLogItem extends ApiAuditFields {
   id: number;
   asset_id: number;
   asset_code: string;
@@ -47,7 +48,7 @@ export interface AssetServiceLogItem {
   created_at: string;
 }
 
-export interface AssetDepreciationItem {
+export interface AssetDepreciationItem extends ApiAuditFields {
   id: number;
   asset_id: number;
   amount: number;

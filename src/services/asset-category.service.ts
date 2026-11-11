@@ -6,8 +6,9 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
-export interface AssetCategory {
+export interface AssetCategory extends ApiAuditFields {
   id: number;
   company_id: number;
   name: string;

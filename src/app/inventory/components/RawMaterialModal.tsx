@@ -14,7 +14,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
 import { formatCurrency, calculateSubAssemblyCost, calculateRollupBOMCost } from '@/lib/utils';
-import type { RawMaterial, BOMItem } from '@/lib/types';
+import { resolveAuthorName, type RawMaterial, type BOMItem } from '@/lib/types';
 import {
   materialService,
   CreateMaterialPayload,
@@ -409,6 +409,7 @@ export function RawMaterialModal({
       }
     >
       <div className="space-y-4 pb-4">
+
         {crudError && (
           <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
             <AlertTriangle className="h-4 w-4 shrink-0" />

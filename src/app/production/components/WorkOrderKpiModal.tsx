@@ -180,6 +180,12 @@ export function WorkOrderKpiModal({
                   : '-'}
               </span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 dark:text-slate-400">Dibuat oleh</span>
+              <span className="text-slate-700 dark:text-slate-300">
+                {selectedWO.createdBy || '-'}
+              </span>
+            </div>
           </div>
         </div>
 

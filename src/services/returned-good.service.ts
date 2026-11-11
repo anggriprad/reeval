@@ -5,9 +5,9 @@ import {
   httpPut,
   ApiResponse,
 } from "@/helpers/axios";
-import { ReturnedGood, ReturnedGoodAction, ReturnedGoodStatus } from "@/lib/types";
+import { ApiAuditFields, resolveAuthorName, ReturnedGood, ReturnedGoodAction, ReturnedGoodStatus } from "@/lib/types";
 
-export interface ReturnedGoodResponse {
+export interface ReturnedGoodResponse extends ApiAuditFields {
   id: number;
   return_number: string;
   complaint_id: number;
@@ -99,6 +99,9 @@ export function mapReturnedGoodResponseToReturnedGood(dto: ReturnedGoodResponse)
     actionNotes: dto.action_notes || undefined,
     actionAt: dto.action_at || undefined,
     actionBy: dto.action_by || undefined,
+    createdBy: resolveAuthorName(dto),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : undefined,
+    createdByUser: dto.created_by_user || undefined,
   };
 }
 

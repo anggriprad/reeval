@@ -15,6 +15,7 @@ import { ActionMenu } from '@/components/ui/ActionMenu';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Alert } from '@/components/ui/Alert';
 import { formatDate, formatDateTime, getWhatsAppUrl, formatPhoneDisplay, cn } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   deliveryService,
   resolveDeliveryPhotoUrl,
@@ -124,6 +125,7 @@ export default function DeliveryOrderDetailPage() {
       failureReason: apiDeliveryOrder.failure_reason,
       failureNote: apiDeliveryOrder.failure_note,
       failurePhoto: apiDeliveryOrder.failure_photo || apiDeliveryOrder.proof_photo,
+      createdBy: resolveAuthorName(apiDeliveryOrder),
       createdAt: apiDeliveryOrder.created_at,
       orderItems: apiDeliveryOrder.items?.map((it: any) => ({
         id: it.id,
@@ -541,6 +543,14 @@ export default function DeliveryOrderDetailPage() {
                 <p className="text-slate-500 dark:text-slate-400">Tanggal Pengiriman</p>
                 <p className="font-medium text-slate-900 dark:text-white mt-0.5">
                   {formatDate(dOrder.scheduledDate)}
+                </p>
+              </div>
+
+              {/* 5. Dibuat Oleh */}
+              <div>
+                <p className="text-slate-500 dark:text-slate-400">Dibuat oleh</p>
+                <p className="font-medium text-slate-900 dark:text-white mt-0.5">
+                  {dOrder.createdBy || '-'}
                 </p>
               </div>
             </div>

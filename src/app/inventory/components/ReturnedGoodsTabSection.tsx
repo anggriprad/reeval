@@ -327,6 +327,16 @@ export function ReturnedGoodsTabSection({
         );
       },
     },
+    {
+      id: 'createdBy',
+      header: 'Dibuat Oleh',
+      align: 'left',
+      cell: ({ row: rg }) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {rg.createdBy || '-'}
+        </span>
+      ),
+    },
     ...(canReceive || canAction
       ? [
           {

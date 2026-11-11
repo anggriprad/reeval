@@ -17,7 +17,8 @@ import { procurementService } from '../src/services/procurement.service';
 import { stockMovementService } from '../src/services/stock-movement.service';
 import { bomPresetService } from '../src/services/bom-preset.service';
 import { productModifierService } from '../src/services/product-modifier.service';
-import { productService, resolveProductImageUrl } from '../src/services/product.service';
+import { productService, resolveProductImageUrl, mapProductDetailToProduct } from '../src/services/product.service';
+import { resolveAuthorName } from '../src/lib/types';
 import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '../src/services/order.service';
 import { workOrderService, mapWorkOrderResponseToWorkOrder, mapJobCardResponseToJobCard } from '../src/services/work-order.service';
 import { deliveryService, resolveDeliveryPhotoUrl } from '../src/services/delivery.service';
@@ -1201,6 +1202,117 @@ async function runTests() {
     assert(!canSeeCosts('INVENTORY'), 'INVENTORY cannot see costs');
 
     console.log('✓ 9 Static Baku Roles and helper functions verified');
+  }
+
+  // 16. Testing Audit / Author (created_by) Resolution & Fallback Mappers
+  console.log('16. Testing Audit author (created_by) resolution and fallback...');
+  {
+    assert(resolveAuthorName(null) === '-', 'null must fallback to "-"');
+    assert(resolveAuthorName({}) === '-', 'empty object must fallback to "-"');
+    assert(resolveAuthorName({ created_by: '   ', created_by_name: '' }) === '-', 'whitespace must fallback to "-"');
+    assert(
+      resolveAuthorName({ created_by: 'Old Name', created_by_user: { full_name: 'Live User' } }) === 'Live User',
+      'created_by_user.full_name must take priority over created_by string'
+    );
+    assert(
+      resolveAuthorName({ created_by: 'Author A', created_by_name: 'Legacy A' }) === 'Author A',
+      'created_by must take priority over created_by_name'
+    );
+    assert(
+      resolveAuthorName({ created_by_name: 'Legacy Only' }) === 'Legacy Only',
+      'created_by_name legacy fallback must work'
+    );
+
+    const legacyOrder = mapOrderResponseToSalesOrder({
+      id: 1,
+      order_number: 'SO-LEG',
+      status: 'PENDING',
+      created_by_name: '',
+      customer_name: 'Cust',
+      customer_phone: '081',
+      customer_address: 'Addr',
+      order_notes: '',
+      subtotal: 0,
+      shipping_cost: 0,
+      total_amount: 0,
+      is_custom_process: false,
+      created_at: '2026-11-11T00:00:00Z',
+      updated_at: '2026-11-11T00:00:00Z',
+      items: [],
+    });
+    assert(legacyOrder.createdBy === '-', 'legacy order without created_by must fallback to "-"');
+
+    const modernOrder = mapOrderResponseToSalesOrder({
+      id: 2,
+      order_number: 'SO-MOD',
+      status: 'PENDING',
+      created_by_id: 9,
+      created_by: 'Snapshot Sales',
+      created_by_name: 'Snapshot Sales',
+      created_by_user: { id: 9, full_name: 'Budi Sales', email: 'budi@test.id' },
+      customer_name: 'Cust',
+      customer_phone: '081',
+      customer_address: 'Addr',
+      order_notes: '',
+      subtotal: 0,
+      shipping_cost: 0,
+      total_amount: 0,
+      is_custom_process: false,
+      created_at: '2026-11-11T00:00:00Z',
+      updated_at: '2026-11-11T00:00:00Z',
+      items: [],
+    });
+    assert(modernOrder.createdBy === 'Budi Sales', 'modern order must resolve created_by_user.full_name');
+    assert(modernOrder.createdById === '9', 'modern order must map createdById');
+
+    const mappedComp = mapComplaintResponseToOrderComplaint({
+      id: 5,
+      complaint_number: 'CMP-5',
+      sales_order_id: 2,
+      sales_order_number: 'SO-MOD',
+      customer_name: 'Cust',
+      category: 'Lainnya',
+      description: 'Test',
+      status: 'DIAJUKAN',
+      created_by_id: 11,
+      created_by: 'CS Rani',
+      created_at: '2026-11-11T00:00:00Z',
+      updated_at: '2026-11-11T00:00:00Z',
+      items: [],
+    });
+    assert(mappedComp.createdBy === 'CS Rani', 'complaint must map createdBy');
+
+    const mappedProd = mapProductDetailToProduct({
+      id: 3,
+      name: 'Meja',
+      description: '',
+      category_id: 1,
+      category_name: 'Meja',
+      image_icon: 'Box',
+      image_url: '',
+      base_price: 100000,
+      default_estimated_hours: 2,
+      has_variants: false,
+      variant_types_json: '[]',
+      variants: [],
+      can_delete: true,
+      is_active: true,
+      created_by: 'Admin Produk',
+      created_at: '2026-11-11T00:00:00Z',
+      updated_at: '2026-11-11T00:00:00Z',
+    });
+    assert(mappedProd.createdBy === 'Admin Produk', 'product detail must map createdBy');
+
+    const mappedWoWithAuthor = mapWorkOrderResponseToWorkOrder({
+      ...mockWorkOrderDto,
+      created_by: 'PPIC Andi',
+    });
+    assert(mappedWoWithAuthor.createdBy === 'PPIC Andi', 'workOrder must map createdBy');
+
+    const mappedRgWithFallback = mapReturnedGoodResponseToReturnedGood(mockRgDto);
+    assert(mappedRgWithFallback.createdBy === '-', 'returnedGood without created_by must fallback to "-"');
+
+    console.log('✓ Audit author (created_by) resolution and fallback verified');
   }
 
   console.log('\nALL EXTENDED SERVICE, PROXY & RESILIENCE TESTS PASSED (100% GREEN)!');

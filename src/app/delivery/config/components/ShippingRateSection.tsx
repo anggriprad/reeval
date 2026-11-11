@@ -18,6 +18,7 @@ import { Select } from '@/components/ui/Select';
 import { Toggle } from '@/components/ui/Toggle';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { MapPin, Plus, Trash2, Edit2 } from 'lucide-react';
+import { resolveAuthorName } from '@/lib/types';
 import regionsData from '@/lib/regions.json';
 
 export function ShippingRateSection() {
@@ -542,6 +543,7 @@ export function ShippingRateSection() {
                       <th className="px-4 py-3 font-semibold">Kota / Kabupaten</th>
                       <th className="px-4 py-3 font-semibold">Provinsi</th>
                       <th className="px-4 py-3 font-semibold">Tipe & Nominal Tarif</th>
+                      <th className="px-4 py-3 font-semibold">Dibuat Oleh</th>
                       <th className="px-4 py-3 font-semibold text-right">Aksi</th>
                     </tr>
                   </thead>
@@ -567,6 +569,9 @@ export function ShippingRateSection() {
                               Tarif Beragam: {area.configured_district_count} Kecamatan
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+                          {resolveAuthorName(area)}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
@@ -597,7 +602,7 @@ export function ShippingRateSection() {
 
                     {configuredAreas.length === 0 && !isLoadingOverview && (
                       <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                        <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                           <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                             Belum ada area pengiriman terdaftar.
                           </p>

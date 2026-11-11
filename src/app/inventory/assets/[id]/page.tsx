@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
 import {
@@ -156,21 +157,21 @@ export default function AssetDetailPage() {
     asset.status === 'ACTIVE' || asset.status === 'AKTIF'
       ? 'success'
       : asset.status === 'IN_MAINTENANCE' || asset.status === 'MAINTENANCE'
-      ? 'warning'
-      : asset.status === 'BROKEN' || asset.status === 'RUSAK'
-      ? 'danger'
-      : 'default';
+        ? 'warning'
+        : asset.status === 'BROKEN' || asset.status === 'RUSAK'
+          ? 'danger'
+          : 'default';
 
   const statusLabel =
     asset.status === 'ACTIVE' || asset.status === 'AKTIF'
       ? 'Aktif'
       : asset.status === 'IN_MAINTENANCE' || asset.status === 'MAINTENANCE'
-      ? 'Perawatan'
-      : asset.status === 'BROKEN' || asset.status === 'RUSAK'
-      ? 'Rusak'
-      : asset.status === 'DISPOSED'
-      ? 'Dijual'
-      : 'Afkir / Scrap';
+        ? 'Perawatan'
+        : asset.status === 'BROKEN' || asset.status === 'RUSAK'
+          ? 'Rusak'
+          : asset.status === 'DISPOSED'
+            ? 'Dijual'
+            : 'Afkir / Scrap';
 
   const openEdit = () => {
     setAstCode(asset.code);
@@ -439,8 +440,8 @@ export default function AssetDetailPage() {
                 {asset.acquisition_type === 'NEW_PURCHASE' && cashAccount
                   ? cashAccount.name
                   : asset.acquisition_type === 'NEW_PURCHASE'
-                  ? 'Kas Keluar'
-                  : 'Saldo Awal (Tanpa Kas)'}
+                    ? 'Kas Keluar'
+                    : 'Saldo Awal (Tanpa Kas)'}
               </p>
             </div>
           </div>
@@ -460,6 +461,9 @@ export default function AssetDetailPage() {
               </p>
             </div>
           </div>
+        </div>
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500">
+          Dibuat oleh: {resolveAuthorName(asset)}
         </div>
       </div>
 
@@ -526,25 +530,34 @@ export default function AssetDetailPage() {
                   </span>
                 ),
               },
+              {
+                key: 'created_by',
+                header: 'Dibuat Oleh',
+                cell: (log) => (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                    {resolveAuthorName(log)}
+                  </span>
+                ),
+              },
               ...(canDelete
                 ? [
-                    {
-                      key: 'actions',
-                      header: 'Aksi',
-                      align: 'center' as const,
-                      cell: (log: AssetServiceLogItem) => (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDeleteService(log.id)}
-                          title="Hapus Catatan"
-                          className="text-slate-400 hover:text-red-500"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      ),
-                    },
-                  ]
+                  {
+                    key: 'actions',
+                    header: 'Aksi',
+                    align: 'center' as const,
+                    cell: (log: AssetServiceLogItem) => (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteService(log.id)}
+                        title="Hapus Catatan"
+                        className="text-slate-400 hover:text-red-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ),
+                  },
+                ]
                 : []),
             ]}
           />

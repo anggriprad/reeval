@@ -6,7 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
-import type { Product, VariantType } from "@/lib/types";
+import { resolveAuthorName, type ApiAuditFields, type Product, type VariantType } from "@/lib/types";
 
 export interface VariantBOMItemRequest {
   material_id: number;
@@ -58,7 +58,7 @@ export interface VariantBOMItemResponse {
   subtotal_cost: number;
 }
 
-export interface ProductVariantResponse {
+export interface ProductVariantResponse extends ApiAuditFields {
   id: number;
   sku: string;
   image_url?: string;
@@ -84,7 +84,7 @@ export interface ProductVariantResponse {
   is_active: boolean;
 }
 
-export interface ProductListItem {
+export interface ProductListItem extends ApiAuditFields {
   id: number;
   name: string;
   description: string;
@@ -106,7 +106,7 @@ export interface ProductListItem {
   updated_at: string;
 }
 
-export interface ProductDetail {
+export interface ProductDetail extends ApiAuditFields {
   id: number;
   name: string;
   description: string;
@@ -231,6 +231,7 @@ export function mapProductDetailToProduct(detail: ProductDetail): Product {
     })),
     initialStock: v.stock,
     isActive: v.is_active,
+    createdBy: resolveAuthorName(v),
   }));
 
   return {
@@ -249,6 +250,9 @@ export function mapProductDetailToProduct(detail: ProductDetail): Product {
     variants,
     modifierGroupIds: (detail.modifier_group_ids || []).map(String),
     isActive: detail.is_active,
+    createdBy: resolveAuthorName(detail),
+    createdById: detail.created_by_id ? String(detail.created_by_id) : undefined,
+    createdByUser: detail.created_by_user || undefined,
   };
 }
 

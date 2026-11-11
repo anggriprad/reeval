@@ -11,6 +11,7 @@ import { useUrlTab } from '@/lib/useUrlTab';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { companyService, CompanyDetail } from '@/services/company.service';
+import { resolveAuthorName } from '@/lib/types';
 import { UserTableSection } from '../users/components/UserTableSection';
 import {
   Building2,

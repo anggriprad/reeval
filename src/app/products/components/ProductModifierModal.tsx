@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { useToast } from '@/context/ToastContext';
 import { formatCurrency } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   productModifierService,
   ProductModifierGroupResponse,

@@ -6,7 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
-import type { Customer, OrderStatus, SalesOrder, SalesOrderItem, OrderComplaint } from "@/lib/types";
+import { resolveAuthorName, type ApiAuditFields, type Customer, type OrderStatus, type SalesOrder, type SalesOrderItem, type OrderComplaint } from "@/lib/types";
 
 export interface SalesOrderItemResponse {
   id: number;
@@ -51,11 +51,10 @@ export interface SalesOrderStatusHistoryResponse {
   created_at: string;
 }
 
-export interface SalesOrderResponse {
+export interface SalesOrderResponse extends ApiAuditFields {
   id: number;
   order_number: string;
   status: string;
-  created_by_id: number;
   created_by_name: string;
   created_by_phone?: string;
   company_phone?: string;
@@ -347,7 +346,7 @@ export interface OrderComplaintItemResponse {
   unit_price: number;
 }
 
-export interface OrderComplaintResponse {
+export interface OrderComplaintResponse extends ApiAuditFields {
   id: number;
   complaint_number: string;
   sales_order_id: number;
@@ -470,10 +469,12 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
   return {
     id: String(dto.id),
     orderNumber: dto.order_number,
-    createdBy: dto.created_by_name || "Sales",
+    createdBy: resolveAuthorName(dto),
     createdById: dto.created_by_id ? String(dto.created_by_id) : undefined,
-    salesPhone: dto.created_by_phone || dto.sales_phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
-    createdByPhone: dto.created_by_phone || dto.sales_phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
+    createdByUser: dto.created_by_user || undefined,
+    updatedByUser: dto.updated_by_user || undefined,
+    salesPhone: dto.created_by_phone || dto.sales_phone || dto.created_by_user?.phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
+    createdByPhone: dto.created_by_phone || dto.sales_phone || dto.created_by_user?.phone || (dto as any).creator_phone || (dto as any).created_by?.phone || undefined,
     companyPhone: dto.company_phone || undefined,
     customer: {
       name: dto.customer_name || "",
@@ -557,6 +558,9 @@ export function mapOrderResponseToSalesOrder(dto: SalesOrderResponse): SalesOrde
           orderId: String(dto.id),
           orderNumber: dto.order_number,
           customerName: dto.customer_name,
+          createdBy: resolveAuthorName(c),
+          createdById: (c.createdById ?? c.created_by_id) ? String(c.createdById ?? c.created_by_id) : undefined,
+          createdByUser: c.createdByUser ?? c.created_by_user ?? undefined,
         }));
       }
       return [];
@@ -613,6 +617,9 @@ export function mapComplaintResponseToOrderComplaint(dto: OrderComplaintResponse
     orderId: String(dto.sales_order_id),
     orderNumber: dto.sales_order_number,
     customerName: dto.customer_name,
+    createdBy: resolveAuthorName(dto),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : undefined,
+    createdByUser: dto.created_by_user || undefined,
   };
 }
 

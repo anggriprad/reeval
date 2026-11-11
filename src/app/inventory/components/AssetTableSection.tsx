@@ -12,6 +12,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
 import { formatCurrency } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   companyAssetService,
   CompanyAssetItem,
@@ -223,6 +224,16 @@ export function AssetTableSection({
 
         return <Badge variant={statusVariant}>{statusLabel}</Badge>;
       },
+    },
+    {
+      id: 'created_by',
+      header: 'Dibuat Oleh',
+      align: 'left',
+      cell: ({ row: ast }) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {resolveAuthorName(ast)}
+        </span>
+      ),
     },
     ...(canManage
       ? [

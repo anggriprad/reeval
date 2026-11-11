@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/context/ToastContext';
 import { formatCurrency } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   bomPresetService,
   BOMPresetResponse,

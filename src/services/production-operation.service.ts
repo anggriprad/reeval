@@ -6,10 +6,11 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export type ProductionWageType = 'FIXED' | 'HOURLY';
 
-export interface ProductionOperationItem {
+export interface ProductionOperationItem extends ApiAuditFields {
   id: number;
   company_id: number;
   name: string;

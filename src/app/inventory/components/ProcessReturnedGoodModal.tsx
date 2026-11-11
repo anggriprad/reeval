@@ -178,6 +178,12 @@ export function ProcessReturnedGoodModal({
               </span>
             </div>
           )}
+          <div className="flex justify-between items-center pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
+            <span className="text-slate-500 dark:text-slate-400">Dibuat oleh</span>
+            <span className="text-slate-700 dark:text-slate-300">
+              {item.createdBy || '-'}
+            </span>
+          </div>
         </div>
 
         {/* Pilihan Tindakan Alokasi */}

@@ -7,6 +7,7 @@ import {
   ApiResponse,
 } from "@/helpers/axios";
 import { RoleSummary } from "./role.service";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface PermissionOverride {
   permission_id: number;
@@ -19,7 +20,7 @@ export interface RoleSummaryItem {
   name: string;
 }
 
-export interface UserDetail {
+export interface UserDetail extends ApiAuditFields {
   id: number;
   email: string;
   full_name: string;

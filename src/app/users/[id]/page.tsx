@@ -12,6 +12,7 @@ import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { formatPhoneDisplay } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   Mail,
   Phone,
@@ -236,6 +237,9 @@ export default function UserDetailPage() {
               </p>
             </div>
           </div>
+        </div>
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500">
+          Dibuat oleh: {resolveAuthorName(user)}
         </div>
       </Card>
 

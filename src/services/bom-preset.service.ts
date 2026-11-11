@@ -6,6 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface BOMPresetItemRequest {
   material_id: number;
@@ -37,7 +38,7 @@ export interface BOMPresetItemResponse {
   notes: string;
 }
 
-export interface BOMPresetResponse {
+export interface BOMPresetResponse extends ApiAuditFields {
   id: number;
   name: string;
   description: string;

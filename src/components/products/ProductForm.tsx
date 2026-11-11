@@ -15,11 +15,12 @@ import { Card } from '@/components/ui/Card';
 import { Toggle } from '@/components/ui/Toggle';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { formatCurrency, generateId, getEffectiveVariantBOM, calculateRollupBOMCost } from '@/lib/utils';
-import type {
-  Product,
-  ProductVariantSKU,
-  BOMItem,
-  VariantType,
+import {
+  resolveAuthorName,
+  type Product,
+  type ProductVariantSKU,
+  type BOMItem,
+  type VariantType,
 } from '@/lib/types';
 import { generateSKU } from '@/lib/product-resolver';
 import {
@@ -1342,6 +1343,11 @@ export function ProductForm({ initialProduct }: ProductFormProps) {
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Identitas dasar dan klasifikasi produk yang ditampilkan dalam katalog.
               </p>
+              {isEditMode && initialProduct && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                  Dibuat oleh: {resolveAuthorName(initialProduct)}
+                </p>
+              )}
             </div>
 
             <div className="flex-1 flex flex-col space-y-4">

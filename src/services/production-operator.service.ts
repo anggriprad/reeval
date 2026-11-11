@@ -5,8 +5,9 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
-export interface ProductionOperatorItem {
+export interface ProductionOperatorItem extends ApiAuditFields {
   id: number;
   user_id: number;
   user_email: string;

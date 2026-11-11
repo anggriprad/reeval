@@ -26,6 +26,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 
 export function UserTableSection() {
   const router = useRouter();
@@ -304,6 +305,19 @@ export function UserTableSection() {
         ) : (
           <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold text-slate-400 border border-slate-200 dark:border-slate-800">
             Belum Siap
+          </span>
+        );
+      },
+    },
+    {
+      id: 'created_by',
+      header: 'Dibuat Oleh',
+      width: '12%',
+      cell: ({ row }) => {
+        const u = row as UserDetail;
+        return (
+          <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+            {resolveAuthorName(u)}
           </span>
         );
       },

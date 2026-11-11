@@ -6,6 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface ProductionRoutingStepInput {
   operation_id: number;
@@ -36,7 +37,7 @@ export interface ProductionRoutingStepItem {
   notes?: string;
 }
 
-export interface ProductionRoutingItem {
+export interface ProductionRoutingItem extends ApiAuditFields {
   id: number;
   name: string;
   description?: string;

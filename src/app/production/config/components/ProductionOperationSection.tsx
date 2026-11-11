@@ -12,7 +12,7 @@ import {
   CreateProductionOperationPayload,
   UpdateProductionOperationPayload,
 } from '@/services/production-operation.service';
-import type { ProductionOperation } from '@/lib/types';
+import { resolveAuthorName, type ProductionOperation } from '@/lib/types';
 import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -382,13 +382,14 @@ export function ProductionOperationSection() {
                 <th className="py-3 px-1.5 w-44 text-left font-semibold">Sistem Upah</th>
                 <th className="py-3 px-1.5 w-44 text-left font-semibold">Nilai Upah</th>
                 <th className="py-3 px-1.5 w-44 text-left font-semibold">Estimasi Durasi</th>
+                <th className="py-3 px-1.5 w-36 text-left font-semibold">Dibuat Oleh</th>
                 <th className="py-3 pl-1.5 pr-4 text-right w-24 font-semibold">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center">
+                  <td colSpan={6} className="py-12 text-center">
                     <div className="flex flex-col items-center justify-center space-y-2.5">
                       <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent dark:border-indigo-400" />
                       <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -399,7 +400,7 @@ export function ProductionOperationSection() {
                 </tr>
               ) : operations.length === 0 && !isAdding ? (
                 <tr>
-                  <td colSpan={5} className="py-8">
+                  <td colSpan={6} className="py-8">
                     <EmptyState
                       title={filters.op_search ? 'Operasi Tidak Ditemukan' : 'Belum Ada Operasi'}
                       description={
@@ -486,6 +487,9 @@ export function ProductionOperationSection() {
                             disabled={isSaving}
                           />
                         </td>
+                        <td className="py-2.5 px-1.5 text-xs text-slate-500 dark:text-slate-400">
+                          {resolveAuthorName(op)}
+                        </td>
                         <td className="py-2.5 pl-1.5 pr-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
                             <Button
@@ -542,6 +546,9 @@ export function ProductionOperationSection() {
                         {op.standard_duration_minutes
                           ? `${op.standard_duration_minutes} Menit`
                           : '-'}
+                      </td>
+                      <td className="py-3 px-1.5 text-xs text-slate-500 dark:text-slate-400">
+                        {resolveAuthorName(op)}
                       </td>
                       <td className="py-3 pl-1.5 pr-4 text-right whitespace-nowrap">
                         {canManage && (
@@ -649,6 +656,7 @@ export function ProductionOperationSection() {
                       disabled={isSaving}
                     />
                   </td>
+                  <td className="py-2.5 px-1.5 text-xs text-slate-400">-</td>
                   <td className="py-2.5 pl-1.5 pr-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1">
                       <Button

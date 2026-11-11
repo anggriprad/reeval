@@ -4,8 +4,9 @@ import {
   httpPost,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
-export interface FinishedGoodItem {
+export interface FinishedGoodItem extends ApiAuditFields {
   id: number;
   product_id: number;
   variant_id?: number;

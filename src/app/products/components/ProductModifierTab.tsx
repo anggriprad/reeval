@@ -8,6 +8,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { Badge } from '@/components/ui/Badge';
 import { formatCurrency } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   productModifierService,
   ProductModifierGroupResponse,
@@ -235,13 +236,14 @@ export function ProductModifierTab({
               <th className="px-4 py-3">Nama Modifier</th>
               <th className="px-4 py-3">Tipe Seleksi</th>
               <th className="px-4 py-3 text-center">Jumlah Opsi</th>
+              <th className="px-4 py-3">Dibuat Oleh</th>
               {canManage && <th className="px-4 py-3 text-right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={canManage ? 4 : 3} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                <td colSpan={canManage ? 5 : 4} className="py-12 text-center text-slate-400 dark:text-slate-500">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Loader2 className="h-6 w-6 animate-spin text-purple-600" />
                     <span>Memuat grup modifier...</span>
@@ -250,7 +252,7 @@ export function ProductModifierTab({
               </tr>
             ) : groups.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 4 : 3} className="py-12 text-center">
+                <td colSpan={canManage ? 5 : 4} className="py-12 text-center">
                   <div className="py-8 flex flex-col items-center justify-center">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 mb-3">
                       <Grip className="h-6 w-6" />
@@ -306,6 +308,9 @@ export function ProductModifierTab({
                       <td className="px-4 py-3 text-center font-semibold">
                         {options.length || group.options_count || 0} Opsi
                       </td>
+                      <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {resolveAuthorName(group)}
+                      </td>
                       {canManage && (
                         <td
                           className="px-4 py-3 text-right"
@@ -345,7 +350,7 @@ export function ProductModifierTab({
                     {isExpanded && (
                       <tr>
                         <td
-                          colSpan={canManage ? 4 : 3}
+                          colSpan={canManage ? 5 : 4}
                           className="px-4 py-3 bg-slate-50/30 dark:bg-slate-900/10"
                         >
                           <div className="space-y-3">

@@ -1272,7 +1272,7 @@ export default function OrderDetailPage() {
             </div>
             <div className="flex items-center justify-between py-1">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Sales Executive</span>
-              <span className="text-slate-900 dark:text-white font-medium">{order.createdBy}</span>
+              <span className="text-slate-900 dark:text-white font-medium">{order.createdBy || '-'}</span>
             </div>
           </div>
 

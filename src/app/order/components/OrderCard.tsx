@@ -208,7 +208,7 @@ export function OrderCard({
 
         {/* Salesperson & ID SO: Desktop only (hidden on mobile) */}
         <div className="hidden sm:block text-right text-xs text-slate-600 dark:text-slate-300 font-medium bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shrink-0">
-          {order.createdBy} <span className="text-slate-300 dark:text-slate-600 mx-1">|</span>{' '}
+          {order.createdBy || '-'} <span className="text-slate-300 dark:text-slate-600 mx-1">|</span>{' '}
           <span>{order.orderNumber}</span>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
+import { resolveAuthorName } from '@/lib/types';
 import {
   productCategoryService,
   ProductCategoryItem,
@@ -287,13 +288,14 @@ export function ProductCategorySection() {
               <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-left font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                 <th className="px-4 py-3">Nama Kategori</th>
                 <th className="px-4 py-3 text-center">Jumlah Produk Terkait</th>
+                <th className="px-4 py-3">Dibuat Oleh</th>
                 {canManage && <th className="px-4 py-3 text-right">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {isLoading && categories.length === 0 ? (
                 <tr>
-                  <td colSpan={canManage ? 3 : 2} className="py-10 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={canManage ? 4 : 3} className="py-10 text-center text-slate-400 dark:text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                       <span>Memuat data kategori produk...</span>
@@ -302,7 +304,7 @@ export function ProductCategorySection() {
                 </tr>
               ) : categories.length === 0 ? (
                 <tr>
-                  <td colSpan={canManage ? 3 : 2} className="py-10 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={canManage ? 4 : 3} className="py-10 text-center text-slate-400 dark:text-slate-500">
                     {filters.cat_search
                       ? 'Tidak ada kategori yang cocok dengan pencarian.'
                       : 'Belum ada kategori produk terdaftar.'}
@@ -370,6 +372,9 @@ export function ProductCategorySection() {
                         <Badge variant={count > 0 ? 'info' : 'default'}>
                           {count} Produk
                         </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {resolveAuthorName(cat)}
                       </td>
                       {canManage && (
                         <td className="px-4 py-3 text-right">

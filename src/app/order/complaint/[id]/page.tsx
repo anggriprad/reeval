@@ -225,7 +225,7 @@ export default function ComplaintDetailPage() {
   const order: SalesOrder | null = liveOrder || (complaint ? {
     id: complaint.orderId || '',
     orderNumber: complaint.orderNumber || '',
-    createdBy: 'Sales',
+    createdBy: complaint.createdBy || '-',
     customer: { name: complaint.customerName || 'Pelanggan', phone: '', address: '' },
     items: (complaint.items || []).map(itm => ({
       productId: itm.productId,
@@ -592,6 +592,12 @@ export default function ComplaintDetailPage() {
                 <span className="text-slate-500 dark:text-slate-400">Tanggal Pesanan</span>
                 <span className="font-medium text-slate-700 dark:text-slate-300">
                   {formatDateTime(order.createdAt)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                <span className="text-slate-500 dark:text-slate-400">Dibuat oleh</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {complaint.createdBy || '-'}
                 </span>
               </div>
               {linkedWorkOrder && (

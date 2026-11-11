@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SegmentedControl, SegmentOption } from '@/components/ui/SegmentedControl';
 import { canApproveOrder, canCreateOrder, USER_ACCOUNTS } from '@/lib/roles';
-import type { SalesOrder } from '@/lib/types';
+import { resolveAuthorName, type SalesOrder } from '@/lib/types';
 import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '@/services/order.service';
 import { userService, UserOption } from '@/services/user.service';
 import { CustomProcessModal } from '@/components/order/CustomProcessModal';
@@ -190,6 +190,7 @@ export function OrderListContent() {
               status: c.status === 'DIPROSES' ? 'DITANGANI' : c.status,
               description: c.description,
               createdAt: c.created_at,
+              createdBy: resolveAuthorName(c),
               items: (c.items || []).map((i) => ({
                 productId: String(i.product_id),
                 productName: i.product_name,

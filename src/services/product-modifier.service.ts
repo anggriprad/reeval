@@ -6,6 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface ProductModifierOptionBOMRequest {
   material_id: number;
@@ -62,7 +63,7 @@ export interface ProductModifierOptionResponse {
   operations?: ProductModifierOptionOperationResponse[];
 }
 
-export interface ProductModifierGroupResponse {
+export interface ProductModifierGroupResponse extends ApiAuditFields {
   id: number;
   name: string;
   select_type: "SINGLE" | "MULTI";

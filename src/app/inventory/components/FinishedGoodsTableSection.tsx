@@ -10,6 +10,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
 import { formatCurrency, formatVariantLabel } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   finishedGoodService,
   FinishedGoodItem,
@@ -257,6 +258,15 @@ export function FinishedGoodsTableSection({
       cell: ({ row: fg }) => (
         <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
           {formatCurrency(fg.potential_revenue)}
+        </span>
+      ),
+    },
+    {
+      id: 'created_by',
+      header: 'Dibuat Oleh',
+      cell: ({ row: fg }) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {resolveAuthorName(fg)}
         </span>
       ),
     },

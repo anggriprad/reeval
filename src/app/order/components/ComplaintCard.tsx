@@ -63,6 +63,7 @@ export interface ComplaintCardData {
   status: string;
   description?: string;
   createdAt: string;
+  createdBy?: string;
   items: Array<{
     productId: string;
     productName: string;
@@ -129,6 +130,9 @@ export function ComplaintCard({ complaint, products = [] }: ComplaintCardProps) 
             <span className="font-medium sm:font-normal">{complaint.customerName}</span>
           </span>
         )}
+        <span className="text-[12px] sm:text-[11px] text-slate-400 dark:text-slate-500">
+          Dibuat oleh: {complaint.createdBy || '-'}
+        </span>
       </div>
 
       {/* MIDDLE SECTION: Complaint Items */}

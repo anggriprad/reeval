@@ -1,4 +1,4 @@
-import type { OrderStatus } from '@/lib/types';
+import { resolveAuthorName, type OrderStatus } from '@/lib/types';
 
 export type TabKey = 'queue' | 'ready-to-ship' | 'in-transit' | 'delivered';
 
@@ -50,6 +50,7 @@ export interface DeliveryTripGroup {
   notes?: string;
   loadedAt?: string;
   loadedBy?: string;
+  createdBy?: string;
   createdAt: string;
   deliveryOrders: any[];
   totalUnitsCount: number;
@@ -115,6 +116,7 @@ export function buildTripGroups(deliveryOrders: any[]): DeliveryTripGroup[] {
     const notes = d.notes;
     const loadedAt = d.loadedAt || d.loaded_at;
     const loadedBy = d.loadedBy || d.loaded_by;
+    const createdBy = resolveAuthorName(d);
     const createdAt = d.createdAt || d.created_at || '';
 
     const normalizedDO = {
@@ -137,6 +139,7 @@ export function buildTripGroups(deliveryOrders: any[]): DeliveryTripGroup[] {
       scheduledDate,
       loadedAt,
       loadedBy,
+      createdBy,
       createdAt,
       orderItems: d.orderItems || d.items || [],
       items: d.items || d.orderItems || [],
@@ -156,6 +159,7 @@ export function buildTripGroups(deliveryOrders: any[]): DeliveryTripGroup[] {
         notes,
         loadedAt,
         loadedBy,
+        createdBy,
         createdAt,
         deliveryOrders: [],
         totalUnitsCount: 0,

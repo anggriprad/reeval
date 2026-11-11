@@ -146,6 +146,9 @@ export function TripSection({
                     ? `Berangkat: ${trip.loadedAt ? formatDateTime(trip.loadedAt) : formatDate(trip.scheduledDate)}`
                     : `Selesai: ${formatDate(trip.scheduledDate)}`}
                 </span>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                  • Dibuat oleh: {trip.createdBy || '-'}
+                </span>
               </div>
 
               <div className="flex items-center gap-3">

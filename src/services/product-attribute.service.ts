@@ -6,13 +6,14 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface ProductAttributeValueItem {
   id: number;
   value: string;
 }
 
-export interface ProductAttributeItem {
+export interface ProductAttributeItem extends ApiAuditFields {
   id: number;
   name: string;
   can_delete: boolean;

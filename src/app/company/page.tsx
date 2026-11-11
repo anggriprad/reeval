@@ -11,6 +11,7 @@ import { useToast } from '@/context/ToastContext';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { companyService, CompanyDetail, UpdateCompanyPayload } from '@/services/company.service';
+import { resolveAuthorName } from '@/lib/types';
 import { Building2, Save, RefreshCw, AlertCircle, CheckCircle2, ShieldCheck, Mail, Phone, MapPin, Hash, Lock } from 'lucide-react';
 
 export default function CompanyProfilePage() {
@@ -22,6 +23,7 @@ export default function CompanyProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [companyAuthor, setCompanyAuthor] = useState<string>('-');
 
   const [formData, setFormData] = useState<UpdateCompanyPayload & { code?: string; id?: number }>({
     name: '',
@@ -41,6 +43,7 @@ export default function CompanyProfilePage() {
       const res = await companyService.getCurrentCompany();
       if (res.success && res.data) {
         const d = res.data;
+        setCompanyAuthor(resolveAuthorName(d));
         setFormData({
           id: d.id,
           code: d.code,

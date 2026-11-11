@@ -6,6 +6,7 @@ import {
   httpDelete,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface MaterialChildBOMItem {
   id: number;
@@ -23,7 +24,7 @@ export interface MaterialChildBOMPayload {
   qty: number;
 }
 
-export interface MaterialItem {
+export interface MaterialItem extends ApiAuditFields {
   id: number;
   code: string;
   name: string;

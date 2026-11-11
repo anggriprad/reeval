@@ -78,7 +78,7 @@ export default function ProcurementDetailPage() {
           id: String(p.id),
           poNumber: p.po_number,
           supplier: p.supplier,
-          createdBy: p.created_by_user?.full_name || p.created_by,
+          createdBy: p.created_by_user?.full_name || p.created_by || "-",
           orderedBy: p.ordered_by,
           orderedAt: p.ordered_at,
           purchaseType: p.purchase_type as 'PO' | 'DIRECT',

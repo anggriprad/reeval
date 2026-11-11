@@ -5,7 +5,7 @@ import {
   httpPut,
   ApiResponse,
 } from "@/helpers/axios";
-import type { WorkOrder, JobCard, BOMItem, SelectedModifierGroup } from "@/lib/types";
+import { resolveAuthorName, type ApiAuditFields, type WorkOrder, type JobCard, type BOMItem, type SelectedModifierGroup } from "@/lib/types";
 
 export interface JobCardLogResponse {
   id: number;
@@ -18,7 +18,7 @@ export interface JobCardLogResponse {
   timestamp: string;
 }
 
-export interface JobCardResponse {
+export interface JobCardResponse extends ApiAuditFields {
   id: number;
   work_order_id: number;
   operation_id: number;
@@ -43,7 +43,7 @@ export interface JobCardResponse {
   logs?: JobCardLogResponse[];
 }
 
-export interface WorkOrderResponse {
+export interface WorkOrderResponse extends ApiAuditFields {
   id: number;
   spk_number: string;
   sales_order_id?: number | null;
@@ -237,6 +237,7 @@ export function mapJobCardResponseToJobCard(dto: JobCardResponse): JobCard {
     actualMinutes: dto.actual_minutes,
     totalDurationMinutes: dto.total_duration_minutes,
     plannedMinutes: dto.planned_minutes,
+    createdBy: resolveAuthorName(dto),
   };
 }
 
@@ -296,6 +297,9 @@ export function mapWorkOrderResponseToWorkOrder(dto: WorkOrderResponse): WorkOrd
     complaintId: dto.complaint_id ? String(dto.complaint_id) : undefined,
     cancelReason: dto.cancel_reason || undefined,
     canceledAt: dto.canceled_at || undefined,
+    createdBy: resolveAuthorName(dto),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : undefined,
+    createdByUser: dto.created_by_user || undefined,
   };
 }
 

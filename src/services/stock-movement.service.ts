@@ -4,8 +4,9 @@ import {
   httpPost,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
-export interface StockMovementItem {
+export interface StockMovementItem extends ApiAuditFields {
   id: number;
   material_id?: number | null;
   material_code?: string;

@@ -1,6 +1,7 @@
 import { endpointUrl, httpGet, httpPut, ApiResponse } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
-export interface CompanyDetail {
+export interface CompanyDetail extends ApiAuditFields {
   id: number;
   code: string;
   name: string;

@@ -8,6 +8,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { Badge } from '@/components/ui/Badge';
 import { formatCurrency } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import { EmptyState } from '@/components/ui/EmptyState';
 import {
   productService,
@@ -258,13 +259,14 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
               <th className="px-4 py-3">Kategori</th>
               <th className="px-4 py-3 text-center">Varian Aktif</th>
               <th className="px-4 py-3 text-right">Rentang Harga</th>
+              <th className="px-4 py-3">Dibuat Oleh</th>
               {canManage && <th className="px-4 py-3 text-right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={canManage ? 5 : 4} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                <td colSpan={canManage ? 6 : 5} className="py-12 text-center text-slate-400 dark:text-slate-500">
                   <div className="flex flex-col items-center justify-center space-y-2">
                     <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent dark:border-indigo-400" />
                     <span className="text-xs">Memuat katalog produk...</span>
@@ -273,7 +275,7 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
               </tr>
             ) : products.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 5 : 4} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                <td colSpan={canManage ? 6 : 5} className="py-12 text-center text-slate-400 dark:text-slate-500">
                   {filters.prod_search ? 'Tidak ada produk yang cocok.' : 'Belum ada produk terdaftar.'}
                 </td>
               </tr>
@@ -334,6 +336,9 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
                       <td className="px-4 py-3 text-right text-sm font-semibold text-slate-800 dark:text-slate-200">
                         {priceRange(p)}
                       </td>
+                      <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {resolveAuthorName(p)}
+                      </td>
                       {canManage && (
                         <td className="px-4 py-3 text-right">
                           <div
@@ -363,7 +368,7 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={canManage ? 5 : 4} className="px-4 py-0 bg-slate-50/50 dark:bg-slate-900/20">
+                        <td colSpan={canManage ? 6 : 5} className="px-4 py-0 bg-slate-50/50 dark:bg-slate-900/20">
                           <div className="py-3 space-y-2">
                             {variantTypes.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 mb-2">
@@ -388,13 +393,14 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
                                     <th className="px-3 py-2 text-right font-medium">Harga Jual</th>
                                     <th className="px-3 py-2 text-center font-medium">Est. Jam Kerja</th>
                                     {seeCosts && <th className="px-3 py-2 text-right font-medium">Margin</th>}
+                                    <th className="px-3 py-2 text-left font-medium">Dibuat Oleh</th>
                                     <th className="px-3 py-2 text-center font-medium">Status</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {variantsList.length === 0 ? (
                                     <tr>
-                                      <td colSpan={seeCosts ? 7 : 5} className="py-3 text-center text-slate-400">
+                                      <td colSpan={seeCosts ? 8 : 6} className="py-3 text-center text-slate-400">
                                         Tidak ada detail varian.
                                       </td>
                                     </tr>
@@ -450,6 +456,9 @@ export function ProductSection({ categoryFilter, searchTerm }: ProductSectionPro
                                               {margin !== '-' ? '%' : ''}
                                             </td>
                                           )}
+                                          <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                            {resolveAuthorName(v)}
+                                          </td>
                                           <td className="px-3 py-2 text-center">
                                             <Badge variant={v.is_active ? 'success' : 'default'}>
                                               {v.is_active ? 'Aktif' : 'Non-Aktif'}

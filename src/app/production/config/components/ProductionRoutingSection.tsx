@@ -17,7 +17,7 @@ import {
   productionOperationService,
   ProductionOperationOption,
 } from '@/services/production-operation.service';
-import type { ProductionRouting, RoutingStep } from '@/lib/types';
+import { resolveAuthorName, type ProductionRouting, type RoutingStep } from '@/lib/types';
 import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -467,10 +467,13 @@ export function ProductionRoutingSection() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-3">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
                         <span>{rt.step_count || stepList.length} Tahap Operasi</span>
                         <span>•</span>
                         <span>Est: {totalEstMinutes} Menit</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 dark:text-slate-500 mb-3">
+                        Dibuat oleh: {resolveAuthorName(rt)}
                       </div>
 
                       {/* Step list */}

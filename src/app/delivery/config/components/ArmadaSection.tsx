@@ -10,7 +10,7 @@ import { ConfigSection } from '@/components/ui/ConfigSection';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Truck, Plus, Trash2, Edit2, X } from 'lucide-react';
-import type { Armada } from '@/lib/types';
+import { resolveAuthorName, type Armada } from '@/lib/types';
 
 export function ArmadaSection() {
   const { toast, confirm } = useToast();
@@ -207,6 +207,7 @@ export function ArmadaSection() {
               <tr>
                 <th className="px-4 py-3 font-semibold">Nama Kendaraan</th>
                 <th className="px-4 py-3 font-semibold">Plat Nomor</th>
+                <th className="px-4 py-3 font-semibold">Dibuat Oleh</th>
                 <th className="px-4 py-3 font-semibold text-right">Aksi</th>
               </tr>
             </thead>
@@ -214,7 +215,7 @@ export function ArmadaSection() {
               {vehicles.map((armada) => (
                 <tr key={armada.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                   {editingArmadaId === armada.id ? (
-                    <td colSpan={3} className="px-4 py-3 bg-slate-50/80 dark:bg-slate-800/40">
+                    <td colSpan={4} className="px-4 py-3 bg-slate-50/80 dark:bg-slate-800/40">
                       <div className="flex items-center gap-3">
                         <Input
                           placeholder="Nama Armada"
@@ -257,6 +258,9 @@ export function ArmadaSection() {
                       </td>
                       <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-400">
                         {armada.plate_number}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+                        {resolveAuthorName(armada)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -306,7 +310,7 @@ export function ArmadaSection() {
               ))}
               {showAddArmada && (
                 <tr className="bg-slate-50 dark:bg-slate-800/40">
-                  <td colSpan={3} className="px-4 py-3">
+                  <td colSpan={4} className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <Input
                         autoFocus
@@ -347,7 +351,7 @@ export function ArmadaSection() {
               )}
               {vehicles.length === 0 && !showAddArmada && !isLoading && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
                     Belum ada armada terdaftar.
                   </td>
                 </tr>

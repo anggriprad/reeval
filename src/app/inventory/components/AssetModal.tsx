@@ -9,6 +9,7 @@ import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { AlertTriangle, Sparkles } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   companyAssetService,
   CompanyAssetItem,

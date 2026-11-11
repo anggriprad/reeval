@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { User, Plus, Trash2, Edit2, X } from 'lucide-react';
+import { resolveAuthorName } from '@/lib/types';
 
 export function DriverSection() {
   const { toast, confirm } = useToast();
@@ -263,6 +264,7 @@ export function DriverSection() {
               <tr>
                 <th className="px-4 py-3 font-semibold">Nama Lengkap</th>
                 <th className="px-4 py-3 font-semibold">No. Telepon / WA</th>
+                <th className="px-4 py-3 font-semibold">Dibuat Oleh</th>
                 <th className="px-4 py-3 font-semibold text-right">Aksi</th>
               </tr>
             </thead>
@@ -270,7 +272,7 @@ export function DriverSection() {
               {drivers.map((driver) => (
                 <tr key={driver.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                   {editingDriverId === driver.id ? (
-                    <td colSpan={3} className="px-4 py-3 bg-slate-50/80 dark:bg-slate-800/40">
+                    <td colSpan={4} className="px-4 py-3 bg-slate-50/80 dark:bg-slate-800/40">
                       <div className="flex items-center gap-3">
                         <Input
                           placeholder="Nama Lengkap"
@@ -313,6 +315,9 @@ export function DriverSection() {
                       </td>
                       <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-400">
                         {driver.user_phone || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+                        {resolveAuthorName(driver)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -363,7 +368,7 @@ export function DriverSection() {
               {/* Inline User Assignment Row */}
               {showAddDriver && (
                 <tr className="bg-slate-50 dark:bg-slate-800/40">
-                  <td colSpan={3} className="px-4 py-3">
+                  <td colSpan={4} className="px-4 py-3">
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
                       <div className="flex-1 min-w-[260px]">
                         <Select
@@ -410,7 +415,7 @@ export function DriverSection() {
 
               {drivers.length === 0 && !showAddDriver && !isLoading && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
                     Belum ada driver terdaftar.
                   </td>
                 </tr>

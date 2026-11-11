@@ -16,6 +16,7 @@ import { BomPresetModal } from './BomPresetModal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { formatCurrency } from '@/lib/utils';
+import { resolveAuthorName } from '@/lib/types';
 import {
   FileSpreadsheet,
   Search,
@@ -249,19 +250,20 @@ export function BomPresetSection() {
                   <th className="px-4 py-3">Deskripsi</th>
                   <th className="px-4 py-3 text-center">Komponen Material</th>
                   <th className="px-4 py-3 text-right">Est. Total HPP</th>
+                  <th className="px-4 py-3">Dibuat Oleh</th>
                   {canManage && <th className="px-4 py-3 text-right">Aksi</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={canManage ? 5 : 4} className="py-10 text-center text-slate-400 dark:text-slate-500">
+                    <td colSpan={canManage ? 6 : 5} className="py-10 text-center text-slate-400 dark:text-slate-500">
                       Memuat data preset BOM...
                     </td>
                   </tr>
                 ) : presets.length === 0 ? (
                   <tr>
-                    <td colSpan={canManage ? 5 : 4} className="py-10 text-center text-slate-400 dark:text-slate-500">
+                    <td colSpan={canManage ? 6 : 5} className="py-10 text-center text-slate-400 dark:text-slate-500">
                       {filters.preset_search
                         ? 'Tidak ada preset BOM yang cocok dengan pencarian.'
                         : 'Belum ada preset BOM terdaftar.'}
@@ -305,6 +307,9 @@ export function BomPresetSection() {
                           <td className="px-4 py-3 text-right font-mono font-semibold text-indigo-600 dark:text-indigo-400">
                             {seeCosts ? formatCurrency(totalCost) : '-'}
                           </td>
+                          <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            {resolveAuthorName(tpl)}
+                          </td>
                           {canManage && (
                             <td
                               className="px-4 py-3 text-right"
@@ -345,7 +350,7 @@ export function BomPresetSection() {
                         {isRowExpanded && (
                           <tr>
                             <td
-                              colSpan={canManage ? 5 : 4}
+                              colSpan={canManage ? 6 : 5}
                               className="px-4 py-3 bg-slate-50/50 dark:bg-slate-900/30"
                             >
                               <div className="space-y-2 max-w-3xl">

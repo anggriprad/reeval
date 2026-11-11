@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { resolveAuthorName } from '@/lib/types';
 import {
   Plus,
   Trash2,
@@ -24,6 +25,10 @@ export interface ReorderableItem {
   name: string;
   count?: number;
   can_delete?: boolean;
+  created_by?: string | null;
+  created_by_user?: { full_name?: string | null } | null;
+  createdBy?: string | null;
+  createdByUser?: { full_name?: string | null } | null;
   [key: string]: any;
 }
 
@@ -231,8 +236,13 @@ export function ReorderableList<T extends ReorderableItem>({
                                         </span>
                                       )}
                                     </div>
-                                    <div className="flex-1 px-1 text-xs md:text-sm text-slate-900 dark:text-slate-200 truncate">
-                                      {item.name}
+                                    <div className="flex-1 min-w-0 px-1">
+                                      <div className="text-xs md:text-sm text-slate-900 dark:text-slate-200 truncate">
+                                        {item.name}
+                                      </div>
+                                      <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                                        Dibuat oleh: {resolveAuthorName(item)}
+                                      </div>
                                     </div>
                                     {countUnitLabel && (
                                       <div className="w-36 px-1 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">

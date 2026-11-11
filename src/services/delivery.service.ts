@@ -5,6 +5,7 @@ import {
   httpPut,
   ApiResponse,
 } from "@/helpers/axios";
+import type { ApiAuditFields } from "@/lib/types";
 
 export interface DeliveryOrderItem {
   id: number;
@@ -37,7 +38,7 @@ export interface DeliveryOrderStatusHistory {
   created_at: string;
 }
 
-export interface DeliveryOrder {
+export interface DeliveryOrder extends ApiAuditFields {
   id: number;
   company_id: number;
   delivery_number: string;
