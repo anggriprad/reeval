@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useUrlTab } from '@/lib/useUrlTab';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/context/ToastContext';
@@ -17,7 +18,6 @@ import { Table } from '@/components/ui/Table';
 import { DateRangePicker, DateRange, getThisMonthRange } from '@/components/ui/DateRangePicker';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { formatCurrency, formatDateTime, getInvoiceStatusLabel } from '@/lib/utils';
 import {
   DEFAULT_CHART_OF_ACCOUNTS,
@@ -26,7 +26,10 @@ import {
   computeAPAging,
   mapExpenseCategoryToCoa,
 } from '@/lib/accounting';
-import type { HPPAnalysis, Expense, OtherIncome, AccountType, AccountNormalBalance } from '@/lib/types';
+import type { HPPAnalysis, Expense, OtherIncome, AccountCode, BankAccount } from '@/lib/types';
+import { COASection, BankAccountsSection } from './components';
+import { coaService, mapCoaResponseToAccountCode } from '@/services/coa.service';
+import { bankAccountService, mapBankAccountResponseToBankAccount, mapBankAccountOptionToBankAccount } from '@/services/bank-account.service';
 import {
   DollarSign,
   CreditCard,
@@ -54,7 +57,6 @@ import {
   ChevronUp,
   Layers,
   Trash2,
-  Edit2,
   Lock,
   ClipboardList,
 } from 'lucide-react';
@@ -62,33 +64,35 @@ import {
 function FinanceContent() {
   const { toast, confirm } = useToast();
   const { can } = usePermission();
+  const canBankRead = can(PERMISSIONS.FINANCE.BANK_READ);
+  const canCashTxRead = can(PERMISSIONS.FINANCE.CASH_TX_READ);
+  const canCashTxCreate = can(PERMISSIONS.FINANCE.CASH_TX_CREATE);
+  const canTransferCreate = can(PERMISSIONS.FINANCE.CASH_TRANSFER_CREATE);
+  const canDividend = can(PERMISSIONS.FINANCE.DIVIDEND);
+  const canInvoiceRead = can(PERMISSIONS.FINANCE.INVOICE_READ);
+  const canPaymentAR = can(PERMISSIONS.FINANCE.PAYMENT_AR);
+  const canPaymentAP = can(PERMISSIONS.FINANCE.PAYMENT_AP);
+  const canJournalRead = can(PERMISSIONS.FINANCE.JOURNAL_READ);
+  const canJournalCreate = can(PERMISSIONS.FINANCE.JOURNAL_CREATE);
+  const canLedgerRead = can(PERMISSIONS.FINANCE.LEDGER_READ);
+  const canCoaRead = can(PERMISSIONS.FINANCE.COA_READ);
+  const canClosing = can(PERMISSIONS.FINANCE.CLOSING);
   const canReport = can(PERMISSIONS.FINANCE.REPORT);
-  const canPayment = can(PERMISSIONS.FINANCE.PAYMENT);
-  const canExpense = can(PERMISSIONS.FINANCE.EXPENSE);
-  const canBank = can(PERMISSIONS.FINANCE.BANK);
-  const canCoa = can(PERMISSIONS.FINANCE.COA);
-  const canPost = can(PERMISSIONS.FINANCE.POST);
   const {
     invoices,
     salesOrders,
     workOrders,
     purchaseOrders,
-    bankAccounts,
+    bankAccounts: fallbackBankAccounts = [],
     expenses,
     materials,
     assets,
-    chartOfAccounts = DEFAULT_CHART_OF_ACCOUNTS,
+    chartOfAccounts: fallbackChartOfAccounts = DEFAULT_CHART_OF_ACCOUNTS,
     journalEntries = [],
     recordPayment,
     recordExpense,
     paySupplierPO,
-    addBankAccount,
-    updateBankAccount,
-    deleteBankAccount,
     transferBankFunds,
-    addAccount,
-    updateAccount,
-    deleteAccount,
     getPendingOrderEstHPP,
     otherIncomes,
     recordOtherIncome,
@@ -96,6 +100,63 @@ function FinanceContent() {
     closePeriod,
     distributeDividend,
   } = useApp();
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [liveChartOfAccounts, setLiveChartOfAccounts] = useState<AccountCode[] | null>(null);
+  const chartOfAccounts =
+    liveChartOfAccounts && liveChartOfAccounts.length > 0
+      ? liveChartOfAccounts
+      : fallbackChartOfAccounts;
+
+  const [liveBankAccounts, setLiveBankAccounts] = useState<BankAccount[] | null>(null);
+  const bankAccounts =
+    liveBankAccounts !== null ? liveBankAccounts : fallbackBankAccounts;
+
+  useEffect(() => {
+    let isMounted = true;
+    const coaPromise = canCoaRead
+      ? coaService.getAccounts({ page: 1, per_page: 500 }).then((res) => {
+          if (!isMounted || !Array.isArray(res.data)) return;
+          setLiveChartOfAccounts(res.data.map(mapCoaResponseToAccountCode));
+        })
+      : coaService.getOptions().then((res) => {
+          if (!isMounted || !Array.isArray(res.data)) return;
+          setLiveChartOfAccounts(
+            res.data.map((opt) => ({
+              id: String(opt.id),
+              code: opt.code,
+              name: opt.name,
+              type: opt.type,
+              normalBalance: opt.normal_balance,
+              parentId: opt.parent_id != null ? String(opt.parent_id) : undefined,
+              isHeader: opt.is_header,
+              level: opt.level,
+            }))
+          );
+        });
+    coaPromise.catch(() => {
+      // Fallback to context chartOfAccounts when offline/unauthenticated
+    });
+
+    const bankPromise = canBankRead
+      ? bankAccountService.getAccounts({ page: 1, per_page: 500 }).then((res) => {
+          if (!isMounted || !Array.isArray(res.data)) return;
+          setLiveBankAccounts(res.data.map(mapBankAccountResponseToBankAccount));
+        })
+      : bankAccountService.getOptions().then((res) => {
+          if (!isMounted || !Array.isArray(res.data)) return;
+          setLiveBankAccounts(res.data.map(mapBankAccountOptionToBankAccount));
+        });
+    bankPromise.catch(() => {
+      // Fallback to context bankAccounts when offline/unauthenticated
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [canCoaRead, canBankRead]);
 
   // ── Main Tabs Navigation ──
   const [urlTab, setUrlTab] = useUrlTab(
@@ -110,8 +171,36 @@ function FinanceContent() {
   // ── Sub-tabs for Invoices & Bills (Tagihan & Faktur) ──
   const [txSubTab, setTxSubTab] = useState<'ar' | 'ap'>('ar');
 
-  // ── Sub-tabs for Accounting ──
-  const [accSubTab, setAccSubTab] = useState<'journal' | 'general_ledger' | 'coa'>('journal');
+  // ── Sub-tabs for Accounting (synced with ?subtab= or active COA filter params) ──
+  const initialAccSubTab = useMemo<'journal' | 'general_ledger' | 'coa'>(() => {
+    const sub = searchParams.get('subtab');
+    if (sub === 'journal' || sub === 'general_ledger' || sub === 'coa') return sub;
+    if (
+      searchParams.get('coa_search') ||
+      searchParams.get('coa_type') ||
+      searchParams.get('coa_created_by_id')
+    ) {
+      return 'coa';
+    }
+    return 'journal';
+  }, [searchParams]);
+
+  const [accSubTabState, setAccSubTabState] = useState<'journal' | 'general_ledger' | 'coa'>(initialAccSubTab);
+  useEffect(() => {
+    setAccSubTabState(initialAccSubTab);
+  }, [initialAccSubTab]);
+  const accSubTab = accSubTabState;
+  const setAccSubTab = (nextSubTab: 'journal' | 'general_ledger' | 'coa') => {
+    setAccSubTabState(nextSubTab);
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextSubTab === 'journal') {
+      params.delete('subtab');
+    } else {
+      params.set('subtab', nextSubTab);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
   const [ledgerMutasiModal, setLedgerMutasiModal] = useState<string | null>(null);
 
   // ── Sub-tabs for Reports ──
@@ -137,13 +226,6 @@ function FinanceContent() {
   const [expNote, setExpNote] = useState('');
   const [expenseFormError, setExpenseFormError] = useState('');
 
-  // 4. Bank Account CRUD modal
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [editBankId, setEditBankId] = useState<string | null>(null);
-  const [bankName, setBankName] = useState('');
-  const [bankNumber, setBankNumber] = useState('');
-  const [bankInitialBalance, setBankInitialBalance] = useState('');
-  const [bankError, setBankError] = useState('');
   const [showLedgerModal, setShowLedgerModal] = useState<string | null>(null);
 
   // 5. Transfer Funds modal
@@ -153,18 +235,6 @@ function FinanceContent() {
   const [transferAmount, setTransferAmount] = useState('');
   const [transferNote, setTransferNote] = useState('');
   const [transferError, setTransferError] = useState('');
-
-  // 6. COA CRUD modal
-  const [showCOAModal, setShowCOAModal] = useState(false);
-  const [editingCOAId, setEditingCOAId] = useState<string | null>(null);
-  const [coaCode, setCoaCode] = useState('');
-  const [coaName, setCoaName] = useState('');
-  const [coaType, setCoaType] = useState<AccountType>('ASSET');
-  const [coaNormalBalance, setCoaNormalBalance] = useState<AccountNormalBalance>('DEBIT');
-  const [coaParentId, setCoaParentId] = useState<string>('');
-  const [coaIsHeader, setCoaIsHeader] = useState<boolean>(false);
-  const [coaDescription, setCoaDescription] = useState('');
-  const [coaError, setCoaError] = useState('');
 
   // Helper to get CoA account name dynamically from chartOfAccounts
   const getCoaName = (code: string, fallback: string) => {
@@ -895,139 +965,6 @@ function FinanceContent() {
     setShowTransactionModal(false);
   };
 
-  const handleSaveBankAccount = () => {
-    if (!bankName.trim()) {
-      setBankError('Nama rekening wajib diisi.');
-      return;
-    }
-    if (!editBankId && (!bankInitialBalance || Number(bankInitialBalance) < 0)) {
-      setBankError('Saldo awal wajib diisi dan tidak boleh negatif.');
-      return;
-    }
-
-    if (editBankId) {
-      updateBankAccount(editBankId, {
-        name: bankName.trim(),
-        accountNumber: bankNumber.trim() || undefined,
-      });
-    } else {
-      addBankAccount({
-        name: bankName.trim(),
-        accountNumber: bankNumber.trim() || undefined,
-        balance: Number(bankInitialBalance),
-      });
-    }
-
-    setBankName('');
-    setBankNumber('');
-    setBankInitialBalance('');
-    setBankError('');
-    setShowBankModal(false);
-  };
-
-  // ── COA Handlers ──
-  const suggestNextCode = (parentId: string, type: AccountType): string => {
-    if (!parentId) {
-      const typeRootMap: Record<AccountType, string> = {
-        ASSET: '1-0000',
-        LIABILITY: '2-0000',
-        EQUITY: '3-0000',
-        REVENUE: '4-0000',
-        COGS: '5-0000',
-        EXPENSE: '6-0000',
-      };
-      return typeRootMap[type] || '1-0000';
-    }
-    const parent = chartOfAccounts.find(a => a.id === parentId);
-    if (!parent) return '';
-
-    const children = chartOfAccounts.filter(a => a.parentId === parentId);
-    const prefix = parent.code.split('-')[0] || '1';
-
-    if (children.length === 0) {
-      if (parent.level === 1) return `${prefix}-1000`;
-      if (parent.level === 2) return `${prefix}-1100`;
-      return `${prefix}-1110`;
-    }
-
-    const numCodes = children
-      .map(c => {
-        const parts = c.code.split('-');
-        return parts.length > 1 ? parseInt(parts[1], 10) : 0;
-      })
-      .filter(n => !isNaN(n));
-
-    if (numCodes.length > 0) {
-      const maxVal = Math.max(...numCodes);
-      const step = parent.level === 1 ? 1000 : parent.level === 2 ? 100 : 10;
-      const nextVal = maxVal + step;
-      return `${prefix}-${String(nextVal).padStart(4, '0')}`;
-    }
-
-    return `${parent.code}-1`;
-  };
-
-  const handleParentSelectChange = (newParentId: string) => {
-    setCoaParentId(newParentId);
-    if (newParentId) {
-      const parent = chartOfAccounts.find(a => a.id === newParentId);
-      if (parent) {
-        setCoaType(parent.type);
-        setCoaNormalBalance(parent.normalBalance);
-        setCoaIsHeader(false);
-        if (!editingCOAId) {
-          setCoaCode(suggestNextCode(newParentId, parent.type));
-        }
-      }
-    } else {
-      setCoaIsHeader(true);
-      if (!editingCOAId) {
-        setCoaCode(suggestNextCode('', coaType));
-      }
-    }
-  };
-
-  const handleTypeSelectChange = (newType: AccountType) => {
-    setCoaType(newType);
-    const defaultNormal: Record<AccountType, AccountNormalBalance> = {
-      ASSET: 'DEBIT',
-      LIABILITY: 'CREDIT',
-      EQUITY: 'CREDIT',
-      REVENUE: 'CREDIT',
-      COGS: 'DEBIT',
-      EXPENSE: 'DEBIT',
-    };
-    setCoaNormalBalance(defaultNormal[newType] || 'DEBIT');
-    if (!editingCOAId && !coaParentId) {
-      setCoaCode(suggestNextCode('', newType));
-    }
-  };
-
-  const openCOAModal = () => {
-    setEditingCOAId(null);
-    setCoaName('');
-    setCoaDescription('');
-    setCoaError('');
-
-    // Default to Kas & Bank (1-1100) or first header as parent for smart auto-fill
-    const defaultParent = chartOfAccounts.find(a => a.code === '1-1100') || chartOfAccounts.find(a => a.level === 2) || chartOfAccounts[0];
-    if (defaultParent) {
-      setCoaParentId(defaultParent.id);
-      setCoaType(defaultParent.type);
-      setCoaNormalBalance(defaultParent.normalBalance);
-      setCoaIsHeader(false);
-      setCoaCode(suggestNextCode(defaultParent.id, defaultParent.type));
-    } else {
-      setCoaParentId('');
-      setCoaType('ASSET');
-      setCoaNormalBalance('DEBIT');
-      setCoaIsHeader(true);
-      setCoaCode('1-0000');
-    }
-
-    setShowCOAModal(true);
-  };
-
   const openExpenseModal = () => {
     setTxType('outflow');
     setTxAccountCode('');
@@ -1148,99 +1085,14 @@ function FinanceContent() {
     toast.success('Dividen Dibagikan', `Dividen sebesar ${formatCurrency(amt)} berhasil didistribusikan.`);
   };
 
-  const handleEditCOA = (id: string) => {
-    const acc = chartOfAccounts.find(a => a.id === id);
-    if (!acc) return;
-    setEditingCOAId(acc.id);
-    setCoaCode(acc.code);
-    setCoaName(acc.name);
-    setCoaType(acc.type);
-    setCoaNormalBalance(acc.normalBalance);
-    setCoaParentId(acc.parentId || '');
-    setCoaIsHeader(acc.isHeader);
-    setCoaDescription(acc.description || '');
-    setCoaError('');
-    setShowCOAModal(true);
-  };
-
-  const handleDeleteCOA = async (id: string, name: string) => {
-    const isOk = await confirm({
-      title: 'Hapus Akun COA',
-      message: `Apakah Anda yakin ingin menghapus akun "${name}"?`,
-      confirmText: 'Hapus Akun',
-      variant: 'danger',
-    });
-    if (isOk) {
-      const res = deleteAccount(id);
-      if (!res.success) {
-        toast.error('Gagal Menghapus Akun', res.reason || 'Gagal menghapus akun.');
-      } else {
-        toast.success('Akun Dihapus', `Akun "${name}" berhasil dihapus.`);
-      }
-    }
-  };
-
-  const handleSubmitCOA = (e: React.FormEvent) => {
-    e.preventDefault();
-    setCoaError('');
-
-    const cleanCode = coaCode.trim();
-    const cleanName = coaName.trim();
-
-    if (!cleanCode || !cleanName) {
-      setCoaError('Kode Akun dan Nama Akun wajib diisi.');
-      return;
-    }
-
-    // Check duplicate code
-    const isDuplicate = chartOfAccounts.some(a => a.code === cleanCode && a.id !== editingCOAId);
-    if (isDuplicate) {
-      setCoaError(`Kode akun "${cleanCode}" sudah digunakan oleh akun lain. Gunakan kode unik.`);
-      return;
-    }
-
-    let finalType = coaType;
-    let finalNormalBalance = coaNormalBalance;
-    let finalLevel = 1;
-
-    if (coaParentId) {
-      const parent = chartOfAccounts.find(a => a.id === coaParentId);
-      if (parent) {
-        finalType = parent.type;
-        finalNormalBalance = parent.normalBalance;
-        finalLevel = parent.level + 1;
-        if (!parent.isHeader) {
-          updateAccount(parent.id, { isHeader: true });
-        }
-      }
-    }
-
-    const payload = {
-      code: cleanCode,
-      name: cleanName,
-      type: finalType,
-      normalBalance: finalNormalBalance,
-      parentId: coaParentId || undefined,
-      isHeader: coaIsHeader,
-      level: finalLevel,
-      description: coaDescription.trim() || undefined,
-    };
-
-    if (editingCOAId) {
-      updateAccount(editingCOAId, payload);
-    } else {
-      addAccount(payload);
-    }
-
-    setShowCOAModal(false);
-  };
-
   // ── Tab Config ──
+  const canAccessCashBank = canBankRead || canCashTxRead;
+  const canAccessAccounting = canJournalRead || canLedgerRead || canCoaRead;
   const tabs = [
     { key: 'overview' as const, label: 'Ringkasan', icon: LayoutDashboard },
-    { key: 'cash_bank' as const, label: 'Kas & Bank', icon: Building2 },
-    { key: 'invoices' as const, label: 'Tagihan & Faktur', icon: Receipt },
-    { key: 'accounting' as const, label: 'Pembukuan', icon: BookOpen },
+    ...(canAccessCashBank ? [{ key: 'cash_bank' as const, label: 'Kas & Bank', icon: Building2 }] : []),
+    ...(canInvoiceRead ? [{ key: 'invoices' as const, label: 'Tagihan & Faktur', icon: Receipt }] : []),
+    ...(canAccessAccounting ? [{ key: 'accounting' as const, label: 'Pembukuan', icon: BookOpen }] : []),
     ...(canReport ? [{ key: 'reports' as const, label: 'Laporan Keuangan', icon: FileText }] : []),
   ];
 
@@ -1253,26 +1105,30 @@ function FinanceContent() {
       <PageHeader
         title="Keuangan"
       >
-        {canExpense && (
+        {(canDividend || canCashTxCreate || canTransferCreate) && (
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={openDividendModal}
-            >
-              <Wallet className="h-4 w-4 mr-1.5" /> Bagi Dividen
-            </Button>
-            <Button onClick={() => {
-              setTxType('outflow');
-              setTxAccountCode('');
-              setTxAmount('');
-              setTxBankId(bankAccounts[0]?.id || '');
-              setTxToBankId(bankAccounts[1]?.id || '');
-              setTxNote('');
-              setTxError('');
-              setShowTransactionModal(true);
-            }} disabled={bankAccounts.length === 0}>
-              <Plus className="h-4 w-4" /> Catat Transaksi
-            </Button>
+            {canDividend && (
+              <Button
+                variant="outline"
+                onClick={openDividendModal}
+              >
+                <Wallet className="h-4 w-4 mr-1.5" /> Bagi Dividen
+              </Button>
+            )}
+            {(canCashTxCreate || canTransferCreate) && (
+              <Button onClick={() => {
+                setTxType(canCashTxCreate ? 'outflow' : 'transfer');
+                setTxAccountCode('');
+                setTxAmount('');
+                setTxBankId(bankAccounts[0]?.id || '');
+                setTxToBankId(bankAccounts[1]?.id || '');
+                setTxNote('');
+                setTxError('');
+                setShowTransactionModal(true);
+              }} disabled={bankAccounts.length === 0}>
+                <Plus className="h-4 w-4" /> Catat Transaksi
+              </Button>
+            )}
           </div>
         )}
       </PageHeader>
@@ -1446,158 +1302,18 @@ function FinanceContent() {
       {/* ════════════════════════════════════════════════════════ */}
       {/* ── TAB 2: KAS & BANK (Pusat Arus Kas Riil & Kas Kecil) ── */}
       {/* ════════════════════════════════════════════════════════ */}
-      {activeTab === 'cash_bank' && (
+      {activeTab === 'cash_bank' && canAccessCashBank && (
         <div className="space-y-6">
-          {bankAccounts.length === 0 ? (
-            <EmptyState
-              icon={<Building2 className="h-8 w-8 text-slate-400" />}
-              title="Belum Ada Rekening"
-              description="Tambahkan rekening untuk mulai mencatat transaksi dan mutasi keuangan."
-              action={
-                canBank ? (
-                  <Button
-                    onClick={() => {
-                      setEditBankId(null);
-                      setBankName('');
-                      setBankNumber('');
-                      setBankInitialBalance('');
-                      setBankError('');
-                      setShowBankModal(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-1.5" /> Tambah Rekening
-                  </Button>
-                ) : undefined
-              }
+          {canBankRead && (
+            <BankAccountsSection
+              selectedBankFilter={selectedBankFilter}
+              onSelectBank={setSelectedBankFilter}
+              onAccountsSynced={setLiveBankAccounts}
             />
-          ) : (
-            <>
-              {/* Total Likuiditas Berjalan */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
-                  Total Likuiditas:
-                </span>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">
-                  {formatCurrency(totalCashBank)}
-                </span>
-              </div>
-
-              {/* Bank Accounts Horizontal Scroll Container (Hidden Scrollbar) */}
-              <div className="flex p-1 gap-4 overflow-x-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {bankAccounts.map(ba => {
-                  const isSelected = selectedBankFilter === ba.id;
-                  return (
-                    <Card
-                      key={ba.id}
-                      onClick={() => setSelectedBankFilter(isSelected ? 'ALL' : ba.id)}
-                      className={`relative overflow-hidden cursor-pointer transition-all p-5 flex flex-col justify-between w-72 shrink-0 ${isSelected
-                        ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-50/15 dark:bg-indigo-950/30 shadow-md'
-                        : 'hover:border-slate-300 dark:hover:border-slate-600 bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm'
-                        }`}
-                    >
-                      <div>
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="min-w-0 pr-2">
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
-                                {ba.name}
-                              </h4>
-                              {isSelected && (
-                                <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded shrink-0">
-                                  Dipilih
-                                </span>
-                              )}
-                            </div>
-                            {ba.accountNumber ? (
-                              <p className="text-xs font-mono text-slate-400 mt-0.5">{ba.accountNumber}</p>
-                            ) : (
-                              <p className="text-xs text-slate-400 italic mt-0.5">Kas Fisik / Kas Kecil</p>
-                            )}
-                          </div>
-                          {canBank && (
-                            <div
-                              className="flex items-center gap-1 shrink-0"
-                              onClick={e => e.stopPropagation()}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditBankId(ba.id);
-                                  setBankName(ba.name);
-                                  setBankNumber(ba.accountNumber || '');
-                                  setBankError('');
-                                  setShowBankModal(true);
-                                }}
-                                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                                title="Edit Rekening"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const isOk = await confirm({
-                                    title: 'Hapus Rekening Bank',
-                                    message: `Apakah Anda yakin ingin menghapus rekening "${ba.name}"?`,
-                                    confirmText: 'Hapus Rekening',
-                                    variant: 'danger',
-                                  });
-                                  if (isOk) {
-                                    const deleted = deleteBankAccount(ba.id);
-                                    if (!deleted) {
-                                      toast.error('Gagal Menghapus Rekening', 'Rekening ini sudah memiliki riwayat transaksi.');
-                                    } else {
-                                      toast.success('Rekening Dihapus', `Rekening "${ba.name}" berhasil dihapus.`);
-                                    }
-                                  }
-                                }}
-                                className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                                title="Hapus Rekening"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                            Saldo Berjalan
-                          </span>
-                          <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">
-                            {formatCurrency(ba.balance)}
-                          </span>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
-
-                {/* Card Action Tambah Rekening (Rightmost item, half width) */}
-                {canBank && (
-                  <div
-                    onClick={() => {
-                      setEditBankId(null);
-                      setBankName('');
-                      setBankNumber('');
-                      setBankInitialBalance('');
-                      setBankError('');
-                      setShowBankModal(true);
-                    }}
-                    className="w-36 shrink-0 border-2 border-dashed border-slate-200 dark:border-slate-700/80 hover:border-indigo-500 dark:hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/40 dark:bg-slate-800/40 dark:hover:bg-indigo-950/20 rounded-xl transition-all cursor-pointer p-4 flex flex-col items-center justify-center text-center group"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform mb-1.5">
-                      <Plus className="w-4 h-4" />
-                    </div>
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                      Tambah Rekening
-                    </span>
-                  </div>
-                )}
-              </div>
-            </>
           )}
 
           {/* Tabel Mutasi Kas & Bank Terpadu (Selalu Tampil) */}
+          {canCashTxRead && (
           <Card>
             {/* Filter Bar: Search Input & Date Range (Periode) */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -1706,13 +1422,14 @@ function FinanceContent() {
               ]}
             />
           </Card>
+          )}
         </div>
       )}
 
       {/* ════════════════════════════════════════════════════════ */}
       {/* ── TAB 3: TAGIHAN & FAKTUR (Piutang AR & Hutang AP) ───── */}
       {/* ════════════════════════════════════════════════════════ */}
-      {activeTab === 'invoices' && (
+      {activeTab === 'invoices' && canInvoiceRead && (
         <div className="space-y-6">
           {/* Sub Navigation for Invoices & Bills */}
           <SegmentedControl
@@ -1851,7 +1568,7 @@ function FinanceContent() {
                       cell: (inv) => (
                         <div onClick={(e) => e.stopPropagation()}>
                           {inv.status !== 'PAID' ? (
-                            canPayment ? (
+                            canPaymentAR ? (
                               <Button
                                 size="sm"
                                 variant="success"
@@ -1996,7 +1713,7 @@ function FinanceContent() {
                         cell: (po) => {
                           const payBank = po.bankAccountId ? bankAccounts.find(b => b.id === po.bankAccountId) : null;
                           return po.paymentStatus === 'UNPAID' ? (
-                            canPayment ? (
+                            canPaymentAP ? (
                               <Button
                                 size="sm"
                                 variant="danger"
@@ -2505,21 +2222,31 @@ function FinanceContent() {
       {/* ════════════════════════════════════════════════════════ */}
       {/* ── TAB 4: PEMBUKUAN (Accounting) ──────────────────────── */}
       {/* ════════════════════════════════════════════════════════ */}
-      {activeTab === 'accounting' && (
+      {activeTab === 'accounting' && canAccessAccounting && (
         <div className="space-y-6">
           {/* Sub Navigation for Accounting */}
           <SegmentedControl
-            value={accSubTab}
+            value={
+              (accSubTab === 'journal' && canJournalRead) ||
+              (accSubTab === 'general_ledger' && canLedgerRead) ||
+              (accSubTab === 'coa' && canCoaRead)
+                ? accSubTab
+                : canJournalRead
+                  ? 'journal'
+                  : canLedgerRead
+                    ? 'general_ledger'
+                    : 'coa'
+            }
             onChange={(t) => setAccSubTab(t as 'journal' | 'general_ledger' | 'coa')}
             options={[
-              { key: 'journal', label: 'Jurnal Umum' },
-              { key: 'general_ledger', label: 'Buku Besar' },
-              { key: 'coa', label: 'Bagan Akun (CoA)' },
+              ...(canJournalRead ? [{ key: 'journal', label: 'Jurnal Umum' }] : []),
+              ...(canLedgerRead ? [{ key: 'general_ledger', label: 'Buku Besar' }] : []),
+              ...(canCoaRead ? [{ key: 'coa', label: 'Bagan Akun (CoA)' }] : []),
             ]}
           />
 
           {/* ── Sub-tab: Jurnal Umum (General Ledger) ── */}
-          {accSubTab === 'journal' && (
+          {accSubTab === 'journal' && canJournalRead && (
             <Card>
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/80 pb-4 mb-5">
                 <div className="flex items-start gap-3">
@@ -2558,19 +2285,23 @@ function FinanceContent() {
                     />
                   </div>
 
-                  {canPost && (
+                  {(canClosing || canJournalCreate) && (
                     <>
                       <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-0.5" />
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <Button variant="outline" size="sm" onClick={openClosingModal}>
-                          <Lock className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
-                          Tutup Buku
-                        </Button>
-                        <Button size="sm" onClick={openManualJournalModal}>
-                          <Plus className="w-3.5 h-3.5 mr-1.5" />
-                          Tambah Jurnal Manual
-                        </Button>
+                        {canClosing && (
+                          <Button variant="outline" size="sm" onClick={openClosingModal}>
+                            <Lock className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
+                            Tutup Buku
+                          </Button>
+                        )}
+                        {canJournalCreate && (
+                          <Button size="sm" onClick={openManualJournalModal}>
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            Tambah Jurnal Manual
+                          </Button>
+                        )}
                       </div>
                     </>
                   )}
@@ -2706,7 +2437,7 @@ function FinanceContent() {
           )}
 
           {/* ── Sub-tab: Buku Besar (General Ledger) ── */}
-          {accSubTab === 'general_ledger' && (
+          {accSubTab === 'general_ledger' && canLedgerRead && (
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -2800,91 +2531,8 @@ function FinanceContent() {
           )}
 
           {/* ── Sub-tab: Bagan Akun (Chart of Accounts) ── */}
-          {accSubTab === 'coa' && (
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Bagan Akun Standar (Chart of Accounts Tree)</h3>
-                  <p className="text-xs text-slate-500">Struktur hierarki akun akuntansi terkonfigurasi untuk manufaktur Indonesia.</p>
-                </div>
-                {canCoa && (
-                  <Button size="sm" onClick={openCOAModal} className="gap-2">
-                    <Plus className="w-4 h-4" />
-                    Tambah Akun
-                  </Button>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                {chartOfAccounts.map(acc => {
-                  const isH1 = acc.level === 1;
-                  const isH2 = acc.level === 2 && acc.isHeader;
-                  return (
-                    <div
-                      key={acc.id}
-                      className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors group ${isH1
-                        ? 'bg-slate-100 dark:bg-slate-800 font-bold text-slate-900 dark:text-white mt-3'
-                        : isH2
-                          ? 'bg-slate-50/70 dark:bg-slate-800/40 font-semibold text-slate-800 dark:text-slate-200 pl-6'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/20 text-slate-600 dark:text-slate-300 pl-10 border-b border-slate-100 dark:border-slate-800/40'
-                        }`}
-                    >
-                      <div className="flex items-center gap-3 text-xs">
-                        <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{acc.code}</span>
-                        <span>{acc.name}</span>
-                        {acc.description && (
-                          <span className="text-[11px] text-slate-400 hidden md:inline">— {acc.description}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {acc.isSystem && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700" title="Akun sistem bawaan (permanen)">
-                            <Lock className="w-2.5 h-2.5" />
-                            Sistem
-                          </span>
-                        )}
-                        <Badge
-                          variant={
-                            acc.type === 'ASSET'
-                              ? 'default'
-                              : acc.type === 'LIABILITY'
-                                ? 'danger'
-                                : acc.type === 'EQUITY'
-                                  ? 'warning'
-                                  : acc.type === 'REVENUE'
-                                    ? 'success'
-                                    : 'default'
-                          }
-                          className="text-[10px]"
-                        >
-                          {acc.type}
-                        </Badge>
-                        <span className="text-[10px] font-mono text-slate-400 w-12 text-right">
-                          {acc.normalBalance}
-                        </span>
-
-                        {canCoa && (
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                            <button onClick={() => handleEditCOA(acc.id)} className="p-1 text-slate-400 hover:text-indigo-600 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit Akun"><Edit2 className="w-3.5 h-3.5" /></button>
-                            {acc.isSystem ? (
-                              <button
-                                onClick={() => toast.info('Akun Sistem Bawaan', `Akun "${acc.code} - ${acc.name}" merupakan Akun Sistem Bawaan yang wajib ada di setiap perusahaan dan tidak boleh dihapus.`)}
-                                className="p-1 text-slate-300 dark:text-slate-600 cursor-not-allowed rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-                                title="Akun Sistem (Permanen / Tidak dapat dihapus)"
-                              >
-                                <Lock className="w-3.5 h-3.5" />
-                              </button>
-                            ) : (
-                              <button onClick={() => handleDeleteCOA(acc.id, acc.name)} className="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" title="Hapus Akun"><Trash2 className="w-3.5 h-3.5" /></button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
+          {accSubTab === 'coa' && canCoaRead && (
+            <COASection onAccountsSynced={setLiveChartOfAccounts} />
           )}
         </div>
       )}
@@ -3056,7 +2704,10 @@ function FinanceContent() {
           )}
 
           <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-            {(['outflow', 'inflow', 'transfer'] as const).map(type => (
+            {([
+              ...(canCashTxCreate ? (['outflow', 'inflow'] as const) : []),
+              ...(canTransferCreate ? (['transfer'] as const) : []),
+            ]).map(type => (
               <button
                 key={type}
                 type="button"
@@ -3087,7 +2738,7 @@ function FinanceContent() {
               >
                 <option value="">-- Pilih Kategori --</option>
                 {chartOfAccounts
-                  .filter(a => !a.isHeader && (txType === 'outflow' ? a.type === 'EXPENSE' : a.type === 'REVENUE' || a.id === 'coa-21300'))
+                  .filter(a => !a.isHeader && (txType === 'outflow' ? a.type === 'EXPENSE' : a.type === 'REVENUE' || a.code === '2-1300' || a.id === 'coa-21300'))
                   .map(a => (
                     <option key={a.id} value={a.code}>{a.code} — {a.name}</option>
                   ))}
@@ -3153,57 +2804,6 @@ function FinanceContent() {
             />
           </div>
         </form>
-      </Modal>
-
-      {/* Modal 5: Tambah/Edit Rekening Bank */}
-      <Modal
-        isOpen={showBankModal}
-        onClose={() => setShowBankModal(false)}
-        title={editBankId ? 'Edit Rekening' : 'Tambah Rekening Baru'}
-        size="md"
-        actions={
-          <>
-            <Button variant="ghost" onClick={() => setShowBankModal(false)}>Batal</Button>
-            <Button onClick={handleSaveBankAccount}>Simpan</Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          {bankError && (
-            <div className="rounded-lg bg-red-50 p-3 dark:bg-red-950/40 text-xs text-red-600 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>{bankError}</span>
-            </div>
-          )}
-
-          <Input
-            label="Nama Rekening / Kas"
-            required
-            type="text"
-            value={bankName}
-            onChange={e => setBankName(e.target.value)}
-          />
-
-          <Input
-            label="Nomor Rekening"
-            type="text"
-            value={bankNumber}
-            onChange={e => setBankNumber(e.target.value)}
-          />
-
-          {!editBankId && (
-            <div>
-              <CurrencyInput
-                label="Saldo Awal"
-                required
-                value={bankInitialBalance}
-                onChange={val => setBankInitialBalance(val === '' ? '' : String(val))}
-                placeholder="0"
-              />
-              <p className="text-[10px] text-slate-400 mt-1">Saldo awal akan otomatis dicatat sebagai 'Modal Disetor'.</p>
-            </div>
-          )}
-        </div>
       </Modal>
 
       {/* Modal 6: Buku Mutasi Kas Spesifik Rekening */}
@@ -3451,141 +3051,6 @@ function FinanceContent() {
             </div>
           );
         })()}
-      </Modal>
-
-      {/* Modal 6: COA Form (Smart Zero-Headache ERP Form) */}
-      <Modal
-        isOpen={showCOAModal}
-        onClose={() => setShowCOAModal(false)}
-        title={editingCOAId ? 'Edit Akun' : 'Tambah Akun Baru'}
-        size="md"
-        actions={
-          <>
-            <Button type="button" variant="outline" onClick={() => setShowCOAModal(false)}>Batal</Button>
-            <Button type="button" onClick={handleSubmitCOA} variant="primary">{editingCOAId ? 'Simpan Perubahan' : 'Tambah Akun'}</Button>
-          </>
-        }
-      >
-        <form onSubmit={handleSubmitCOA} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              1. Pilih Induk / Sub-Akun Dari
-            </label>
-            <select
-              value={coaParentId}
-              onChange={e => handleParentSelectChange(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 font-medium"
-            >
-              <option value="">-- Tidak Ada (Akun Utama / Root) --</option>
-              {chartOfAccounts
-                .filter(a => a.id !== editingCOAId)
-                .map(h => (
-                  <option key={h.id} value={h.id}>
-                    {h.level === 1 ? '📁 ' : h.level === 2 ? '  ↳ ' : '    • '}{h.code} - {h.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">2. Kode Akun *</label>
-                <button
-                  type="button"
-                  onClick={() => setCoaCode(suggestNextCode(coaParentId, coaType))}
-                  className="text-[10px] text-indigo-600 hover:underline dark:text-indigo-400 font-semibold"
-                >
-                  ↺ Auto-Hitung Kode
-                </button>
-              </div>
-              <input
-                type="text"
-                value={coaCode}
-                onChange={e => setCoaCode(e.target.value)}
-                placeholder="Contoh: 1-1110"
-                className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 font-mono font-bold text-indigo-600 dark:text-indigo-400"
-                required
-              />
-              {coaCode.trim() && chartOfAccounts.some(a => a.code === coaCode.trim() && a.id !== editingCOAId) && (
-                <p className="text-[10px] text-red-500 font-semibold mt-0.5">
-                  ⚠️ Kode "{coaCode.trim()}" sudah terpakai. Klik 'Auto-Hitung Kode' di atas.
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">3. Nama Akun *</label>
-              <input
-                type="text"
-                value={coaName}
-                onChange={e => setCoaName(e.target.value)}
-                placeholder="Contoh: Kas Kecil Operasional"
-                className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                Kategori Akun
-                <span className="text-[10px] font-normal text-indigo-500">(Otomatis Terisi)</span>
-              </label>
-              <select
-                value={coaType}
-                onChange={e => handleTypeSelectChange(e.target.value as AccountType)}
-                disabled={!!coaParentId}
-                className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 disabled:opacity-75 disabled:bg-slate-100 dark:disabled:bg-slate-800/80 font-semibold"
-              >
-                <option value="ASSET">Aset (Harta)</option>
-                <option value="LIABILITY">Kewajiban (Hutang)</option>
-                <option value="EQUITY">Ekuitas (Modal)</option>
-                <option value="REVENUE">Pendapatan Usaha</option>
-                <option value="COGS">Harga Pokok Penjualan (HPP)</option>
-                <option value="EXPENSE">Beban Operasional</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                Saldo Normal
-                <span className="text-[10px] font-normal text-indigo-500">(Otomatis Sesuai Aturan)</span>
-              </label>
-              <select
-                value={coaNormalBalance}
-                onChange={e => setCoaNormalBalance(e.target.value as AccountNormalBalance)}
-                disabled={!!coaParentId}
-                className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500 disabled:opacity-75 disabled:bg-slate-100 dark:disabled:bg-slate-800/80 font-semibold"
-              >
-                <option value="DEBIT">Debit</option>
-                <option value="CREDIT">Kredit</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-2.5 text-[11px] text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60">
-            💡 <strong>Sistem Otomatis:</strong> Kategori dan Saldo Normal ({coaNormalBalance}) disesuaikan secara akurat berdasarkan standar akuntansi. Pengguna tidak perlu membingungkan debit atau kredit.
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Deskripsi (Opsional)</label>
-            <input
-              type="text"
-              value={coaDescription}
-              onChange={e => setCoaDescription(e.target.value)}
-              placeholder="Catatan tambahan fungsi akun..."
-              className="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          {coaError && (
-            <div className="p-2.5 rounded-lg bg-red-50 text-red-600 text-xs font-medium border border-red-100 dark:bg-red-900/20 dark:border-red-900/30">
-              {coaError}
-            </div>
-          )}
-        </form>
       </Modal>
 
       {/* ── Modal: Manual Journal ── */}

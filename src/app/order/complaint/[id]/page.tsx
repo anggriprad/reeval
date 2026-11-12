@@ -11,9 +11,13 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { cn, formatDateTime, formatVariantLabel, getComplaintStatusLabel } from '@/lib/utils';
-import { ComplaintAttachment, SalesOrder, OrderComplaint, WorkOrder, ReturnedGood } from '@/lib/types';
+import { ComplaintAttachment, SalesOrder, OrderComplaint, WorkOrder, ReturnedGood, BankAccount } from '@/lib/types';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
+import {
+  bankAccountService,
+  mapBankAccountOptionToBankAccount,
+} from '@/services/bank-account.service';
 import { orderService, mapOrderResponseToSalesOrder, mapComplaintResponseToOrderComplaint } from '@/services/order.service';
 import { finishedGoodService, FinishedGoodItem } from '@/services/finished-good.service';
 import { workOrderService, mapWorkOrderResponseToWorkOrder } from '@/services/work-order.service';
@@ -85,9 +89,25 @@ export default function ComplaintDetailPage() {
   const {
     products,
     invoices,
-    bankAccounts,
     finishedGoods: contextFinishedGoods,
   } = useApp();
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    bankAccountService
+      .getOptions()
+      .then((res) => {
+        if (!isMounted || !Array.isArray(res.data)) return;
+        setBankAccounts(res.data.map(mapBankAccountOptionToBankAccount));
+      })
+      .catch(() => {
+        // Fallback to context bankAccounts when offline
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const { can } = usePermission();
   const canRespondComplaint = can(PERMISSIONS.COMPLAINT.RESPONS);
 

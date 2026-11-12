@@ -12,7 +12,11 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
 import { formatCurrency } from '@/lib/utils';
-import { resolveAuthorName } from '@/lib/types';
+import { resolveAuthorName, type BankAccount } from '@/lib/types';
+import {
+  bankAccountService,
+  mapBankAccountOptionToBankAccount,
+} from '@/services/bank-account.service';
 import {
   companyAssetService,
   CompanyAssetItem,
@@ -51,7 +55,24 @@ export function AssetTableSection({
   const router = useRouter();
   const { toast, confirm } = useToast();
   const { can } = usePermission();
-  const { currentUser, bankAccounts = [] } = useApp();
+  const { currentUser } = useApp();
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    bankAccountService
+      .getOptions()
+      .then((res) => {
+        if (!isMounted || !Array.isArray(res.data)) return;
+        setBankAccounts(res.data.map(mapBankAccountOptionToBankAccount));
+      })
+      .catch(() => {
+        // Fallback to context bankAccounts when offline
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // UAC / PBAC Permissions (Pure PBAC 1-to-1)
   const canUpdate = can(PERMISSIONS.INVENTORY.ASSET_UPDATE);

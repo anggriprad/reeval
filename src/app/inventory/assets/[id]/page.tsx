@@ -17,9 +17,13 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { resolveAuthorName } from '@/lib/types';
+import { resolveAuthorName, type BankAccount } from '@/lib/types';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
+import {
+  bankAccountService,
+  mapBankAccountOptionToBankAccount,
+} from '@/services/bank-account.service';
 import {
   companyAssetService,
   CompanyAssetDetail,
@@ -48,8 +52,8 @@ export default function AssetDetailPage() {
 
   const {
     currentUser,
-    bankAccounts = [],
   } = useApp();
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   const canUpdate = can(PERMISSIONS.INVENTORY.ASSET_UPDATE);
   const canService = can(PERMISSIONS.INVENTORY.ASSET_SERVICE);
@@ -116,6 +120,20 @@ export default function AssetDetailPage() {
       .catch((err) => {
         console.error('Failed to load asset categories:', err);
       });
+
+    let isMounted = true;
+    bankAccountService
+      .getOptions()
+      .then((res) => {
+        if (!isMounted || !Array.isArray(res.data)) return;
+        setBankAccounts(res.data.map(mapBankAccountOptionToBankAccount));
+      })
+      .catch(() => {
+        // Fallback to context bankAccounts when offline
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   if (isLoading) {

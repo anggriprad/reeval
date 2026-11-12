@@ -12,6 +12,11 @@ import { useToast } from '@/context/ToastContext';
 import { useApp } from '@/context/AppContext';
 import { formatCurrency } from '@/lib/utils';
 import { canViewFinance } from '@/lib/roles';
+import type { BankAccount } from '@/lib/types';
+import {
+  bankAccountService,
+  mapBankAccountOptionToBankAccount,
+} from '@/services/bank-account.service';
 import {
   procurementService,
   CreateProcurementRequest,
@@ -60,7 +65,8 @@ export function ProcurementModal({
   onSuccess,
 }: ProcurementModalProps) {
   const { toast } = useToast();
-  const { bankAccounts = [], materials = [], currentUser } = useApp();
+  const { materials = [], currentUser } = useApp();
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   const canShowBankBalance = canViewFinance(currentUser.role);
   const isExecuteDraftMode = Boolean(draftPO);
@@ -103,11 +109,32 @@ export function ProcurementModal({
     }
   }, []);
 
+  const fetchBankAccountOptions = useCallback(async () => {
+    try {
+      const res = await bankAccountService.getOptions();
+      if (Array.isArray(res.data)) {
+        const mapped = res.data.map(mapBankAccountOptionToBankAccount);
+        setBankAccounts(mapped);
+        setSelectedBankAccountId((prev) =>
+          prev && mapped.some((b) => String(b.id) === prev)
+            ? prev
+            : mapped[0]?.id
+              ? String(mapped[0].id)
+              : ''
+        );
+      }
+    } catch (err: unknown) {
+      console.error('Failed to fetch bank account options:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchMaterialOptions();
-      setSelectedBankAccountId(bankAccounts[0]?.id ? String(bankAccounts[0].id) : '');
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchBankAccountOptions();
+      setSelectedBankAccountId('');
       setSelectedMatId('');
       setSelectedQty('');
       setErrorMsg('');
@@ -139,7 +166,7 @@ export function ProcurementModal({
         setShowAddItemRow(!preselectedMaterialId);
       }
     }
-  }, [isOpen, fetchMaterialOptions, bankAccounts, draftPO, preselectedMaterialId, materials]);
+  }, [isOpen, fetchMaterialOptions, fetchBankAccountOptions, draftPO, preselectedMaterialId, materials]);
 
   // Pre-fill ketika preselectedMaterialId diberikan pada mode Create
   useEffect(() => {

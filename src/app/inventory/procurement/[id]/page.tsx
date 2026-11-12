@@ -25,7 +25,11 @@ import {
   PurchaseOrderStatusHistoryResponse,
 } from '@/services/procurement.service';
 import { ProcurementModal, ReceiveGoodsModal, CancelPOModal } from '../../components';
-import type { PurchaseOrder, POStatus } from '@/lib/types';
+import type { PurchaseOrder, POStatus, BankAccount } from '@/lib/types';
+import {
+  bankAccountService,
+  mapBankAccountOptionToBankAccount,
+} from '@/services/bank-account.service';
 import {
   Check,
   XCircle,
@@ -50,8 +54,24 @@ export default function ProcurementDetailPage() {
     cancelPO,
     cancelRemainingPO,
     receivePO,
-    bankAccounts = [],
   } = useApp();
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    bankAccountService
+      .getOptions()
+      .then((res) => {
+        if (!isMounted || !Array.isArray(res.data)) return;
+        setBankAccounts(res.data.map(mapBankAccountOptionToBankAccount));
+      })
+      .catch(() => {
+        // Fallback to context bankAccounts when offline
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const canExecuteCommercial = can(PERMISSIONS.PURCHASING.ORDER);
   const canReceivePhysical = can(PERMISSIONS.PURCHASING.RECEIVE);

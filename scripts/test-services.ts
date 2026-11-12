@@ -26,6 +26,8 @@ import { finishedGoodService } from '../src/services/finished-good.service';
 import { companyAssetService } from '../src/services/company-asset.service';
 import { returnedGoodService, mapReturnedGoodResponseToReturnedGood } from '../src/services/returned-good.service';
 import { inventoryService } from '../src/services/inventory.service';
+import { coaService, mapCoaResponseToAccountCode } from '../src/services/coa.service';
+import { bankAccountService, mapBankAccountResponseToBankAccount, mapBankAccountOptionToBankAccount } from '../src/services/bank-account.service';
 import { mapQueueResponseToOrderGroup, buildTripGroups } from '../src/app/delivery/components/types';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
@@ -1121,7 +1123,7 @@ async function runTests() {
 
     // Super Admin wildcard
     assert(hasPermission(['*'], 'sales:read'), 'Wildcard * grants sales:read');
-    assert(hasPermission(['*'], 'finance:post'), 'Wildcard * grants finance:post');
+    assert(hasPermission(['*'], 'finance:closing'), 'Wildcard * grants finance:closing');
     assert(hasPermission([], 'sales:read', true), 'isSuperAdmin=true grants permission even if array empty');
 
     // Granular permissions
@@ -1133,7 +1135,7 @@ async function runTests() {
 
     // Any & All
     assert(hasAnyPermission(salesPerms, ['sales:read', 'finance:read']), 'hasAnyPermission should return true');
-    assert(!hasAnyPermission(salesPerms, ['finance:read', 'finance:post']), 'hasAnyPermission should return false');
+    assert(!hasAnyPermission(salesPerms, ['finance:read', 'finance:closing']), 'hasAnyPermission should return false');
     assert(hasAllPermissions(salesPerms, ['sales:read', 'sales:create']), 'hasAllPermissions should return true');
     assert(!hasAllPermissions(salesPerms, ['sales:read', 'sales:delete']), 'hasAllPermissions should return false');
 
@@ -1314,6 +1316,107 @@ async function runTests() {
 
     console.log('✓ Audit author (created_by) resolution and fallback verified');
   }
+
+  // 4z. Verify coaService contract, mapper, audit resolution & PBAC mapping
+  console.log('4z. Checking coaService contract, mapper & PBAC mapping...');
+  assert(typeof coaService.getAccounts === 'function', 'coaService.getAccounts must be a function');
+  assert(typeof coaService.getOptions === 'function', 'coaService.getOptions must be a function');
+  assert(typeof coaService.getById === 'function', 'coaService.getById must be a function');
+  assert(typeof coaService.createAccount === 'function', 'coaService.createAccount must be a function');
+  assert(typeof coaService.updateAccount === 'function', 'coaService.updateAccount must be a function');
+  assert(typeof coaService.deleteAccount === 'function', 'coaService.deleteAccount must be a function');
+
+  const mappedCoa = mapCoaResponseToAccountCode({
+    id: 33,
+    company_id: 1,
+    code: '1-1500',
+    name: 'Kas Kecil Produksi',
+    type: 'ASSET',
+    normal_balance: 'DEBIT',
+    parent_id: 2,
+    parent_code: '1-1000',
+    parent_name: 'Aset Lancar',
+    is_header: false,
+    level: 3,
+    description: 'Dana operasional produksi',
+    is_system: false,
+    is_active: true,
+    has_children: false,
+    can_delete: true,
+    created_by_id: 7,
+    created_by: 'Snapshot Finance',
+    created_by_user: { id: 7, full_name: 'Rina Finance', email: 'rina@test.id' },
+    updated_by_id: 8,
+    updated_by: 'Admin Finance',
+  });
+  assert(mappedCoa.id === '33', 'mappedCoa.id must be string "33"');
+  assert(mappedCoa.parentId === '2', 'mappedCoa.parentId must be string "2"');
+  assert(mappedCoa.code === '1-1500', 'mappedCoa.code must match');
+  assert(mappedCoa.normalBalance === 'DEBIT', 'mappedCoa.normalBalance must match');
+  assert(mappedCoa.isHeader === false && mappedCoa.isSystem === false, 'mappedCoa flags must match');
+  assert(resolveAuthorName(mappedCoa) === 'Rina Finance', 'mappedCoa must resolve createdByUser.full_name');
+  assert(PERMISSIONS.FINANCE.READ === 'finance:read', 'FINANCE.READ must be finance:read');
+  assert(PERMISSIONS.FINANCE.COA_READ === 'coa:read', 'FINANCE.COA_READ must be coa:read');
+  assert(PERMISSIONS.FINANCE.COA_CREATE === 'coa:create', 'FINANCE.COA_CREATE must be coa:create');
+  assert(PERMISSIONS.FINANCE.COA_UPDATE === 'coa:update', 'FINANCE.COA_UPDATE must be coa:update');
+  assert(PERMISSIONS.FINANCE.COA_DELETE === 'coa:delete', 'FINANCE.COA_DELETE must be coa:delete');
+  assert(canViewFinance('FINANCE') === true && canViewFinance('ADMIN') === true && canViewFinance('ADMIN_FINANCE') === true, 'canViewFinance role fallback must allow FINANCE/ADMIN');
+  assert(canViewFinance('VIEWER') === false && canViewFinance('SALES') === false, 'canViewFinance role fallback must deny VIEWER/SALES');
+  console.log('✓ coaService contract, mapper, audit & PBAC verified');
+
+  // 4aa. Verify bankAccountService contract, mappers, audit resolution & PBAC mapping
+  console.log('4aa. Checking bankAccountService contract, mappers & PBAC mapping...');
+  assert(typeof bankAccountService.getAccounts === 'function', 'bankAccountService.getAccounts must be a function');
+  assert(typeof bankAccountService.getOptions === 'function', 'bankAccountService.getOptions must be a function');
+  assert(typeof bankAccountService.getById === 'function', 'bankAccountService.getById must be a function');
+  assert(typeof bankAccountService.createAccount === 'function', 'bankAccountService.createAccount must be a function');
+  assert(typeof bankAccountService.updateAccount === 'function', 'bankAccountService.updateAccount must be a function');
+  assert(typeof bankAccountService.deleteAccount === 'function', 'bankAccountService.deleteAccount must be a function');
+
+  const mappedBank = mapBankAccountResponseToBankAccount({
+    id: 12,
+    company_id: 1,
+    name: 'Bank BCA Operasional',
+    account_number: '1234567890',
+    initial_balance: 5000000,
+    balance: 5250000,
+    description: 'Rekening utama operasional',
+    is_active: true,
+    has_transactions: false,
+    can_delete: true,
+    created_by_id: 7,
+    created_by: 'Snapshot Finance',
+    created_by_user: { id: 7, full_name: 'Rina Finance', email: 'rina@test.id' },
+  });
+  assert(mappedBank.id === '12', 'mappedBank.id must be string "12"');
+  assert(mappedBank.name === 'Bank BCA Operasional', 'mappedBank.name must match');
+  assert(mappedBank.accountNumber === '1234567890', 'mappedBank.accountNumber must match');
+  assert(mappedBank.initialBalance === 5000000 && mappedBank.balance === 5250000, 'mappedBank balances must match');
+  assert(mappedBank.canDelete === true && mappedBank.hasTransactions === false, 'mappedBank delete flags must match');
+  assert(resolveAuthorName(mappedBank) === 'Rina Finance', 'mappedBank must resolve createdByUser.full_name');
+
+  const mappedBankOption = mapBankAccountOptionToBankAccount({
+    id: 15,
+    name: 'Kas Kecil',
+    account_number: '',
+    balance: 1500000,
+  });
+  assert(mappedBankOption.id === '15', 'mappedBankOption.id must be string "15"');
+  assert(mappedBankOption.accountNumber === undefined, 'empty account_number must map to undefined');
+  assert(mappedBankOption.balance === 1500000, 'mappedBankOption.balance must match');
+
+  assert(PERMISSIONS.FINANCE.BANK_READ === 'bank-account:read', 'FINANCE.BANK_READ must be bank-account:read');
+  assert(PERMISSIONS.FINANCE.BANK_CREATE === 'bank-account:create', 'FINANCE.BANK_CREATE must be bank-account:create');
+  assert(PERMISSIONS.FINANCE.BANK_UPDATE === 'bank-account:update', 'FINANCE.BANK_UPDATE must be bank-account:update');
+  assert(PERMISSIONS.FINANCE.BANK_DELETE === 'bank-account:delete', 'FINANCE.BANK_DELETE must be bank-account:delete');
+  assert(PERMISSIONS.FINANCE.CASH_TX_CREATE === 'cash-transaction:create', 'FINANCE.CASH_TX_CREATE must be cash-transaction:create');
+  assert(PERMISSIONS.FINANCE.CASH_TRANSFER_CREATE === 'cash-transfer:create', 'FINANCE.CASH_TRANSFER_CREATE must be cash-transfer:create');
+  assert(PERMISSIONS.FINANCE.DIVIDEND === 'finance:dividend', 'FINANCE.DIVIDEND must be finance:dividend');
+  assert(PERMISSIONS.FINANCE.PAYMENT_AR === 'finance-payment:ar', 'FINANCE.PAYMENT_AR must be finance-payment:ar');
+  assert(PERMISSIONS.FINANCE.PAYMENT_AP === 'finance-payment:ap', 'FINANCE.PAYMENT_AP must be finance-payment:ap');
+  assert(PERMISSIONS.FINANCE.JOURNAL_CREATE === 'journal:create', 'FINANCE.JOURNAL_CREATE must be journal:create');
+  assert(PERMISSIONS.FINANCE.CLOSING === 'finance:closing', 'FINANCE.CLOSING must be finance:closing');
+  console.log('✓ bankAccountService contract, mappers, audit & PBAC verified');
 
   console.log('\nALL EXTENDED SERVICE, PROXY & RESILIENCE TESTS PASSED (100% GREEN)!');
 }

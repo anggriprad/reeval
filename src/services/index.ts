@@ -25,4 +25,6 @@ export * from "./finished-good.service";
 export * from "./company-asset.service";
 export * from "./returned-good.service";
 export * from "./inventory.service";
+export * from "./coa.service";
+export * from "./bank-account.service";
 

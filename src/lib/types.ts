@@ -856,10 +856,23 @@ export interface AccountCode {
   type: AccountType;
   normalBalance: AccountNormalBalance;
   parentId?: string;      // for tree hierarchy
+  parentCode?: string;
+  parentName?: string;
   isHeader: boolean;      // true = group header, false = postable
   level: number;          // nesting depth (1, 2, 3)
   description?: string;
   isSystem?: boolean;     // true = core default system account, protected from deletion
+  isActive?: boolean;
+  hasChildren?: boolean;
+  canDelete?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdById?: number | null;
+  createdBy?: string;
+  createdByUser?: AuditUserOption | null;
+  updatedById?: number | null;
+  updatedBy?: string;
+  updatedByUser?: AuditUserOption | null;
 }
 
 export interface JournalEntryLine {
@@ -945,7 +958,20 @@ export interface BankAccount {
   id: string;
   name: string;
   accountNumber?: string;
+  initialBalance?: number;
   balance: number;
+  description?: string;
+  isActive?: boolean;
+  hasTransactions?: boolean;
+  canDelete?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdById?: number | null;
+  createdBy?: string;
+  createdByUser?: AuditUserOption | null;
+  updatedById?: number | null;
+  updatedBy?: string;
+  updatedByUser?: AuditUserOption | null;
 }
 
 export type ExpenseCategory = 'GAJI' | 'LISTRIK_AIR' | 'SEWA' | 'TRANSPORT' | 'ATK' | 'ASET' | 'LAINNYA';
