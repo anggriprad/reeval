@@ -52,7 +52,7 @@ export function ProcurementSection({
   const router = useRouter();
   const { toast, confirm } = useToast();
   const { can, isSuperAdmin, canSeePurchasingCosts } = usePermission();
-  const { currentUser, purchaseOrders = [], materials = [] } = useApp();
+  const { currentUser } = useApp();
 
   // Fase 1 (Request), Fase 2 (Eksekusi Komersial), Fase 3 (Penerimaan Fisik) — Pure PBAC 1-to-1
   const canRequest = can(PERMISSIONS.PURCHASING.CREATE);
@@ -98,16 +98,7 @@ export function ProcurementSection({
       });
 
       if (res.data) {
-        const synced = res.data.map((p) => {
-          const appPO = purchaseOrders.find(
-            (ap) => ap.id === String(p.id) || ap.poNumber === p.po_number
-          );
-          if (appPO && appPO.status === 'PARTIALLY_RECEIVED') {
-            return { ...p, status: 'PARTIALLY_RECEIVED' };
-          }
-          return p;
-        });
-        setProcurements(synced);
+        setProcurements(res.data);
         if (res.meta) {
           setTotalPOs(res.meta.total);
           setTotalPages(res.meta.total_pages || 1);
@@ -122,7 +113,7 @@ export function ProcurementSection({
     } finally {
       setIsLoading(false);
     }
-  }, [filters.page, filters.per_page, filters.status, filters.created_by_id, debouncedSearch, purchaseOrders, toast]);
+  }, [filters.page, filters.per_page, filters.status, filters.created_by_id, debouncedSearch, toast]);
 
   useEffect(() => {
     fetchProcurements();
@@ -329,13 +320,8 @@ export function ProcurementSection({
             po.total_amount > 0
               ? po.total_amount
               : (po.items || []).reduce((sum, it) => {
-                const mat = materials.find(
-                  (m) => String(m.id) === String(it.material_id)
-                );
-                const cost =
-                  it.unit_cost > 0 ? it.unit_cost : mat?.unitCost || 0;
-                return sum + it.qty * cost;
-              }, 0) + (po.additional_cost || 0);
+                  return sum + it.qty * (it.unit_cost || 0);
+                }, 0) + (po.additional_cost || 0);
 
           return (
             <span className="font-mono text-slate-700 dark:text-slate-300">
@@ -373,7 +359,7 @@ export function ProcurementSection({
     }
 
     return cols;
-  }, [procurements, getRowActions, canShowCosts, materials]);
+  }, [procurements, getRowActions, canShowCosts]);
 
   const sortedProcurements = useMemo(() => {
     const statusPriority: Record<string, number> = {

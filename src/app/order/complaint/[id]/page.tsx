@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { cn, formatDateTime, formatVariantLabel, getComplaintStatusLabel } from '@/lib/utils';
-import { ComplaintAttachment, SalesOrder, OrderComplaint, WorkOrder, ReturnedGood, BankAccount } from '@/lib/types';
+import { ComplaintAttachment, SalesOrder, OrderComplaint, WorkOrder, ReturnedGood, BankAccount, Invoice } from '@/lib/types';
 import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import {
@@ -23,6 +23,7 @@ import { finishedGoodService, FinishedGoodItem } from '@/services/finished-good.
 import { workOrderService, mapWorkOrderResponseToWorkOrder } from '@/services/work-order.service';
 import { deliveryService, DeliveryOrder } from '@/services/delivery.service';
 import { returnedGoodService, mapReturnedGoodResponseToReturnedGood } from '@/services/returned-good.service';
+import { invoiceService, mapInvoiceDTOToInvoice } from '@/services/invoice.service';
 import { RejectComplaintModal } from './components/RejectComplaintModal';
 import { ManualResolveComplaintModal } from './components/ManualResolveComplaintModal';
 import { RefundComplaintModal } from './components/RefundComplaintModal';
@@ -132,6 +133,7 @@ export default function ComplaintDetailPage() {
 
   const [liveComplaint, setLiveComplaint] = useState<OrderComplaint | null>(null);
   const [liveOrder, setLiveOrder] = useState<SalesOrder | null>(null);
+  const [liveInvoice, setLiveInvoice] = useState<Invoice | null>(null);
   const [apiFinishedGoods, setApiFinishedGoods] = useState<FinishedGoodItem[]>([]);
   const [linkedWorkOrder, setLinkedWorkOrder] = useState<WorkOrder | null>(null);
   const [linkedDeliveryOrder, setLinkedDeliveryOrder] = useState<DeliveryOrder | null>(null);
@@ -157,6 +159,19 @@ export default function ComplaintDetailPage() {
           } catch {
             // fallback to constructed order from complaint
           }
+
+          try {
+            const invRes = await invoiceService.getInvoiceByOrderId(mappedComplaint.orderId);
+            if (invRes.success && invRes.data) {
+              setLiveInvoice(mapInvoiceDTOToInvoice(invRes.data));
+            } else {
+              setLiveInvoice(null);
+            }
+          } catch {
+            setLiveInvoice(null);
+          }
+        } else {
+          setLiveInvoice(null);
         }
 
         try {
@@ -296,7 +311,7 @@ export default function ComplaintDetailPage() {
     );
   }
 
-  const invoice = invoices.find(inv => inv.salesOrderId === order.id || inv.salesOrderNumber === order.orderNumber);
+  const invoice = liveInvoice || invoices.find(inv => inv.salesOrderId === order.id || inv.salesOrderNumber === order.orderNumber);
 
   const refundAmount = complaint.refundAmount && complaint.refundAmount > 0
     ? complaint.refundAmount

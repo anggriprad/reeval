@@ -15,6 +15,9 @@ export interface BankAccountDTO extends ApiAuditFields {
   account_number?: string;
   initial_balance: number;
   balance: number;
+  coa_account_id?: number;
+  coa_account_code?: string;
+  coa_account_name?: string;
   description?: string;
   is_active: boolean;
   has_transactions?: boolean;
@@ -41,6 +44,7 @@ export interface CreateBankAccountPayload {
   name: string;
   account_number?: string;
   initial_balance: number;
+  coa_account_id?: number;
   description?: string;
 }
 
@@ -59,6 +63,9 @@ export function mapBankAccountResponseToBankAccount(
     accountNumber: dto.account_number || undefined,
     initialBalance: dto.initial_balance,
     balance: dto.balance,
+    coaAccountId: dto.coa_account_id ? String(dto.coa_account_id) : undefined,
+    coaAccountCode: dto.coa_account_code || undefined,
+    coaAccountName: dto.coa_account_name || undefined,
     description: dto.description || undefined,
     isActive: dto.is_active,
     hasTransactions: dto.has_transactions,

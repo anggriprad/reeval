@@ -51,7 +51,7 @@ export function StockMovementSection({
 }: StockMovementSectionProps) {
   const { toast } = useToast();
   const { can } = usePermission();
-  const { currentUser, purchaseOrders = [] } = useApp();
+  const { currentUser } = useApp();
 
   const canAdjust = can(PERMISSIONS.INVENTORY.ADJUST) || canManageInventory(currentUser.role);
 
@@ -194,17 +194,8 @@ export function StockMovementSection({
           const poMatch = mv.reference?.match(/PO-\d{4}-\d+/i);
           const poNumber = poMatch ? poMatch[0] : null;
 
-          const matchedPO = purchaseOrders.find(
-            (po) =>
-              po.poNumber === mv.reference ||
-              mv.reference.startsWith(`${po.poNumber} `) ||
-              po.id === mv.reference ||
-              (poNumber && po.poNumber === poNumber)
-          );
-
           const targetId =
             mv.reference_id ||
-            matchedPO?.id ||
             (poNumber ? procurementLookup[poNumber] : null) ||
             (mv.reference_type === 'PO' && poNumber ? poNumber : null);
 
@@ -273,7 +264,7 @@ export function StockMovementSection({
       //   },
       // },
     ],
-    [purchaseOrders, procurementLookup]
+    [procurementLookup]
   );
 
   return (

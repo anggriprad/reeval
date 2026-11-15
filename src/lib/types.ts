@@ -876,11 +876,13 @@ export interface AccountCode {
 }
 
 export interface JournalEntryLine {
+  id?: string;
   accountId: string;      // reference to AccountCode.id or code
   accountCode: string;    // denormalized for display (e.g. "1-1100")
   accountName: string;    // denormalized for display (e.g. "Kas & Bank")
   debit: number;
   credit: number;
+  description?: string;
 }
 
 export type JournalSourceType =
@@ -900,15 +902,71 @@ export type JournalSourceType =
   | 'DIVIDEND'
   | 'REFUND';
 
+export type JournalEntryStatus = 'POSTED' | 'VOID';
+
 export interface JournalEntry {
   id: string;
-  entryNumber: string;    // e.g. "JE-2026-001"
+  entryNumber: string;    // e.g. "JE-2026-0001"
   date: string;           // ISO date string
   description: string;
   lines: JournalEntryLine[];
   sourceType: JournalSourceType;
   sourceId?: string;      // ID of originating doc (invoice, PO, expense, etc.)
+  status?: JournalEntryStatus;
+  voidReason?: string;
+  totalDebit?: number;
+  totalCredit?: number;
   createdAt: string;
+  updatedAt?: string;
+  createdById?: number | null;
+  createdBy?: string;
+  createdByUser?: AuditUserOption | null;
+}
+
+export interface LedgerAccountRow {
+  id: string;
+  accountId: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  normalBalance: AccountNormalBalance;
+  isHeader: boolean;
+  level: number;
+  parentId?: string;
+  totalDebit: number;
+  totalCredit: number;
+  endingBalance: number;
+  entryCount: number;
+}
+
+export interface LedgerTrialBalance {
+  items: LedgerAccountRow[];
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+}
+
+export interface LedgerMutationItem {
+  id: string;
+  journalId: string;
+  entryNumber: string;
+  date: string;
+  description: string;
+  sourceType: JournalSourceType;
+  sourceId?: string;
+  contraAccount: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+}
+
+export interface LedgerMutations {
+  account: LedgerAccountRow;
+  openingBalance: number;
+  closingBalance: number;
+  totalDebit: number;
+  totalCredit: number;
+  mutations: LedgerMutationItem[];
 }
 
 // --- App State ---
@@ -960,6 +1018,9 @@ export interface BankAccount {
   accountNumber?: string;
   initialBalance?: number;
   balance: number;
+  coaAccountId?: string;
+  coaAccountCode?: string;
+  coaAccountName?: string;
   description?: string;
   isActive?: boolean;
   hasTransactions?: boolean;
@@ -994,3 +1055,83 @@ export interface OtherIncome {
   bankAccountId: string;
   note?: string;
 }
+
+export interface CashMutationItem {
+  id: number;
+  mutationKey: string;
+  transactionNumber: string;
+  direction: 'INFLOW' | 'OUTFLOW';
+  type: 'INFLOW' | 'OUTFLOW' | 'TRANSFER' | 'DIVIDEND';
+  sourceType: 'DIRECT_CASH' | 'TRANSFER' | 'DIVIDEND' | string;
+  date: string;
+  bankAccountId: number;
+  bankAccountName: string;
+  counterpartyBankId?: number | null;
+  counterpartyBankName?: string;
+  coaAccountId?: number | null;
+  coaAccountCode?: string;
+  coaAccountName?: string;
+  amount: number;
+  runningBalance: number;
+  description: string;
+  journalEntryId?: number | null;
+  journalEntryNumber?: string;
+  referenceType?: string;
+  referenceId?: string;
+  referenceNumber?: string;
+  createdAt?: string;
+  createdById?: number | null;
+  createdBy?: string;
+  createdByUser?: AuditUserOption | null;
+  updatedById?: number | null;
+  updatedBy?: string;
+  updatedByUser?: AuditUserOption | null;
+}
+
+export interface ClosingAccountPreview {
+  accountId: number;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  normalBalance: string;
+  debit: number;
+  credit: number;
+  closingAmount: number;
+}
+
+export interface ClosingPreview {
+  closingDate: string;
+  lastClosingDate?: string | null;
+  retainedEarningsBalance: number;
+  totalRevenue: number;
+  totalCOGS: number;
+  totalExpense: number;
+  netIncome: number;
+  canClose: boolean;
+  reason?: string;
+  accounts: ClosingAccountPreview[];
+}
+
+export interface ClosingPeriodRecord {
+  id: number;
+  companyId: number;
+  closingDate: string;
+  periodLabel: string;
+  journalEntryId: number;
+  entryNumber: string;
+  totalRevenue: number;
+  totalCOGS: number;
+  totalExpense: number;
+  netIncome: number;
+  notes?: string;
+  createdAt?: string;
+  createdById?: number | null;
+  createdBy?: string;
+  createdByUser?: AuditUserOption | null;
+}
+
+export interface DividendSummary {
+  retainedEarningsBalance: number;
+  lastClosingDate?: string | null;
+}
+

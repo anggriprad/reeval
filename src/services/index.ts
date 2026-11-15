@@ -27,4 +27,8 @@ export * from "./returned-good.service";
 export * from "./inventory.service";
 export * from "./coa.service";
 export * from "./bank-account.service";
+export * from "./journal.service";
+export * from "./cash-transaction.service";
+export * from "./invoice.service";
+export * from "./finance-report.service";
 

@@ -36,6 +36,7 @@ export interface PurchaseOrderStatusHistoryResponse {
   payment_status: string;
   items_snapshot?: string;
   is_posted_to_finance: boolean;
+  journal_entry_id?: number | null;
   created_at: string;
 }
 
@@ -45,6 +46,21 @@ export interface PurchaseOrderUserOption {
   email: string;
   phone?: string;
   avatar_url?: string;
+}
+
+export interface PurchaseOrderPaymentItemResponse extends ApiAuditFields {
+  id: number;
+  purchase_order_id: number;
+  amount: number;
+  method: string;
+  bank_account_id?: number | null;
+  bank_account_name?: string;
+  date: string;
+  note: string;
+  confirmed_by: string;
+  cash_transaction_id?: number | null;
+  journal_entry_id?: number | null;
+  created_at: string;
 }
 
 export interface PurchaseOrderResponse extends ApiAuditFields {
@@ -58,6 +74,8 @@ export interface PurchaseOrderResponse extends ApiAuditFields {
   status: string;
   payment_status: string;
   total_amount: number;
+  paid_amount?: number;
+  remaining_amount?: number;
   additional_cost: number;
   bank_account_id?: number | null;
   received_at?: string | null;
@@ -73,6 +91,7 @@ export interface PurchaseOrderResponse extends ApiAuditFields {
   updated_at: string;
   items: PurchaseOrderItemResponse[];
   histories?: PurchaseOrderStatusHistoryResponse[];
+  payments?: PurchaseOrderPaymentItemResponse[];
 }
 
 export interface CreateProcurementItemRequest {

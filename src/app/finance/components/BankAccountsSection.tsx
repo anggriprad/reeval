@@ -23,12 +23,16 @@ interface BankAccountsSectionProps {
   selectedBankFilter: string;
   onSelectBank: (bankId: string) => void;
   onAccountsSynced?: (accounts: BankAccount[]) => void;
+  onAccountMutated?: () => void;
+  refreshTrigger?: number;
 }
 
 export function BankAccountsSection({
   selectedBankFilter,
   onSelectBank,
   onAccountsSynced,
+  onAccountMutated,
+  refreshTrigger = 0,
 }: BankAccountsSectionProps) {
   const { toast, confirm } = useToast();
   const toastRef = useRef(toast);
@@ -98,7 +102,7 @@ export function BankAccountsSection({
 
   useEffect(() => {
     fetchAccounts();
-  }, [fetchAccounts]);
+  }, [fetchAccounts, refreshTrigger]);
 
   const totalCashBank = useMemo(
     () => accounts.reduce((sum, ba) => sum + (ba.balance || 0), 0),
@@ -135,6 +139,7 @@ export function BankAccountsSection({
         onSelectBank('ALL');
       }
       await fetchAccounts();
+      onAccountMutated?.();
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
@@ -144,6 +149,11 @@ export function BankAccountsSection({
       setDeletingId(null);
     }
   };
+
+  const handleAccountSaved = useCallback(async () => {
+    await fetchAccounts();
+    onAccountMutated?.();
+  }, [fetchAccounts, onAccountMutated]);
 
   return (
     <>
@@ -296,7 +306,7 @@ export function BankAccountsSection({
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         editingAccount={editingAccount}
-        onSaved={fetchAccounts}
+        onSaved={handleAccountSaved}
       />
     </>
   );

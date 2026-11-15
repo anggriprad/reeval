@@ -763,20 +763,9 @@ export function CreateOrderContent() {
         }
       }
     } catch (err: any) {
-      const backendError = err?.response?.data?.message || err?.message;
-      if (backendError && backendError !== 'Network Error') {
-        setFormError(backendError);
-        toast.error('Gagal Menyimpan Pesanan', backendError);
-        return;
-      }
-      console.warn('Backend order call failed, syncing local mock:', err);
-      if (editId) {
-        updateSalesOrder(editId, customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
-      } else {
-        createSalesOrder(customerObj, orderItems, finalOrderNotes, calculatedShippingCost);
-      }
-      toast.success(editId ? 'Pesanan Diperbarui' : 'Pesanan Dibuat', 'Pesanan berhasil disimpan.');
-      router.push(targetListHref);
+      const backendError = err?.response?.data?.message || err?.message || 'Gagal menghubungi server untuk menyimpan pesanan.';
+      setFormError(backendError);
+      toast.error('Gagal Menyimpan Pesanan', backendError);
     } finally {
       setIsSubmitting(false);
     }

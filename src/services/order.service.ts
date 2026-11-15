@@ -362,6 +362,9 @@ export interface OrderComplaintResponse extends ApiAuditFields {
   is_return_requested?: boolean;
   refund_amount?: number;
   refund_bank_account_id?: number | null;
+  refund_cash_transaction_id?: number | null;
+  is_posted_to_finance?: boolean;
+  journal_entry_id?: number | null;
   rejection_reason?: string;
   rejected_at?: string | null;
   rejected_by?: string;

@@ -30,6 +30,11 @@ export interface CompanyAssetItem extends ApiAuditFields {
   finance_transaction_id?: string;
   is_posted_to_finance: boolean;
   journal_entry_id?: number;
+  disposal_date?: string | null;
+  disposal_type?: string;
+  disposal_proceeds?: number;
+  disposal_bank_account_id?: number | null;
+  disposal_journal_entry_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -110,11 +115,20 @@ export interface AddAssetServiceLogPayload {
   cost: number;
   description: string;
   service_provider?: string;
+  bank_account_id?: number;
 }
 
 export interface RecordAssetDepreciationPayload {
   period_date: string;
   amount: number;
+  notes?: string;
+}
+
+export interface DisposeAssetPayload {
+  disposal_type: "SOLD" | "SCRAPPED";
+  disposal_date?: string;
+  sale_amount?: number;
+  bank_account_id?: number;
   notes?: string;
 }
 
@@ -210,6 +224,18 @@ export const companyAssetService = {
   ): Promise<ApiResponse<AssetDepreciationItem>> {
     const response = await httpPost<AssetDepreciationItem>(
       endpointUrl(`inventory/assets/${assetId}/depreciations`),
+      payload,
+      true
+    );
+    return response.data;
+  },
+
+  async disposeAsset(
+    assetId: number | string,
+    payload: DisposeAssetPayload
+  ): Promise<ApiResponse<CompanyAssetDetail>> {
+    const response = await httpPost<CompanyAssetDetail>(
+      endpointUrl(`inventory/assets/${assetId}/dispose`),
       payload,
       true
     );

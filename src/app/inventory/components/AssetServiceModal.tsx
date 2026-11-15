@@ -3,14 +3,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/Select';
 import { useToast } from '@/context/ToastContext';
-import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
+import { type BankAccount } from '@/lib/types';
+import {
+  bankAccountService,
+  mapBankAccountOptionToBankAccount,
+} from '@/services/bank-account.service';
 import {
   companyAssetService,
   CompanyAssetItem,
   AssetServiceLogItem,
 } from '@/services/company-asset.service';
-import { Plus, Trash2, AlertTriangle, Wrench } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle } from 'lucide-react';
 
 interface AssetServiceModalProps {
   isOpen: boolean;
@@ -38,7 +44,20 @@ export function AssetServiceModal({
   const [serviceDesc, setServiceDesc] = useState('');
   const [serviceCost, setServiceCost] = useState<number | ''>('');
   const [serviceProvider, setServiceProvider] = useState('');
+  const [serviceBankAccountId, setServiceBankAccountId] = useState('AP');
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const fetchBankOptions = useCallback(async () => {
+    try {
+      const res = await bankAccountService.getOptions();
+      if (Array.isArray(res.data)) {
+        setBankAccounts(res.data.map(mapBankAccountOptionToBankAccount));
+      }
+    } catch (err) {
+      console.error('Failed to load bank account options:', err);
+    }
+  }, []);
 
   const fetchServiceLogs = useCallback(async () => {
     if (!asset) return;
@@ -62,6 +81,7 @@ export function AssetServiceModal({
       setServiceDesc('');
       setServiceCost('');
       setServiceProvider('');
+      setServiceBankAccountId('AP');
       setErrorMessage('');
       return;
     }
@@ -70,9 +90,11 @@ export function AssetServiceModal({
     setServiceDesc('');
     setServiceCost('');
     setServiceProvider('');
+    setServiceBankAccountId('AP');
     setErrorMessage('');
     fetchServiceLogs();
-  }, [isOpen, asset, fetchServiceLogs]);
+    fetchBankOptions();
+  }, [isOpen, asset, fetchServiceLogs, fetchBankOptions]);
 
   const handleAddService = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +122,10 @@ export function AssetServiceModal({
         description: serviceDesc.trim(),
         cost: Number(serviceCost),
         service_provider: serviceProvider.trim() || undefined,
+        bank_account_id:
+          serviceBankAccountId && serviceBankAccountId !== 'AP'
+            ? Number(serviceBankAccountId)
+            : undefined,
       });
 
       if (res.success) {
@@ -107,7 +133,8 @@ export function AssetServiceModal({
         setServiceDesc('');
         setServiceCost('');
         setServiceProvider('');
-        await fetchServiceLogs();
+        setServiceBankAccountId('AP');
+        await Promise.all([fetchServiceLogs(), fetchBankOptions()]);
         onSuccess();
       } else {
         setErrorMessage(res.message || 'Gagal mencatat pemeliharaan aset.');
@@ -136,7 +163,7 @@ export function AssetServiceModal({
         const res = await companyAssetService.deleteServiceLog(asset.id, serviceId);
         if (res.success) {
           toast.success('Catatan Dihapus', 'Riwayat servis aset berhasil dihapus.');
-          await fetchServiceLogs();
+          await Promise.all([fetchServiceLogs(), fetchBankOptions()]);
           onSuccess();
         } else {
           toast.error('Gagal Menghapus', res.message || 'Riwayat servis tidak dapat dihapus.');
@@ -239,6 +266,35 @@ export function AssetServiceModal({
                   disabled={isSubmitting}
                 />
               </div>
+            </div>
+            <div className="mt-2.5 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  Teknisi / Vendor (Opsional)
+                </label>
+                <input
+                  type="text"
+                  value={serviceProvider}
+                  onChange={(e) => setServiceProvider(e.target.value)}
+                  placeholder="Contoh: PT Servis Mesin Presisi"
+                  className="w-full h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <Select
+                inputSize="sm"
+                label="Sumber Pembayaran (Kas/Bank)"
+                value={serviceBankAccountId}
+                onChange={(e) => setServiceBankAccountId(e.target.value)}
+                disabled={isSubmitting}
+                options={[
+                  { value: 'AP', label: 'Catat sebagai Hutang Usaha (AP)' },
+                  ...bankAccounts.map((b) => ({
+                    value: b.id,
+                    label: `${b.name}${b.balance !== undefined ? ` (${formatCurrency(b.balance)})` : ''}`,
+                  })),
+                ]}
+              />
             </div>
             <div className="mt-3 flex justify-end">
               <Button type="submit" size="sm" isLoading={isSubmitting} disabled={isSubmitting}>

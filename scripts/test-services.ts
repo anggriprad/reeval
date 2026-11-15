@@ -28,6 +28,29 @@ import { returnedGoodService, mapReturnedGoodResponseToReturnedGood } from '../s
 import { inventoryService } from '../src/services/inventory.service';
 import { coaService, mapCoaResponseToAccountCode } from '../src/services/coa.service';
 import { bankAccountService, mapBankAccountResponseToBankAccount, mapBankAccountOptionToBankAccount } from '../src/services/bank-account.service';
+import {
+  journalService,
+  mapJournalEntryDTOToJournalEntry,
+  mapLedgerTrialBalanceDTO,
+  mapLedgerMutationsDTO,
+  mapClosingPreviewDTO,
+  mapClosingPeriodDTO,
+} from '../src/services/journal.service';
+import {
+  cashTransactionService,
+  mapCashMutationDTO,
+  mapDividendSummaryDTO,
+} from '../src/services/cash-transaction.service';
+import {
+  invoiceService,
+  mapInvoiceDTOToInvoice,
+  mapAPPurchaseOrderDTO,
+} from '../src/services/invoice.service';
+import {
+  financeReportService,
+  mapHPPAnalysisItemDTO,
+} from '../src/services/finance-report.service';
+import { mapExpenseCategoryToCoa } from '../src/lib/accounting';
 import { mapQueueResponseToOrderGroup, buildTripGroups } from '../src/app/delivery/components/types';
 import axiosInstance from '../src/helpers/axios';
 import { proxy } from '../src/proxy';
@@ -1417,6 +1440,347 @@ async function runTests() {
   assert(PERMISSIONS.FINANCE.JOURNAL_CREATE === 'journal:create', 'FINANCE.JOURNAL_CREATE must be journal:create');
   assert(PERMISSIONS.FINANCE.CLOSING === 'finance:closing', 'FINANCE.CLOSING must be finance:closing');
   console.log('✓ bankAccountService contract, mappers, audit & PBAC verified');
+
+  // --- Journal & General Ledger Service Contract + Mapper Verification ---
+  assert(typeof journalService.getJournals === 'function', 'journalService.getJournals must exist');
+  assert(typeof journalService.getJournalById === 'function', 'journalService.getJournalById must exist');
+  assert(typeof journalService.getLedger === 'function', 'journalService.getLedger must exist');
+  assert(typeof journalService.getLedgerMutations === 'function', 'journalService.getLedgerMutations must exist');
+
+  const mappedBankWithCoa = mapBankAccountResponseToBankAccount({
+    id: 21,
+    company_id: 1,
+    name: 'Bank Mandiri',
+    account_number: '133009988',
+    initial_balance: 15000000,
+    balance: 15000000,
+    coa_account_id: 4,
+    coa_account_code: '1-1100',
+    coa_account_name: 'Kas & Bank',
+    is_active: true,
+    has_transactions: false,
+    can_delete: true,
+  });
+  assert(mappedBankWithCoa.coaAccountId === '4', 'mappedBankWithCoa.coaAccountId must map to "4"');
+  assert(mappedBankWithCoa.coaAccountCode === '1-1100', 'mappedBankWithCoa.coaAccountCode must match');
+
+  const mappedJournal = mapJournalEntryDTOToJournalEntry({
+    id: 101,
+    company_id: 1,
+    entry_number: 'JE-2026-0001',
+    date: '2026-11-13T07:00:00Z',
+    description: 'Saldo Awal Rekening Bank Mandiri',
+    source_type: 'OPENING_BALANCE',
+    source_id: '21',
+    status: 'POSTED',
+    total_debit: 15000000,
+    total_credit: 15000000,
+    lines: [
+      { id: 1, account_id: 4, account_code: '1-1100', account_name: 'Kas & Bank', debit: 15000000, credit: 0 },
+      { id: 2, account_id: 16, account_code: '3-1000', account_name: 'Modal Disetor', debit: 0, credit: 15000000 },
+    ],
+    created_at: '2026-11-13T07:00:00Z',
+    updated_at: '2026-11-13T07:00:00Z',
+    created_by_id: 2,
+    created_by: 'Rina Finance',
+  });
+  assert(mappedJournal.id === '101', 'mappedJournal.id must be string "101"');
+  assert(mappedJournal.entryNumber === 'JE-2026-0001', 'mappedJournal.entryNumber must match');
+  assert(mappedJournal.status === 'POSTED', 'mappedJournal.status must match');
+  assert(mappedJournal.lines.length === 2 && mappedJournal.lines[0].accountId === '4', 'mappedJournal.lines must map cleanly');
+  assert(resolveAuthorName(mappedJournal) === 'Rina Finance', 'mappedJournal must resolve created_by author name');
+
+  const mappedJournalWithUser = mapJournalEntryDTOToJournalEntry({
+    id: 102,
+    company_id: 1,
+    entry_number: 'JE-2026-0002',
+    date: '2026-11-13T08:00:00Z',
+    description: 'Jurnal dengan created_by_user',
+    source_type: 'MANUAL',
+    status: 'POSTED',
+    total_debit: 100000,
+    total_credit: 100000,
+    lines: [],
+    created_at: '2026-11-13T08:00:00Z',
+    updated_at: '2026-11-13T08:00:00Z',
+    created_by_id: 3,
+    created_by: 'Snapshot Lama',
+    created_by_user: { id: 3, full_name: 'Budi Akuntan', email: 'budi@test.id' },
+  });
+  assert(resolveAuthorName(mappedJournalWithUser) === 'Budi Akuntan', 'mappedJournalWithUser must prefer createdByUser.full_name');
+  assert(resolveAuthorName({ ...mappedJournal, createdBy: '', createdByUser: null }) === '-', 'resolveAuthorName must fallback to "-" when empty');
+
+  const mappedLedger = mapLedgerTrialBalanceDTO({
+    total_debit: 15000000,
+    total_credit: 15000000,
+    is_balanced: true,
+    items: [
+      {
+        account_id: 4,
+        code: '1-1100',
+        name: 'Kas & Bank',
+        type: 'ASSET',
+        normal_balance: 'DEBIT',
+        is_header: false,
+        level: 3,
+        total_debit: 15000000,
+        total_credit: 0,
+        ending_balance: 15000000,
+        entry_count: 1,
+      },
+    ],
+  });
+  assert(mappedLedger.isBalanced === true && mappedLedger.totalDebit === 15000000, 'mappedLedger summary must match');
+  assert(mappedLedger.items[0].accountId === '4' && mappedLedger.items[0].endingBalance === 15000000, 'mappedLedger row must match');
+
+  const mappedMutations = mapLedgerMutationsDTO({
+    account: {
+      account_id: 4,
+      code: '1-1100',
+      name: 'Kas & Bank',
+      type: 'ASSET',
+      normal_balance: 'DEBIT',
+      is_header: false,
+      level: 3,
+      total_debit: 15000000,
+      total_credit: 0,
+      ending_balance: 15000000,
+      entry_count: 1,
+    },
+    opening_balance: 0,
+    closing_balance: 15000000,
+    total_debit: 15000000,
+    total_credit: 0,
+    mutations: [
+      {
+        journal_id: 101,
+        entry_number: 'JE-2026-0001',
+        date: '2026-11-13T07:00:00Z',
+        description: 'Saldo Awal Rekening Bank Mandiri',
+        source_type: 'OPENING_BALANCE',
+        source_id: '21',
+        contra_account: '3-1000 Modal Disetor',
+        debit: 15000000,
+        credit: 0,
+        running_balance: 15000000,
+      },
+    ],
+  });
+  assert(mappedMutations.closingBalance === 15000000 && mappedMutations.mutations.length === 1, 'mappedMutations must match');
+  assert(PERMISSIONS.FINANCE.JOURNAL_READ === 'journal:read', 'FINANCE.JOURNAL_READ must be journal:read');
+  assert(PERMISSIONS.FINANCE.LEDGER_READ === 'ledger:read', 'FINANCE.LEDGER_READ must be ledger:read');
+  console.log('✓ journalService contract, mappers & PBAC verified');
+
+  assert(typeof cashTransactionService.getMutations === 'function', 'cashTransactionService.getMutations missing');
+  assert(typeof cashTransactionService.createTransaction === 'function', 'cashTransactionService.createTransaction missing');
+  assert(typeof cashTransactionService.createTransfer === 'function', 'cashTransactionService.createTransfer missing');
+  assert(typeof cashTransactionService.getDividendSummary === 'function', 'cashTransactionService.getDividendSummary missing');
+  assert(typeof cashTransactionService.createDividend === 'function', 'cashTransactionService.createDividend missing');
+  assert(typeof journalService.createManualJournal === 'function', 'journalService.createManualJournal missing');
+  assert(typeof journalService.getClosingPreview === 'function', 'journalService.getClosingPreview missing');
+  assert(typeof journalService.getClosingPeriods === 'function', 'journalService.getClosingPeriods missing');
+  assert(typeof journalService.executeClosing === 'function', 'journalService.executeClosing missing');
+
+  const mappedCashMut = mapCashMutationDTO({
+    id: 12,
+    mutation_key: '12-OUT',
+    transaction_number: 'CT-2026-0004',
+    direction: 'OUTFLOW',
+    type: 'TRANSFER',
+    source_type: 'TRANSFER',
+    date: '2026-03-20',
+    bank_account_id: 1,
+    bank_account_name: 'BCA Ops',
+    counterparty_bank_id: 2,
+    counterparty_bank_name: 'Mandiri Ops',
+    amount: 1000000,
+    running_balance: 14000000,
+    description: 'Top up Mandiri',
+    journal_entry_id: 45,
+    journal_entry_number: 'JRN-2026-0010',
+    created_by: 'Finance Lead',
+  });
+  assert(mappedCashMut.mutationKey === '12-OUT' && mappedCashMut.runningBalance === 14000000, 'mappedCashMut must match');
+  assert(resolveAuthorName(mappedCashMut) === 'Finance Lead', 'cash mutation author must resolve');
+
+  const mappedDivSum = mapDividendSummaryDTO({
+    retained_earnings_balance: 6000000,
+    last_closing_date: '2026-03-31',
+  });
+  assert(mappedDivSum.retainedEarningsBalance === 6000000 && mappedDivSum.lastClosingDate === '2026-03-31', 'mappedDivSum must match');
+
+  const mappedClosingPreview = mapClosingPreviewDTO({
+    closing_date: '2026-03-31',
+    last_closing_date: null,
+    retained_earnings_balance: 0,
+    total_revenue: 10000000,
+    total_cogs: 3000000,
+    total_expense: 1000000,
+    net_income: 6000000,
+    can_close: true,
+    accounts: [],
+  });
+  assert(mappedClosingPreview.canClose && mappedClosingPreview.netIncome === 6000000, 'mappedClosingPreview must match');
+
+  const mappedClosingPeriod = mapClosingPeriodDTO({
+    id: 1,
+    company_id: 1,
+    closing_date: '2026-03-31',
+    period_label: 'Tutup Buku s.d. 31 Mar 2026',
+    journal_entry_id: 55,
+    entry_number: 'JRN-2026-0012',
+    total_revenue: 10000000,
+    total_cogs: 3000000,
+    total_expense: 1000000,
+    net_income: 6000000,
+    created_by: 'Finance Lead',
+  });
+  assert(mappedClosingPeriod.entryNumber === 'JRN-2026-0012' && mappedClosingPeriod.netIncome === 6000000, 'mappedClosingPeriod must match');
+  assert(PERMISSIONS.FINANCE.CASH_TX_READ === 'cash-transaction:read', 'PBAC CASH_TX_READ check');
+  assert(PERMISSIONS.FINANCE.CASH_TX_CREATE === 'cash-transaction:create', 'PBAC CASH_TX_CREATE check');
+  assert(PERMISSIONS.FINANCE.CASH_TRANSFER_CREATE === 'cash-transfer:create', 'PBAC CASH_TRANSFER_CREATE check');
+  assert(PERMISSIONS.FINANCE.DIVIDEND === 'finance:dividend', 'PBAC DIVIDEND check');
+  assert(PERMISSIONS.FINANCE.JOURNAL_CREATE === 'journal:create', 'PBAC JOURNAL_CREATE check');
+  assert(PERMISSIONS.FINANCE.CLOSING === 'finance:closing', 'PBAC CLOSING check');
+  console.log('✓ cashTransactionService & Stage 2 Finance contracts, mappers & PBAC verified');
+
+  // ── Stage 3 Finance: Invoice AR/AP, Overview & Reports ──
+  assert(typeof invoiceService.getInvoices === 'function', 'invoiceService.getInvoices missing');
+  assert(typeof invoiceService.getInvoiceById === 'function', 'invoiceService.getInvoiceById missing');
+  assert(typeof invoiceService.getInvoiceByOrderId === 'function', 'invoiceService.getInvoiceByOrderId missing');
+  assert(typeof invoiceService.createFromOrder === 'function', 'invoiceService.createFromOrder missing');
+  assert(typeof invoiceService.syncSentOrders === 'function', 'invoiceService.syncSentOrders missing');
+  assert(typeof invoiceService.recordPayment === 'function', 'invoiceService.recordPayment missing');
+  assert(typeof invoiceService.getAPPurchaseOrders === 'function', 'invoiceService.getAPPurchaseOrders missing');
+  assert(typeof invoiceService.getAPPOById === 'function', 'invoiceService.getAPPOById missing');
+  assert(typeof invoiceService.recordPOPayment === 'function', 'invoiceService.recordPOPayment missing');
+
+  assert(typeof financeReportService.getOverview === 'function', 'financeReportService.getOverview missing');
+  assert(typeof financeReportService.getIncomeStatement === 'function', 'financeReportService.getIncomeStatement missing');
+  assert(typeof financeReportService.getBalanceSheet === 'function', 'financeReportService.getBalanceSheet missing');
+  assert(typeof financeReportService.getCashFlowStatement === 'function', 'financeReportService.getCashFlowStatement missing');
+  assert(typeof financeReportService.getHPPAnalysis === 'function', 'financeReportService.getHPPAnalysis missing');
+
+  const mappedInvoice = mapInvoiceDTOToInvoice({
+    id: 101,
+    company_id: 1,
+    invoice_number: 'INV-2026-0001',
+    sales_order_id: 55,
+    sales_order_number: 'SO-2026-0055',
+    sales_name: 'Rina Sales',
+    customer_name: 'PT Nusantara',
+    total_amount: 5000000,
+    paid_amount: 2000000,
+    remaining_amount: 3000000,
+    status: 'PARTIAL',
+    issued_at: '2026-04-01T10:00:00Z',
+    payments: [
+      {
+        id: 1,
+        invoice_id: 101,
+        amount: 2000000,
+        method: 'Transfer BCA',
+        bank_account_id: 1,
+        bank_account_name: 'BCA Ops',
+        date: '2026-04-02',
+        note: 'DP 40%',
+        confirmed_by: 'Admin Finance',
+        created_by: 'Admin Finance',
+      },
+    ],
+  });
+  assert(
+    mappedInvoice.invoiceNumber === 'INV-2026-0001' &&
+      mappedInvoice.remainingAmount === 3000000 &&
+      mappedInvoice.payments.length === 1 &&
+      mappedInvoice.payments[0].confirmedBy === 'Admin Finance',
+    'mappedInvoice must match DTO fields'
+  );
+
+  const mappedAPPO = mapAPPurchaseOrderDTO({
+    id: 202,
+    po_number: 'PO-2026-0010',
+    supplier: 'CV Kayu Jati',
+    purchase_type: 'MATERIAL',
+    status: 'RECEIVED',
+    payment_status: 'PARTIAL',
+    total_amount: 4000000,
+    paid_amount: 1500000,
+    remaining_amount: 2500000,
+    additional_cost: 0,
+    created_at: '2026-04-01T08:00:00Z',
+    payments: [
+      {
+        id: 5,
+        purchase_order_id: 202,
+        amount: 1500000,
+        method: 'Transfer Bank Mandiri',
+        bank_account_id: 2,
+        bank_account_name: 'Mandiri Ops',
+        date: '2026-04-03',
+        note: 'Termin 1',
+        confirmed_by: 'Staff Finance',
+      },
+    ],
+  });
+  assert(
+    mappedAPPO.poNumber === 'PO-2026-0010' &&
+      mappedAPPO.remainingAmount === 2500000 &&
+      mappedAPPO.payments.length === 1,
+    'mappedAPPO must match DTO fields'
+  );
+
+  const mappedHPP = mapHPPAnalysisItemDTO({
+    sales_order_id: 77,
+    sales_order_number: 'SO-2026-0077',
+    order_status: 'READY',
+    customer_name: 'Hotel Mawar',
+    created_at: '2026-04-04T09:00:00Z',
+    gross_selling_price: 10000000,
+    refund_amount: 1000000,
+    selling_price: 9000000,
+    material_cost: 4000000,
+    planned_labor_cost: 500000,
+    planned_overhead_cost: 0,
+    actual_labor_cost: 0,
+    actual_overhead_cost: 0,
+    total_hpp: 4500000,
+    gross_profit: 4500000,
+    gross_margin_percent: 50,
+    is_estimated: true,
+    costing_basis: 'ESTIMATED_BOM',
+    spk_count: 0,
+    spk_breakdowns: [],
+    estimated_materials: [
+      {
+        material_id: 1,
+        material_name: 'Papan Jati',
+        unit: 'lembar',
+        qty: 10,
+        unit_cost: 400000,
+        total_cost: 4000000,
+      },
+    ],
+  });
+  assert(
+    mappedHPP.orderNumber === 'SO-2026-0077' &&
+      mappedHPP.refundAmount === 1000000 &&
+      mappedHPP.laborCost === 500000 &&
+      mappedHPP.isEstimated === true &&
+      mappedHPP.costingBasis === 'ESTIMATED_BOM' &&
+      mappedHPP.estimatedMaterials.length === 1,
+    'mappedHPP must map dynamic BOM estimation and complaint refund deduction'
+  );
+
+  assert(
+    mapExpenseCategoryToCoa('LAINNYA').code === '6-9000',
+    'mapExpenseCategoryToCoa LAINNYA must map to 6-9000 aligned with BE COA seeder'
+  );
+  assert(PERMISSIONS.FINANCE.INVOICE_READ === 'finance-invoice:read', 'PBAC INVOICE_READ check');
+  assert(PERMISSIONS.FINANCE.PAYMENT_AR === 'finance-payment:ar', 'PBAC PAYMENT_AR check');
+  assert(PERMISSIONS.FINANCE.PAYMENT_AP === 'finance-payment:ap', 'PBAC PAYMENT_AP check');
+  assert(PERMISSIONS.FINANCE.REPORT === 'finance:report', 'PBAC FINANCE REPORT check');
+  console.log('✓ invoiceService, financeReportService & Stage 3 Finance contracts, mappers & PBAC verified');
 
   console.log('\nALL EXTENDED SERVICE, PROXY & RESILIENCE TESTS PASSED (100% GREEN)!');
 }

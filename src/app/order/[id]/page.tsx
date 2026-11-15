@@ -281,7 +281,9 @@ export default function OrderDetailPage() {
     }
 
     try {
-      const res = await orderService.cancelOrder(order.id, { reason: cancelReasonInput.trim() });
+      const res = await orderService.cancelOrder(order.id, {
+        reason: cancelReasonInput.trim(),
+      });
       if (res.success) {
         const isWaiting = res.data && (res.data as any).status === 'WAITING_CANCEL_APPROVAL';
         if (isWaiting) {
@@ -298,12 +300,8 @@ export default function OrderDetailPage() {
         toast.error('Gagal Membatalkan Order', res.message || 'Gagal.');
       }
     } catch (err: any) {
-      cancelOrder(order.id, cancelReasonInput.trim());
-      toast.success('Sales Order Dibatalkan', `Sales Order ${order.orderNumber} telah berhasil dibatalkan.`);
-      fetchLiveOrderDetail();
-      setCancelModalOpen(false);
-      setCancelReasonInput('');
-      setCancelReasonError('');
+      const msg = err?.response?.data?.message || err?.message || 'Terjadi kesalahan saat membatalkan order.';
+      toast.error('Gagal Membatalkan Order', msg);
     }
   };
 
@@ -312,15 +310,13 @@ export default function OrderDetailPage() {
       const res = await orderService.approveCancel(order!.id);
       if (res.success) {
         toast.success('Pembatalan Disetujui', `Pembatalan Sales Order ${order!.orderNumber} telah disetujui.`);
-        cancelOrder(order!.id, order?.cancelReason || order?.cancelRequest?.reason || 'Disetujui Admin');
         fetchLiveOrderDetail();
       } else {
         toast.error('Gagal Menyetujui Pembatalan', res.message || 'Gagal.');
       }
     } catch (err: any) {
-      cancelOrder(order!.id, order?.cancelReason || order?.cancelRequest?.reason || 'Disetujui Admin');
-      toast.success('Pembatalan Disetujui', `Pembatalan Sales Order ${order!.orderNumber} telah disetujui.`);
-      fetchLiveOrderDetail();
+      const msg = err?.response?.data?.message || err?.message || 'Terjadi kesalahan saat menyetujui pembatalan.';
+      toast.error('Gagal Menyetujui Pembatalan', msg);
     }
   };
 
@@ -542,25 +538,14 @@ export default function OrderDetailPage() {
         setComplaintError('');
         return;
       }
+      const msg = res.message || 'Gagal mencatat komplain penjualan.';
+      setComplaintError(msg);
+      toast.error('Gagal Mengajukan Komplain', msg);
     } catch (err: any) {
-      console.warn('Backend complaint filing failed, syncing local mock:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Gagal menghubungi server untuk mengajukan komplain.';
+      setComplaintError(msg);
+      toast.error('Gagal Mengajukan Komplain', msg);
     }
-
-    submitOrderComplaint(order.id, {
-      category: complaintCategory as any,
-      description: complaintDesc,
-      items,
-      attachments: complaintAttachments,
-    });
-
-    toast.success('Komplain Diajukan', 'Komplain penjualan berhasil dicatat dan masuk status menunggu tinjauan.');
-    fetchLiveOrderDetail();
-    setComplaintModalOpen(false);
-    setComplaintCategory('');
-    setComplaintDesc('');
-    setComplaintItems([]);
-    setComplaintAttachments([]);
-    setComplaintError('');
   };
 
   // Log Proses / Riwayat Pesanan

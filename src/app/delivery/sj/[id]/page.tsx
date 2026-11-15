@@ -180,6 +180,7 @@ export default function DeliveryOrderDetailPage() {
   const [selectedProofFile, setSelectedProofFile] = useState<File | null>(null);
   const [isSubmittingProof, setIsSubmittingProof] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Modal Failed Delivery State
   const [showFailureModal, setShowFailureModal] = useState(false);
@@ -190,6 +191,7 @@ export default function DeliveryOrderDetailPage() {
   const [selectedFailureFile, setSelectedFailureFile] = useState<File | null>(null);
   const [isSubmittingFailure, setIsSubmittingFailure] = useState(false);
   const failureFileInputRef = useRef<HTMLInputElement>(null);
+  const failureCameraInputRef = useRef<HTMLInputElement>(null);
 
   const FAILURE_REASON_OPTIONS = [
     { value: 'Alamat tidak ditemukan', label: 'Alamat tidak ditemukan' },
@@ -252,17 +254,6 @@ export default function DeliveryOrderDetailPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleSelectMockPhoto = (type: 'photo-1' | 'photo-2') => {
-    setSelectedProofFile(null);
-    if (type === 'photo-1') {
-      setUploadedPhotoUrl('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80');
-      setUploadedPhotoName('bukti_serah_terima_barang.jpg');
-    } else {
-      setUploadedPhotoUrl('https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80');
-      setUploadedPhotoName('foto_surat_jalan_lapangan.jpg');
-    }
-  };
-
   const handleSubmitDeliveryProof = async () => {
     setIsSubmittingProof(true);
     try {
@@ -307,14 +298,7 @@ export default function DeliveryOrderDetailPage() {
       setSelectedProofFile(null);
     } catch (err: any) {
       console.error('Error confirming delivery:', err);
-      if (contextConfirmDelivery) {
-        contextConfirmDelivery(dOrder.id, {
-          proofNote: proofNote.trim(),
-          proofPhoto: uploadedPhotoUrl || undefined,
-        });
-      }
-      toast.success('Pengiriman pesanan berhasil diselesaikan.');
-      setShowProofModal(false);
+      toast.error(err?.response?.data?.message || err?.message || 'Gagal menyelesaikan pengiriman.');
     } finally {
       setIsSubmittingProof(false);
     }
@@ -341,17 +325,6 @@ export default function DeliveryOrderDetailPage() {
       setUploadedFailurePhotoName(file.name);
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleSelectMockFailurePhoto = (type: 'fail-closed' | 'fail-blocked') => {
-    setSelectedFailureFile(null);
-    if (type === 'fail-closed') {
-      setUploadedFailurePhoto('https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=800&q=80');
-      setUploadedFailurePhotoName('rumah_kosong_terkunci.jpg');
-    } else {
-      setUploadedFailurePhoto('https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=800&q=80');
-      setUploadedFailurePhotoName('jalan_ditutup_proyek.jpg');
-    }
   };
 
   const handleReportFailedDelivery = async () => {
@@ -417,15 +390,7 @@ export default function DeliveryOrderDetailPage() {
       setSelectedFailureFile(null);
     } catch (err: any) {
       console.error('Error reporting failure:', err);
-      if (contextReportFailedDelivery) {
-        contextReportFailedDelivery(dOrder.id, {
-          reason: failureReason,
-          note: failureNote.trim(),
-          photo: uploadedFailurePhoto || undefined,
-        });
-      }
-      toast.success('Pengiriman dilaporkan gagal. Barang dikembalikan ke gudang & pesanan kembali ke antrean kirim.');
-      setShowFailureModal(false);
+      toast.error(err?.response?.data?.message || err?.message || 'Gagal melaporkan kendala pengiriman.');
     } finally {
       setIsSubmittingFailure(false);
     }
@@ -907,6 +872,14 @@ export default function DeliveryOrderDetailPage() {
               onChange={handlePhotoFileChange}
               className="hidden"
             />
+            <input
+              type="file"
+              ref={cameraInputRef}
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoFileChange}
+              className="hidden"
+            />
 
             {uploadedPhotoUrl ? (
               <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800 space-y-2">
@@ -919,6 +892,7 @@ export default function DeliveryOrderDetailPage() {
                     onClick={() => {
                       setUploadedPhotoUrl(null);
                       setUploadedPhotoName('');
+                      setSelectedProofFile(null);
                     }}
                     className="text-xs text-rose-500 hover:underline"
                   >
@@ -933,42 +907,35 @@ export default function DeliveryOrderDetailPage() {
                 />
               </div>
             ) : (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer hover:border-indigo-500 transition-colors bg-slate-50/50 dark:bg-slate-800/30"
-              >
-                <Camera className="h-8 w-8 text-slate-400 mb-1" />
-                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Ambil Foto / Unggah dari Galeri
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Format JPG, PNG, WEBP (Maksimal 5 MB)
-                </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer hover:border-indigo-500 transition-colors bg-slate-50/50 dark:bg-slate-800/30"
+                >
+                  <Camera className="h-7 w-7 text-slate-400 mb-1" />
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Ambil dari Kamera
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Buka kamera langsung
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer hover:border-indigo-500 transition-colors bg-slate-50/50 dark:bg-slate-800/30"
+                >
+                  <FileText className="h-7 w-7 text-slate-400 mb-1" />
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Unggah File Foto
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    JPG, PNG, WEBP (Maks 5 MB)
+                  </p>
+                </button>
               </div>
             )}
-
-            {/* Mock photo options for quick demo testing */}
-            <div className="mt-2.5">
-              <p className="text-[11px] text-slate-400 mb-1.5">Atau gunakan foto simulasi demo:</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleSelectMockPhoto('photo-1')}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-left hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all text-[11px] flex items-center gap-1.5 cursor-pointer"
-                >
-                  <FileText className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                  <span className="truncate">Contoh: Unit di Lokasi</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectMockPhoto('photo-2')}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-left hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all text-[11px] flex items-center gap-1.5 cursor-pointer"
-                >
-                  <FileText className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                  <span className="truncate">Contoh: Tanda Tangan SJ</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </Modal>
@@ -1047,6 +1014,14 @@ export default function DeliveryOrderDetailPage() {
               onChange={handleFailurePhotoFileChange}
               className="hidden"
             />
+            <input
+              type="file"
+              ref={failureCameraInputRef}
+              accept="image/*"
+              capture="environment"
+              onChange={handleFailurePhotoFileChange}
+              className="hidden"
+            />
 
             {uploadedFailurePhoto ? (
               <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800 space-y-2">
@@ -1059,6 +1034,7 @@ export default function DeliveryOrderDetailPage() {
                     onClick={() => {
                       setUploadedFailurePhoto(null);
                       setUploadedFailurePhotoName('');
+                      setSelectedFailureFile(null);
                     }}
                     className="text-xs text-rose-500 hover:underline cursor-pointer"
                   >
@@ -1073,41 +1049,37 @@ export default function DeliveryOrderDetailPage() {
                 />
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  onClick={() => failureFileInputRef.current?.click()}
-                  className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-rose-400 dark:hover:border-rose-500 hover:bg-rose-50/20 dark:hover:bg-rose-950/10 transition-all text-slate-500 dark:text-slate-400 cursor-pointer"
+                  onClick={() => failureCameraInputRef.current?.click()}
+                  className="w-full flex flex-col items-center justify-center gap-1.5 p-5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-rose-400 dark:hover:border-rose-500 hover:bg-rose-50/20 dark:hover:bg-rose-950/10 transition-all text-slate-500 dark:text-slate-400 cursor-pointer"
                 >
                   <Camera className="w-6 h-6 text-slate-400" />
                   <div className="text-center">
                     <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
-                      Klik untuk ambil foto / upload bukti kendala
+                      Ambil dari Kamera
                     </p>
                     <p className="text-[11px] text-slate-400">
-                      JPG, PNG, atau WEBP (Maksimal 5 MB)
+                      Foto kendala langsung
                     </p>
                   </div>
                 </button>
-
-                {/* Quick Mock Photos for Demo / Testing */}
-                <div className="flex items-center gap-2 pt-1 flex-wrap">
-                  <span className="text-[11px] text-slate-400">Foto Cepat:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMockFailurePhoto('fail-closed')}
-                    className="text-[11px] px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                  >
-                    Gerbang Terkunci
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectMockFailurePhoto('fail-blocked')}
-                    className="text-[11px] px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                  >
-                    Akses Jalan Terhalang
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => failureFileInputRef.current?.click()}
+                  className="w-full flex flex-col items-center justify-center gap-1.5 p-5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-rose-400 dark:hover:border-rose-500 hover:bg-rose-50/20 dark:hover:bg-rose-950/10 transition-all text-slate-500 dark:text-slate-400 cursor-pointer"
+                >
+                  <FileText className="w-6 h-6 text-slate-400" />
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                      Unggah File Foto
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      JPG, PNG, WEBP (Maks 5 MB)
+                    </p>
+                  </div>
+                </button>
               </div>
             )}
           </div>

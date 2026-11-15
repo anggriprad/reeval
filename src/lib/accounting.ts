@@ -771,7 +771,7 @@ export function createPOPaymentJournal(
 /**
  * Direct Purchase Journal (Pembelian Langsung - Tanpa PO & Tanpa AP)
  * Debit: Persediaan Bahan Baku (1-1300) -> Nilai Item
- * Debit (jika ada): Biaya Operasional / Kirim (6-1900 atau 6-1000) -> Biaya Tambahan
+ * Debit (jika ada): Biaya Operasional Lain-lain (6-9000 atau 6-1000) -> Biaya Tambahan
  * Credit: Kas & Bank (1-1100) -> Total Pembayaran
  */
 export function createDirectPurchaseJournal(
@@ -797,7 +797,7 @@ export function createDirectPurchaseJournal(
   ];
 
   if (additional > 0) {
-    const biayaLain = resolveAccount(chartOfAccounts, 'coa-61900', '6-1900', 'EXPENSE');
+    const biayaLain = resolveAccount(chartOfAccounts, 'coa-69000', '6-9000', 'EXPENSE');
     lines.push({
       accountId: biayaLain.id,
       accountCode: biayaLain.code,

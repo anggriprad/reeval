@@ -39,8 +39,10 @@ export interface CustomTableProps<T = any> {
   currentPage?: number;
   perPage?: number;
   onRowClick?: (rowData: T) => void;
+  expandedRowRender?: (rowData: T) => React.ReactNode;
   emptyTitle?: string;
   emptyDescription?: string;
+  footer?: React.ReactNode;
   className?: string;
 }
 
@@ -59,8 +61,10 @@ export default function CustomTable<T extends { id?: string | number } = any>({
   currentPage,
   perPage: propPerPage,
   onRowClick,
+  expandedRowRender,
   emptyTitle = 'Tidak Ada Data',
   emptyDescription = 'Belum ada data yang tersedia untuk ditampilkan.',
+  footer,
   className,
 }: CustomTableProps<T>) {
   const [page, setPage] = useState(1);
@@ -289,45 +293,60 @@ export default function CustomTable<T extends { id?: string | number } = any>({
             <TableBody>
               {data.map((row, index) => {
                 const isClickable = Boolean(onRowClick);
-                const rowKey = (row as any).id ?? index;
+                const rowKey = row.id ?? index;
                 const isChecked = checkedData.some((item) => (item.id !== undefined && row.id !== undefined ? item.id === row.id : item === row));
+                const expandedContent = expandedRowRender ? expandedRowRender(row) : null;
+                const totalCols = columns.length + (selection ? 1 : 0);
 
                 return (
-                  <TableRow
-                    key={rowKey}
-                    onClick={() => isClickable && onRowClick?.(row)}
-                    className={cn(
-                      'transition-colors',
-                      isClickable && 'cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/40',
-                      isChecked && 'bg-indigo-50/30 dark:bg-indigo-950/20'
+                  <React.Fragment key={rowKey}>
+                    <TableRow
+                      onClick={() => isClickable && onRowClick?.(row)}
+                      className={cn(
+                        'transition-colors',
+                        isClickable && 'cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/40',
+                        isChecked && 'bg-indigo-50/30 dark:bg-indigo-950/20'
+                      )}
+                    >
+                      {selection && (
+                        <TableCell className="px-4 py-3.5 w-12 text-center" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => handleRowSelect(row, e.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800"
+                          />
+                        </TableCell>
+                      )}
+                      {columns.map((column) => (
+                        <TableCell
+                          key={column.id || column.key}
+                          className={cn(
+                            'px-4 py-3.5 text-slate-800 text-sm dark:text-slate-200',
+                            column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-start',
+                            column.className
+                          )}
+                        >
+                          {renderCellContent(column, row)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                    {expandedContent && (
+                      <TableRow className="bg-slate-50/40 dark:bg-slate-800/20">
+                        <TableCell colSpan={totalCols} className="p-0">
+                          {expandedContent}
+                        </TableCell>
+                      </TableRow>
                     )}
-                  >
-                    {selection && (
-                      <TableCell className="px-4 py-3.5 w-12 text-center" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => handleRowSelect(row, e.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800"
-                        />
-                      </TableCell>
-                    )}
-                    {columns.map((column) => (
-                      <TableCell
-                        key={column.id || column.key}
-                        className={cn(
-                          'px-4 py-3.5 text-slate-800 text-sm dark:text-slate-200',
-                          column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-start',
-                          column.className
-                        )}
-                      >
-                        {renderCellContent(column, row)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
+                  </React.Fragment>
                 );
               })}
             </TableBody>
+            {footer && (
+              <tfoot className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 font-semibold text-xs text-slate-700 dark:text-slate-300">
+                {footer}
+              </tfoot>
+            )}
           </Table>
         </div>
       </div>
