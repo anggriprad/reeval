@@ -17,7 +17,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { resolveAuthorName, type BankAccount } from '@/lib/types';
+import type { BankAccount } from '@/lib/types';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
 import {
@@ -592,9 +592,6 @@ export default function AssetDetailPage() {
             )}
           </div>
         )}
-        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500">
-          Dibuat oleh: {resolveAuthorName(asset)}
-        </div>
       </div>
 
       {/* Riwayat Pemeliharaan & Servis */}
@@ -657,15 +654,6 @@ export default function AssetDetailPage() {
                 cell: (log) => (
                   <span className="font-mono font-semibold text-slate-900 dark:text-white">
                     {formatCurrency(log.cost)}
-                  </span>
-                ),
-              },
-              {
-                key: 'created_by',
-                header: 'Dibuat Oleh',
-                cell: (log) => (
-                  <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                    {resolveAuthorName(log)}
                   </span>
                 ),
               },

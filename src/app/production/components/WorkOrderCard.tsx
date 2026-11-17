@@ -288,9 +288,6 @@ export function WorkOrderCard({
                     {wo.customNotes}
                   </div>
                 )}
-                <div className="text-[11px] text-slate-400 dark:text-slate-500 pt-0.5">
-                  Dibuat oleh: {wo.createdBy || '-'}
-                </div>
               </div>
             </div>
 
@@ -458,9 +455,6 @@ export function WorkOrderCard({
                   {wo.customNotes}
                 </div>
               )}
-              <div className="text-[11px] text-slate-400 dark:text-slate-500 pt-0.5">
-                Dibuat oleh: {wo.createdBy || '-'}
-              </div>
             </div>
           </div>
         </div>
@@ -530,9 +524,6 @@ export function WorkOrderCard({
                 Catatan: {wo.customNotes}
               </div>
             )}
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 pt-0.5">
-              Dibuat oleh: {wo.createdBy || '-'}
-            </div>
           </div>
         </div>
       </div>

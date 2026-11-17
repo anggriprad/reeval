@@ -234,14 +234,10 @@ export default function ProcurementDetailPage() {
   const isDirect = po.purchaseType === 'DIRECT';
 
   const isOwner = Boolean(
-    (currentUser?.id && rawPOResponse?.created_by_id && String(rawPOResponse.created_by_id) === String(currentUser.id).trim()) ||
-    (currentUser?.id && rawPOResponse?.created_by_user?.id && String(rawPOResponse.created_by_user.id) === String(currentUser.id).trim()) ||
-    (currentUser?.email && rawPOResponse?.created_by_user?.email && rawPOResponse.created_by_user.email.toLowerCase().trim() === currentUser.email.toLowerCase().trim()) ||
-    ((po.createdBy || rawPOResponse?.created_by) && (
-      (currentUser?.name && String(po.createdBy || rawPOResponse?.created_by).toLowerCase().trim() === currentUser.name.toLowerCase().trim()) ||
-      (currentUser?.id && String(po.createdBy || rawPOResponse?.created_by).trim() === String(currentUser.id).trim()) ||
-      (currentUser?.email && String(po.createdBy || rawPOResponse?.created_by).toLowerCase().trim() === currentUser.email.toLowerCase().trim())
-    ))
+    currentUser?.id && (
+      (rawPOResponse?.created_by_id && String(rawPOResponse.created_by_id) === String(currentUser.id).trim()) ||
+      (rawPOResponse?.created_by_user?.id && String(rawPOResponse.created_by_user.id) === String(currentUser.id).trim())
+    )
   );
   const canCancelDraft = canCancel && (isOwner || isSuperAdmin);
   const canCancelCommercial = canCancel && (canExecuteCommercial || isSuperAdmin);
@@ -484,7 +480,7 @@ export default function ProcurementDetailPage() {
   const handleCancelRemaining = async () => {
     const ok = await confirm({
       title: 'Batalkan Sisa PO',
-      message: `Apakah Anda yakin ingin membatalkan sisa barang yang belum tiba untuk pengadaan "${po.poNumber}"? Sisa barang tidak akan dapat diterima lagi.`,
+      message: `Apakah Anda yakin ingin membatalkan sisa barang yang belum diterima untuk "${po.poNumber}"? Status PO akan diselesaikan`,
       confirmText: 'Batalkan Sisa PO',
       variant: 'danger',
     });
@@ -756,16 +752,9 @@ export default function ProcurementDetailPage() {
               </div>
               <div className="flex justify-between items-start gap-3">
                 <span className="text-[13px] md:text-xs text-slate-500 dark:text-slate-400">Dibuat oleh</span>
-                <div className="flex flex-col items-end text-right">
-                  <span className="text-[13px] md:text-xs text-slate-800 dark:text-slate-200">
-                    {rawPOResponse?.created_by_user?.full_name || po.createdBy || '-'}
-                  </span>
-                  {rawPOResponse?.created_by_user?.email && (
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                      {rawPOResponse.created_by_user.email}
-                    </span>
-                  )}
-                </div>
+                <span className="text-[13px] md:text-xs text-slate-800 dark:text-slate-200 text-right">
+                  {rawPOResponse?.created_by_user?.full_name || po.createdBy || '-'}
+                </span>
               </div>
               <div className="flex justify-between items-start gap-3">
                 <span className="text-[13px] md:text-xs text-slate-500 dark:text-slate-400">Nomor PO</span>

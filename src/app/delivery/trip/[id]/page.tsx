@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate, formatDateTime, getWhatsAppUrl, formatPhoneDisplay, cn } from '@/lib/utils';
-import { resolveAuthorName } from '@/lib/types';
 import {
   deliveryService,
   resolveDeliveryPhotoUrl,
@@ -93,7 +92,6 @@ export default function TripDetailPage() {
         deliveryProofPhoto: d.delivery_proof_photo || d.proof_photo,
         failureReason: d.failure_reason,
         failureNote: d.failure_note,
-        createdBy: resolveAuthorName(d),
         createdAt: d.created_at,
         orderItems: d.items?.map((it: any) => ({
           id: it.id,
@@ -141,7 +139,6 @@ export default function TripDetailPage() {
           totalUnitsCount,
           loadedAt: firstDO.loadedAt,
           loadedBy: firstDO.loadedBy,
-          createdBy: firstDO.createdBy,
           createdAt: firstDO.createdAt,
         },
       };
@@ -238,9 +235,6 @@ export default function TripDetailPage() {
             <span className="text-slate-500 dark:text-slate-400 font-medium">Waktu Keberangkatan</span>
             <p className="font-semibold text-slate-900 dark:text-white text-sm">
               {formatDateTime(tripInfo.loadedAt || tripInfo.scheduledDate)}
-            </p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 pt-0.5">
-              Dibuat oleh: {tripInfo.createdBy || '-'}
             </p>
           </div>
 

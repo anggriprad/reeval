@@ -123,7 +123,7 @@ export function ProcurementSection({
   const handleCancelRemainingPO = useCallback(async (po: PurchaseOrderResponse) => {
     const isOk = await confirm({
       title: 'Batalkan Sisa PO',
-      message: `Apakah Anda yakin ingin membatalkan sisa barang yang belum diterima pada PO ${po.po_number}? Status PO akan diselesaikan.`,
+      message: `Apakah Anda yakin ingin membatalkan sisa barang yang belum diterima untuk "${po.po_number}"? Status PO akan diselesaikan.`,
       confirmText: 'Batalkan Sisa PO',
       variant: 'danger',
     });
@@ -143,14 +143,10 @@ export function ProcurementSection({
 
     if (po.status === 'DRAFT') {
       const isOwner = Boolean(
-        (currentUser?.id && po.created_by_id && String(po.created_by_id) === String(currentUser.id).trim()) ||
-        (currentUser?.id && po.created_by_user?.id && String(po.created_by_user.id) === String(currentUser.id).trim()) ||
-        (currentUser?.email && po.created_by_user?.email && po.created_by_user.email.toLowerCase().trim() === currentUser.email.toLowerCase().trim()) ||
-        (po.created_by && (
-          (currentUser?.name && String(po.created_by).toLowerCase().trim() === currentUser.name.toLowerCase().trim()) ||
-          (currentUser?.id && String(po.created_by).trim() === String(currentUser.id).trim()) ||
-          (currentUser?.email && String(po.created_by).toLowerCase().trim() === currentUser.email.toLowerCase().trim())
-        ))
+        currentUser?.id && (
+          (po.created_by_id && String(po.created_by_id) === String(currentUser.id).trim()) ||
+          (po.created_by_user?.id && String(po.created_by_user.id) === String(currentUser.id).trim())
+        )
       );
 
       actions.push(
@@ -285,26 +281,6 @@ export function ProcurementSection({
             <span className="text-sm font-normal text-slate-600 dark:text-slate-400">
               {firstItem.qty} {firstItem.unit}
             </span>
-          );
-        },
-      },
-      {
-        id: 'created_by',
-        header: 'Dibuat Oleh',
-        cell: ({ row: po }) => {
-          const creatorName = po.created_by_user?.full_name || po.created_by || '-';
-          const creatorEmail = po.created_by_user?.email;
-          return (
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-slate-800 dark:text-slate-200">
-                {creatorName}
-              </span>
-              {creatorEmail && (
-                <span className="text-[11px] text-slate-400 dark:text-slate-500 truncate max-w-[140px]">
-                  {creatorEmail}
-                </span>
-              )}
-            </div>
           );
         },
       },

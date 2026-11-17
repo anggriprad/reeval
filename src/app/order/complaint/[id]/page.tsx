@@ -629,12 +629,6 @@ export default function ComplaintDetailPage() {
                   {formatDateTime(order.createdAt)}
                 </span>
               </div>
-              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
-                <span className="text-slate-500 dark:text-slate-400">Dibuat oleh</span>
-                <span className="font-medium text-slate-700 dark:text-slate-300">
-                  {complaint.createdBy || '-'}
-                </span>
-              </div>
               {linkedWorkOrder && (
                 <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
                   <span className="text-slate-500 dark:text-slate-400">SPK Pengganti</span>
