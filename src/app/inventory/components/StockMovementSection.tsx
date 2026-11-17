@@ -12,7 +12,6 @@ import { usePermission } from '@/hooks/usePermission';
 import { PERMISSIONS } from '@/lib/permissions';
 import { canManageInventory } from '@/lib/roles';
 import { formatDateTime } from '@/lib/utils';
-import { resolveAuthorName } from '@/lib/types';
 import {
   stockMovementService,
   StockMovementItem,
@@ -218,15 +217,6 @@ export function StockMovementSection({
             </span>
           );
         },
-      },
-      {
-        id: 'created_by',
-        header: 'Dibuat Oleh',
-        cell: ({ row: mv }) => (
-          <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-            {resolveAuthorName(mv)}
-          </span>
-        ),
       },
       // {
       //   id: 'reference_type',

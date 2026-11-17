@@ -18,7 +18,7 @@ import {
   formatCurrency,
   cn,
 } from '@/lib/utils';
-import { resolveAuthorName, type RawMaterial } from '@/lib/types';
+import type { RawMaterial } from '@/lib/types';
 import {
   materialService,
   MaterialItem,
@@ -118,9 +118,6 @@ export function RawMaterialSection({
             qty: cb.qty,
           })),
           isActive: m.is_active,
-          createdById: m.created_by_id ? String(m.created_by_id) : undefined,
-          createdBy: resolveAuthorName(m),
-          createdByUser: m.created_by_user ?? null,
         }));
         setRawMaterials(mapped);
         setMaterialsList(mapped);
@@ -340,16 +337,6 @@ export function RawMaterialSection({
           </Badge>
         );
       },
-    },
-    {
-      id: 'createdBy',
-      header: 'Dibuat Oleh',
-      align: 'left',
-      cell: ({ row: mat }) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {mat.createdBy || '-'}
-        </span>
-      ),
     },
     {
       id: 'actions',

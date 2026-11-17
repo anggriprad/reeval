@@ -510,14 +510,6 @@ export default function DeliveryOrderDetailPage() {
                   {formatDate(dOrder.scheduledDate)}
                 </p>
               </div>
-
-              {/* 5. Dibuat Oleh */}
-              <div>
-                <p className="text-slate-500 dark:text-slate-400">Dibuat oleh</p>
-                <p className="font-medium text-slate-900 dark:text-white mt-0.5">
-                  {dOrder.createdBy || '-'}
-                </p>
-              </div>
             </div>
           </div>
 
