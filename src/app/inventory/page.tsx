@@ -150,18 +150,6 @@ export function InventoryContent() {
     deleteMaterial,
     addMaterialCategory,
     deleteMaterialCategory,
-    assets,
-    addAsset,
-    updateAsset,
-    deleteAsset,
-    canDeleteAsset,
-    assetCategories,
-    addAssetCategory,
-    deleteAssetCategory,
-    assetServiceLogs,
-    assetDepreciations = [],
-    recordAssetService,
-    deleteAssetServiceLog,
     bankAccounts,
     routings = [],
     operations = [],
@@ -517,11 +505,6 @@ export function InventoryContent() {
   const [newCatInput, setNewCatInput] = useState('');
   const [catError, setCatError] = useState('');
 
-  // Asset Category CRUD states
-  const [showManageAssetCats, setShowManageAssetCats] = useState(false);
-  const [newAssetCatInput, setNewAssetCatInput] = useState('');
-  const [assetCatError, setAssetCatError] = useState('');
-
   const filteredMaterials = materials.filter(m => {
     const matchesFilter = !inventoryFilter || m.category === inventoryFilter;
     const matchesSearch = !searchTerm ||
@@ -702,9 +685,6 @@ export function InventoryContent() {
             { value: 'OUT', label: 'Keluar' },
             { value: 'INIT', label: 'Inisiasi' },
           ];
-        } else if (activeTab === 'assets') {
-          filterPlaceholder = "Semua Kategori Aset";
-          filterOptions = assetCategories.map(c => ({ value: c, label: c }));
         }
 
         return (

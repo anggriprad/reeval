@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { AlertTriangle, Sparkles } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import {
   companyAssetService,
@@ -32,6 +32,14 @@ interface AssetModalProps {
   bankAccounts?: BankAccountOption[];
 }
 
+function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object') {
+    const maybeErr = err as { response?: { data?: { message?: string } }; message?: string };
+    return maybeErr.response?.data?.message || maybeErr.message || fallback;
+  }
+  return fallback;
+}
+
 export function AssetModal({
   isOpen,
   onClose,
@@ -40,56 +48,61 @@ export function AssetModal({
   categoryOptions,
   bankAccounts = [],
 }: AssetModalProps) {
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('');
-  const [categoryId, setCategoryId] = useState<string>('');
-  const [purchaseDate, setPurchaseDate] = useState('');
-  const [purchaseCost, setPurchaseCost] = useState<number | ''>('');
-  const [usefulLifeMonths, setUsefulLifeMonths] = useState<number | ''>(60);
-  const [salvageValue, setSalvageValue] = useState<number | ''>(0);
-  const [status, setStatus] = useState<string>('ACTIVE');
-  const [acquisitionType, setAcquisitionType] = useState<'EXISTING' | 'NEW_PURCHASE'>('EXISTING');
-  const [cashAccountId, setCashAccountId] = useState('');
-  const [notes, setNotes] = useState('');
-  const [accumulatedServiceCost, setAccumulatedServiceCost] = useState(0);
+  if (!isOpen) return null;
+
+  return (
+    <AssetModalForm
+      key={editAsset ? `edit-${editAsset.id}` : 'new'}
+      isOpen={isOpen}
+      onClose={onClose}
+      editAsset={editAsset}
+      onSuccess={onSuccess}
+      categoryOptions={categoryOptions}
+      bankAccounts={bankAccounts}
+    />
+  );
+}
+
+function AssetModalForm({
+  isOpen,
+  onClose,
+  editAsset,
+  onSuccess,
+  categoryOptions,
+  bankAccounts = [],
+}: AssetModalProps) {
+  const [name, setName] = useState(editAsset?.name || '');
+  const [categoryId, setCategoryId] = useState<string>(
+    editAsset?.category_id
+      ? String(editAsset.category_id)
+      : categoryOptions[0]
+        ? String(categoryOptions[0].id)
+        : ''
+  );
+  const [purchaseDate, setPurchaseDate] = useState(
+    editAsset?.purchase_date
+      ? editAsset.purchase_date.split('T')[0]
+      : new Date().toISOString().split('T')[0]
+  );
+  const [purchaseCost, setPurchaseCost] = useState<number | ''>(
+    editAsset ? (editAsset.purchase_cost ?? '') : ''
+  );
+  const [usefulLifeMonths, setUsefulLifeMonths] = useState<number | ''>(
+    editAsset
+      ? editAsset.useful_life_months || (editAsset.useful_life_years ? editAsset.useful_life_years * 12 : 60)
+      : 60
+  );
+  const [status, setStatus] = useState<string>(editAsset?.status || 'ACTIVE');
+  const [acquisitionType, setAcquisitionType] = useState<'EXISTING' | 'NEW_PURCHASE'>(
+    editAsset?.acquisition_type === 'NEW_PURCHASE' ? 'NEW_PURCHASE' : 'EXISTING'
+  );
+  const [cashAccountId, setCashAccountId] = useState(
+    editAsset ? editAsset.cash_account_id || '' : bankAccounts[0]?.id || ''
+  );
+  const notes = editAsset?.notes || '';
+  const accumulatedServiceCost = editAsset?.accumulated_service_cost || 0;
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setErrorMessage('');
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (editAsset) {
-      setName(editAsset.name || '');
-      setCode(editAsset.code || '');
-      setCategoryId(editAsset.category_id ? String(editAsset.category_id) : '');
-      setPurchaseDate(editAsset.purchase_date ? editAsset.purchase_date.split('T')[0] : '');
-      setPurchaseCost(editAsset.purchase_cost ?? '');
-      setUsefulLifeMonths(editAsset.useful_life_months || (editAsset.useful_life_years ? editAsset.useful_life_years * 12 : 60));
-      setSalvageValue(editAsset.salvage_value ?? 0);
-      setStatus(editAsset.status || 'ACTIVE');
-      setAcquisitionType(editAsset.acquisition_type === 'NEW_PURCHASE' ? 'NEW_PURCHASE' : 'EXISTING');
-      setCashAccountId(editAsset.cash_account_id || '');
-      setNotes(editAsset.notes || '');
-      setAccumulatedServiceCost(editAsset.accumulated_service_cost || 0);
-    } else {
-      setName('');
-      setCode('');
-      setCategoryId(categoryOptions[0] ? String(categoryOptions[0].id) : '');
-      setPurchaseDate(new Date().toISOString().split('T')[0]);
-      setPurchaseCost('');
-      setUsefulLifeMonths(60);
-      setSalvageValue(0);
-      setStatus('ACTIVE');
-      setAcquisitionType('EXISTING');
-      setCashAccountId(bankAccounts[0]?.id || '');
-      setNotes('');
-      setAccumulatedServiceCost(0);
-    }
-  }, [isOpen, editAsset, categoryOptions, bankAccounts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,8 +118,8 @@ export function AssetModal({
       setErrorMessage('Harga perolehan harus diisi dengan benar.');
       return;
     }
-    if (salvageValue !== '' && Number(salvageValue) >= Number(purchaseCost)) {
-      setErrorMessage('Nilai residu tidak boleh lebih besar atau sama dengan harga perolehan.');
+    if (!editAsset && acquisitionType === 'NEW_PURCHASE' && !cashAccountId) {
+      setErrorMessage('Rekening sumber dana wajib dipilih untuk pembelian aset baru.');
       return;
     }
 
@@ -125,7 +138,6 @@ export function AssetModal({
           purchase_cost: Number(purchaseCost),
           useful_life_months: Number(usefulLifeMonths) || 12,
           useful_life_years: Math.max(1, Math.round((Number(usefulLifeMonths) || 12) / 12)),
-          salvage_value: Number(salvageValue) || 0,
           status,
           notes: notes.trim() || undefined,
         };
@@ -146,7 +158,6 @@ export function AssetModal({
           purchase_cost: Number(purchaseCost),
           useful_life_months: Number(usefulLifeMonths) || 12,
           useful_life_years: Math.max(1, Math.round((Number(usefulLifeMonths) || 12) / 12)),
-          salvage_value: Number(salvageValue) || 0,
           status,
           acquisition_type: acquisitionType,
           cash_account_id: acquisitionType === 'NEW_PURCHASE' ? cashAccountId : undefined,
@@ -161,9 +172,9 @@ export function AssetModal({
           setErrorMessage(res.message || 'Gagal mendaftarkan aset baru.');
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setErrorMessage(
-        err?.response?.data?.message || err?.message || 'Terjadi kesalahan sistem saat menyimpan aset.'
+        getApiErrorMessage(err, 'Terjadi kesalahan sistem saat menyimpan aset.')
       );
     } finally {
       setIsSubmitting(false);
@@ -235,17 +246,25 @@ export function AssetModal({
             required
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            options={[
-              { value: 'ACTIVE', label: 'Aktif' },
-              { value: 'IN_MAINTENANCE', label: 'Dalam Pemeliharaan' },
-              { value: 'BROKEN', label: 'Rusak' },
-              { value: 'DISPOSED', label: 'Dijual' },
-              { value: 'SCRAPPED', label: 'Afkir / Scrap' },
-            ]}
+            options={
+              editAsset && (editAsset.status === 'DISPOSED' || editAsset.status === 'SCRAPPED')
+                ? [
+                    { value: 'ACTIVE', label: 'Aktif' },
+                    { value: 'IN_MAINTENANCE', label: 'Dalam Pemeliharaan' },
+                    { value: 'BROKEN', label: 'Rusak' },
+                    { value: 'DISPOSED', label: 'Dijual' },
+                    { value: 'SCRAPPED', label: 'Afkir / Scrap' },
+                  ]
+                : [
+                    { value: 'ACTIVE', label: 'Aktif' },
+                    { value: 'IN_MAINTENANCE', label: 'Dalam Pemeliharaan' },
+                    { value: 'BROKEN', label: 'Rusak' },
+                  ]
+            }
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <CurrencyInput
             label="Harga Perolehan (Rp)"
             required
@@ -261,11 +280,6 @@ export function AssetModal({
               setUsefulLifeMonths(e.target.value === '' ? '' : Number(e.target.value))
             }
             placeholder="60"
-          />
-          <CurrencyInput
-            label="Nilai Sisa / Residu (Rp)"
-            value={salvageValue === '' ? 0 : salvageValue}
-            onChange={(val) => setSalvageValue(val)}
           />
         </div>
 

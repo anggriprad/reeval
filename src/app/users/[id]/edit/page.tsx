@@ -14,7 +14,7 @@ export default function EditUserPage() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
-  const { currentUser } = useApp();
+  const { currentUser, refreshProfile } = useApp();
 
   const idStr = Array.isArray(params.id) ? params.id[0] : params.id;
   const userId = idStr ? parseInt(idStr, 10) : NaN;
@@ -59,7 +59,7 @@ export default function EditUserPage() {
             setAllPermissions(permsRes.data);
           }
         }
-      } catch (err: any) {
+      } catch {
         if (isMounted) {
           toast.error('Gagal Memuat Data', 'Tidak dapat memuat detail pengguna.');
           router.push('/users');
@@ -87,24 +87,23 @@ export default function EditUserPage() {
       const emailChanged = Boolean(user?.email && formData.email.trim().toLowerCase() !== user.email.trim().toLowerCase());
       const isSelf = Boolean(currentUser && (String(currentUser.id) === String(userId) || currentUser.email === user?.email));
 
-      const [updateRes, assignRes] = await Promise.all([
-        userService.updateUser(userId, {
-          full_name: formData.full_name,
-          email: formData.email,
-          phone: formData.phone,
-          is_active: formData.is_active,
-          is_ready: formData.is_ready,
-        }),
-        userService.assignRoles(userId, {
-          role_ids: formData.role_ids,
-          overrides: formData.overrides,
-        }),
-      ]);
+      const updateRes = await userService.updateUser(userId, {
+        full_name: formData.full_name,
+        email: formData.email,
+        phone: formData.phone,
+        is_active: formData.is_active,
+        is_ready: formData.is_ready,
+      });
 
       if (!updateRes.success) {
         toast.error('Gagal Memperbarui Profil', updateRes.message || 'Gagal memperbarui profil pengguna.');
         return;
       }
+
+      const assignRes = await userService.assignRoles(userId, {
+        role_ids: formData.role_ids,
+        overrides: formData.overrides,
+      });
 
       if (emailChanged && isSelf) {
         toast.info('Email Diubah', 'Email akun Anda telah diubah. Sesi Anda telah berakhir, silakan login kembali.');
@@ -120,10 +119,15 @@ export default function EditUserPage() {
         return;
       }
 
+      if (isSelf) {
+        await refreshProfile();
+      }
+
       toast.success('Pengguna Berhasil Diperbarui', `Perubahan untuk ${formData.full_name} berhasil disimpan.`);
       router.push(userId ? `/users/${userId}` : '/settings?tab=users');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Gagal memperbarui data pengguna.';
+    } catch (err: unknown) {
+      const maybeErr = err as { response?: { data?: { message?: string } }; message?: string };
+      const msg = maybeErr?.response?.data?.message || maybeErr?.message || 'Gagal memperbarui data pengguna.';
       toast.error('Gagal Menyimpan', msg);
     } finally {
       setIsSubmitting(false);

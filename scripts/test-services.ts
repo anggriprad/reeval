@@ -114,6 +114,17 @@ async function runTests() {
   assert(typeof userService.updateUser === 'function', 'userService.updateUser must be a function');
   assert(typeof userService.deleteUser === 'function', 'userService.deleteUser must be a function');
   assert(typeof userService.assignRoles === 'function', 'userService.assignRoles must be a function');
+  const sampleResetOverridesPayload: Parameters<typeof userService.assignRoles>[1] = {
+    role_ids: [1],
+    overrides: [],
+  };
+  assert(Array.isArray(sampleResetOverridesPayload.overrides) && sampleResetOverridesPayload.overrides.length === 0, 'assignRoles payload must support empty overrides array for reset');
+  const sampleUpdateUserPayload: Parameters<typeof userService.updateUser>[1] = {
+    full_name: 'Tester',
+    is_active: true,
+    is_ready: false,
+  };
+  assert(sampleUpdateUserPayload.is_ready === false, 'updateUser payload must support is_ready');
   console.log('✓ userService contract verified');
 
   // 4. Verify roleService structure
@@ -247,6 +258,7 @@ async function runTests() {
   assert(typeof productCategoryService.createCategory === 'function', 'productCategoryService.createCategory must be a function');
   assert(typeof productCategoryService.updateCategory === 'function', 'productCategoryService.updateCategory must be a function');
   assert(typeof productCategoryService.deleteCategory === 'function', 'productCategoryService.deleteCategory must be a function');
+  assert(typeof productCategoryService.reorderCategories === 'function', 'productCategoryService.reorderCategories must be a function');
   assert(PERMISSIONS.PRODUCT.CATEGORY_READ === 'product-category:read', 'CATEGORY_READ must be product-category:read');
   assert(PERMISSIONS.PRODUCT.CATEGORY_CREATE === 'product-category:create', 'CATEGORY_CREATE must be product-category:create');
   assert(PERMISSIONS.PRODUCT.CATEGORY_UPDATE === 'product-category:update', 'CATEGORY_UPDATE must be product-category:update');
@@ -673,6 +685,7 @@ async function runTests() {
   assert(typeof companyAssetService.deleteServiceLog === 'function', 'companyAssetService.deleteServiceLog must be a function');
   assert(typeof companyAssetService.getDepreciations === 'function', 'companyAssetService.getDepreciations must be a function');
   assert(typeof companyAssetService.recordDepreciation === 'function', 'companyAssetService.recordDepreciation must be a function');
+  assert(typeof companyAssetService.disposeAsset === 'function', 'companyAssetService.disposeAsset must be a function');
   assert(PERMISSIONS.INVENTORY.ASSET_READ === 'asset:read', 'ASSET_READ must be asset:read');
   assert(PERMISSIONS.INVENTORY.ASSET_CREATE === 'asset:create', 'ASSET_CREATE must be asset:create');
   assert(PERMISSIONS.INVENTORY.ASSET_UPDATE === 'asset:update', 'ASSET_UPDATE must be asset:update');

@@ -12,6 +12,7 @@ export interface ProductCategoryItem extends ApiAuditFields {
   id: number;
   company_id: number;
   name: string;
+  sort_order: number;
   product_count: number;
   can_delete: boolean;
   is_active: boolean;
@@ -30,6 +31,10 @@ export interface CreateProductCategoryPayload {
 
 export interface UpdateProductCategoryPayload {
   name: string;
+}
+
+export interface ReorderProductCategoriesPayload {
+  item_ids: number[];
 }
 
 export interface GetProductCategoriesParams {
@@ -92,6 +97,15 @@ export const productCategoryService = {
   async deleteCategory(id: number): Promise<ApiResponse<null>> {
     const response = await httpDelete<null>(
       endpointUrl(`product/product-categories/${id}`),
+      true
+    );
+    return response.data;
+  },
+
+  async reorderCategories(itemIds: number[]): Promise<ApiResponse<null>> {
+    const response = await httpPut<null>(
+      endpointUrl("product/product-categories/reorder"),
+      { item_ids: itemIds },
       true
     );
     return response.data;
